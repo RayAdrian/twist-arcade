@@ -1,0 +1,24 @@
+node_modules/
+.next/
+dist/
+build/
+coverage/
+*.log
+
+# per-worktree local env — never shared between agent teams
+.env
+.env.local
+.env.*.local
+
+# supabase local artifacts
+supabase/.branches/
+supabase/.temp/
+
+# test artifacts
+playwright-report/
+test-results/
+.playwright/
+
+.DS_Store
+.vscode/
+.idea/
