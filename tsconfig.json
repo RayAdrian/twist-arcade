@@ -1,0 +1,8 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/engine" },
+    { "path": "./packages/game-spec" },
+    { "path": "./tsconfig.app.json" }
+  ]
+}

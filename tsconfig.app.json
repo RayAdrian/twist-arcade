@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "preserve",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "plugins": [{ "name": "next" }],
+    "noEmit": true,
+    "declaration": false,
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": ["app/**/*.ts", "app/**/*.tsx", "games/**/*.ts", "next-env.d.ts", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"],
+  "references": [{ "path": "./packages/engine" }, { "path": "./packages/game-spec" }]
+}
