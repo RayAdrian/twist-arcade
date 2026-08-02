@@ -9,7 +9,7 @@
 // cleanly if the properties are callable outside of vitest's `it()` registration.
 
 import type { Effect, GameEngine, Json, PlayerId, Rng, WithEffects } from "../src/types";
-import { rngFor, rngFromSeed } from "../src/rng";
+import { rngFor, rngForSetup, rngFromSeed } from "../src/rng";
 import { stableStringify } from "../src/encode";
 import { replay, type ReplayRecord } from "../src/replay";
 import { describe, it } from "vitest";
@@ -75,7 +75,7 @@ class ContractViolation extends Error {
 }
 
 // ---------------------------------------------------------------------------------------
-// Random playout — mirrors replay.ts's rng scheme exactly (setup <- rngFromSeed(seed),
+// Random playout — mirrors replay.ts's rng scheme exactly (setup <- rngForSetup(seed),
 // step k's apply <- rngFor(seed, k)) so a playout's move log is directly replay()-able.
 // ---------------------------------------------------------------------------------------
 
@@ -92,7 +92,7 @@ function randomPlayout<S extends WithEffects, M extends Json, V extends WithEffe
   maxPlies: number
 ): PlayoutResult<S> {
   const driverRng: Rng = rngFromSeed(`${matchSeed}:driver`);
-  let state = engine.setup(numPlayers, rngFromSeed(matchSeed));
+  let state = engine.setup(numPlayers, rngForSetup(matchSeed));
   const states: S[] = [state];
   const steps: ReplayRecord["steps"] = [];
 
@@ -165,7 +165,7 @@ export function checkPurity<S extends WithEffects, M extends Json, V extends Wit
   const maxPlies = opts.maxPlies ?? 200;
   for (const numPlayers of playerCountsFor(engine, opts)) {
     const seed = `purity-${numPlayers}`;
-    let state = deepFreeze(engine.setup(numPlayers, rngFromSeed(seed)));
+    let state = deepFreeze(engine.setup(numPlayers, rngForSetup(seed)));
     for (let ply = 0; ply < Math.min(maxPlies, 30); ply++) {
       if (engine.status(state).kind !== "ongoing") break;
       const active = engine.active(state);

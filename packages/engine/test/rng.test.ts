@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { rngFor, rngFromSeed } from "../src/rng";
+import { rngFor, rngForSetup, rngFromSeed } from "../src/rng";
 
 // These vectors are a WIRE FORMAT (plan §3.4): mulberry32 stream + splitmix32 seed mixer +
 // xmur3 string fold. rngFor(matchSeed, k) = mulberry32(splitmix32(xmur3(matchSeed) + k)).
@@ -129,5 +129,44 @@ describe("Rng.int and Rng.shuffle", () => {
       expect(v).toBeGreaterThanOrEqual(0);
       expect(v).toBeLessThan(1);
     }
+  });
+});
+
+// M1 review finding 1 (MUST FIX): rngFromSeed(seed) and rngFor(seed, 0) are algebraically
+// IDENTICAL by the pinned formula (rngFor(s,0) = mulberry32(splitmix32(xmur3(s)+0)), which is
+// exactly what rngFromSeed(s) computes for a string seed). Before this fix, replay.ts and the
+// testkit fed setup() directly from rngFromSeed(record.seed) — byte-identical to step 0's
+// stream. Any game that draws randomness in both setup() and its first apply() (e.g. a fog
+// game deriving a secret in setup, then drawing a PUBLIC chance event in step 0) would leak
+// the setup-time secret through a public, replay-visible draw. rngForSetup domain-separates
+// setup's stream (via a ":setup" seed suffix) WITHOUT touching the pinned rngFor wire format.
+describe("rngForSetup domain separation (M1 review finding 1)", () => {
+  it("the rng setup() receives must differ from step 0's apply() stream", () => {
+    for (const seed of ["plumbing-seed", "hello", "match-1", "wire-golden-1"]) {
+      const setupFirst = rngForSetup(seed).next();
+      const step0First = rngFor(seed, 0).next();
+      expect(setupFirst).not.toBe(step0First);
+    }
+  });
+
+  it("rngForSetup(seed) also differs from the raw rngFromSeed(seed) stream", () => {
+    // rngForSetup must not merely be an alias for rngFromSeed — it must derive a distinct
+    // stream (via the ":setup" suffix), not just relabel the colliding one.
+    expect(rngForSetup("hello").next()).not.toBe(rngFromSeed("hello").next());
+  });
+
+  it("is itself deterministic: same seed ⇒ identical rngForSetup stream", () => {
+    const streamA = rngForSetup("determinism-check");
+    const outA = Array.from({ length: 8 }, () => streamA.next());
+    const streamB = rngForSetup("determinism-check");
+    const outB = Array.from({ length: 8 }, () => streamB.next());
+    expect(outA).toEqual(outB);
+  });
+});
+
+describe("historical collision this fix removes (documented, not enforced going forward)", () => {
+  it("the bare rngFromSeed(seed) helper is still algebraically identical to rngFor(seed, 0) — " +
+    "callers must use rngForSetup(seed), never rngFromSeed(seed) directly, to feed setup()", () => {
+    expect(rngFromSeed("hello").next()).toBe(rngFor("hello", 0).next());
   });
 });

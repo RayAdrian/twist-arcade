@@ -5,7 +5,7 @@
 // tool. It validates every move with `isLegal` before applying and refuses illegal logs
 // loudly (throws) rather than silently producing a wrong trajectory.
 
-import { rngFor, rngFromSeed } from "./rng";
+import { rngFor, rngForSetup } from "./rng";
 import type { GameEngine, Json, PlayerId, WithEffects } from "./types";
 import { stableStringify } from "./encode";
 
@@ -44,11 +44,13 @@ export function replay<S extends WithEffects, M extends Json, V extends WithEffe
   record: ReplayRecord
 ): { states: S[]; final: S; status: ReturnType<GameEngine<S, M, V>["status"]> } {
   const states: S[] = [];
-  // setup() is not one of the "steps" — it draws from the base seed stream directly, via
-  // rngFromSeed, not rngFor. rngFor's per-step forking (§3.4) applies to apply() calls only:
-  // step k's move (0-indexed into `record.steps`) always draws from rngFor(seed, k),
-  // independent of how many draws setup() or earlier steps made.
-  const setupRng = rngFromSeed(record.seed);
+  // setup() is not one of the "steps" — it draws from its own domain-separated stream via
+  // rngForSetup, NOT rngFor(seed, 0) and NOT the raw rngFromSeed(seed) (the latter two are
+  // algebraically identical — see rng.ts's rngForSetup doc comment / M1 review finding 1).
+  // rngFor's per-step forking (§3.4) applies to apply() calls only: step k's move (0-indexed
+  // into `record.steps`) always draws from rngFor(seed, k), independent of how many draws
+  // setup() or earlier steps made.
+  const setupRng = rngForSetup(record.seed);
   let state = engine.setup(record.numPlayers, setupRng);
   states.push(state);
 

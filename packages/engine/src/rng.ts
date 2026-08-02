@@ -106,3 +106,24 @@ export function rngFor(matchSeed: string, step: number): Rng {
   const mixed = mixSeed((base + step) >>> 0);
   return makeRng(mulberry32(mixed));
 }
+
+/**
+ * rngForSetup — the rng setup() receives (M1 review finding 1, plan §3.4 gap G-1).
+ *
+ * NOT part of the pinned rngFor wire format (that formula is untouched) — this is a second,
+ * separately-pinned convention: setup's stream is domain-separated from every apply() step
+ * via a ":setup" seed suffix, rather than fed the raw rngFromSeed(matchSeed) stream, which is
+ * algebraically IDENTICAL to rngFor(matchSeed, 0) (mulberry32(splitmix32(xmur3(matchSeed)))
+ * either way). Without this separation, any game that draws randomness in both setup() (e.g.
+ * to place a hidden secret — a mine layout, a fog game's answer) and its first apply() (a
+ * public chance event in step 0) would hand the viewer of that public step-0 draw a stream
+ * byte-identical to the one the secret came from — the hidden content becomes derivable from
+ * a public event.
+ *
+ * This is itself now a wire-format convention: replay.ts and every playout helper MUST call
+ * this (never bare rngFromSeed(seed)) to seed setup(), and must do so consistently — changing
+ * the suffix later is exactly the kind of breaking change §3.4/§10 requires an ADR for.
+ */
+export function rngForSetup(matchSeed: string): Rng {
+  return rngFromSeed(`${matchSeed}:setup`);
+}

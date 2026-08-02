@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classicTicTacToe } from "../testkit/fixtures/classic-ttt";
-import { rngFor } from "../src/rng";
+import { rngFor, rngForSetup } from "../src/rng";
 import { appendStep, replay, replayTo, type ReplayRecord } from "../src/replay";
 
 function buildTTTRecord(): ReplayRecord {
@@ -87,15 +87,23 @@ describe("appendStep", () => {
 });
 
 describe("replay determinism / rng plumbing", () => {
-  // Note: rngFor(seed, 0) and rngFromSeed(seed) are algebraically IDENTICAL by the pinned
-  // formula (rngFor(seed, k) = mulberry32(splitmix32(xmur3(seed) + k)); at k=0 that is
-  // exactly mulberry32(splitmix32(xmur3(seed))), which is what rngFromSeed(seed) computes
-  // for a string seed too). That is expected, not a bug — an earlier version of this test
-  // wrongly asserted they must differ. What actually matters for replay-correctness is
-  // exercised end-to-end once a stochastic fixture (bank-run) exists: two independent
-  // replays of the same record must reproduce identical GENERATED content, proving each
-  // step draws its own rngFor(seed, stepIndex) child stream. See
-  // testkit/contract.ts's solo determinism-through-generation property.
+  // M1 review finding 1 (MUST FIX): rngFor(seed, 0) and the raw rngFromSeed(seed) ARE
+  // algebraically identical by the pinned formula (rngFor(seed,k) =
+  // mulberry32(splitmix32(xmur3(seed)+k)); at k=0 that is exactly what rngFromSeed(seed)
+  // computes for a string seed). That fact is real and does not change — but replay.ts must
+  // never feed that collision-prone stream to setup(). The property that actually matters,
+  // restored here as a real assertion (an earlier version of this test asserted it and it was
+  // wrongly deleted — that deletion is what let the collision ship silently): the stream
+  // setup() actually receives (rngForSetup) must differ from step 0's stream (rngFor(seed,
+  // 0)). See rng.test.ts's "rngForSetup domain separation" suite for the direct unit-level
+  // proof; this is the replay-level restatement.
+  it("the stream setup() receives differs from step 0's apply() stream", () => {
+    const seed = "plumbing-seed";
+    const setupFirst = rngForSetup(seed).next();
+    const step0First = rngFor(seed, 0).next();
+    expect(setupFirst).not.toBe(step0First);
+  });
+
   it("does not throw when internally deriving a per-step rng", () => {
     const record = buildTTTRecord();
     expect(() => replay(classicTicTacToe, record)).not.toThrow();
