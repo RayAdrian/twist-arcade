@@ -17,6 +17,7 @@
   "dependencies": {
     "@twist-arcade/engine": "workspace:*",
     "@twist-arcade/game-spec": "workspace:*",
+    "@twist-arcade/shell": "workspace:*",
     "next": "^15.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

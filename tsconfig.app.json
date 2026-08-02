@@ -18,5 +18,9 @@
   },
   "include": ["app/**/*.ts", "app/**/*.tsx", "games/**/*.ts", "next-env.d.ts", ".next/types/**/*.ts"],
   "exclude": ["node_modules"],
-  "references": [{ "path": "./packages/engine" }, { "path": "./packages/game-spec" }]
+  "references": [
+    { "path": "./packages/engine" },
+    { "path": "./packages/game-spec" },
+    { "path": "./packages/shell" }
+  ]
 }

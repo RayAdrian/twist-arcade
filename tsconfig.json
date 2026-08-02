@@ -3,6 +3,7 @@
   "references": [
     { "path": "./packages/engine" },
     { "path": "./packages/game-spec" },
+    { "path": "./packages/shell" },
     { "path": "./tsconfig.app.json" }
   ]
 }
