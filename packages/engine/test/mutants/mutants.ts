@@ -216,7 +216,20 @@ export interface FogState extends WithEffects {
 }
 export type FogMove = { readonly kind: "reveal"; readonly [key: string]: Json };
 
-function makeFogEngine(leaky: boolean): GameEngine<FogState, FogMove, FogState> {
+/**
+ * FogView (M1 review finding 3 / gap G-8 / defect D-1) — a REAL view type, V ≠ S. Before this
+ * fix, fogFixtureCorrect reused `S` as `V` (`GameEngine<FogState, FogMove, FogState>`) and
+ * "redacted" by masking `secret` with a sentinel (-1) instead of omitting the key. Masking is
+ * exactly the anti-pattern plan §3 / correction C1 forbid ("omit, don't mask" — a masked
+ * field is present-but-fake), and meant nothing in the ENTIRE M1 diff exercised `V ≠ S`,
+ * despite `V` being a first-class type parameter on GameEngine. The pre-reveal variant below
+ * has NO `secret` field at all — structurally, not just semantically, absent.
+ */
+export type FogView =
+  | ({ readonly revealed: false } & WithEffects)
+  | ({ readonly revealed: true; readonly secret: number } & WithEffects);
+
+function makeFogEngine(leaky: boolean): GameEngine<FogState, FogMove, FogView> {
   return {
     meta: {
       id: leaky ? "mutant-fog-leak" : "fog-fixture-correct",
@@ -253,16 +266,18 @@ function makeFogEngine(leaky: boolean): GameEngine<FogState, FogMove, FogState> 
     status(state) {
       return state.revealed ? { kind: "won", winner: 0 } : { kind: "ongoing" };
     },
-    playerView(state, _player) {
+    playerView(state, _player): FogView {
       if (leaky) {
-        // BUG: returns the raw state, including the secret and the unredacted effect.
-        return state;
+        // BUG: returns the raw state, including the secret and the unredacted effect — even
+        // pre-reveal, the `secret` key is structurally present in the leaky variant's view.
+        return state as unknown as FogView;
       }
-      return {
-        secret: state.revealed ? state.secret : -1, // redact until revealed (omit, don't mask)
-        revealed: state.revealed,
-        lastEffects: state.revealed ? state.lastEffects : [],
-      };
+      if (!state.revealed) {
+        // Omit, don't mask: the `secret` key is simply absent from the object, not present
+        // with a sentinel value.
+        return { revealed: false, lastEffects: [] };
+      }
+      return { revealed: true, secret: state.secret, lastEffects: state.lastEffects };
     },
     encode(state) {
       return stableStringify({ secret: state.secret, revealed: state.revealed });

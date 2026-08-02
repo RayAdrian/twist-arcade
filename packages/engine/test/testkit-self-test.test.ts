@@ -104,6 +104,32 @@ describe("testkit self-test: every mutant fails exactly the property it targets"
   });
 });
 
+// M1 review finding 3 / gap G-8 / defect D-1: plan §3 and correction C1 require secrets be
+// OMITTED ("absence is structural"), not masked with a sentinel value — a masked field is
+// present-but-fake. fogFixtureCorrect used to mask (`secret: state.revealed ? state.secret :
+// -1`), which is exactly the anti-pattern C1 forbids, and modeled the wrong reference for
+// any game team copying it. checkRedaction's string-inclusion probe cannot tell the
+// difference (a sentinel that doesn't textually collide with the real secret still "passes"),
+// so this must be asserted structurally: the key itself must be absent from the view object.
+describe("fog fixture honesty: omit, don't mask (M1 review finding 3)", () => {
+  it("fogFixtureCorrect's pre-reveal view has NO `secret` key at all (structural absence, not a sentinel)", () => {
+    const state = fogFixtureCorrect.setup(1, { next: () => 0.5, int: () => 41, shuffle: (xs) => [...xs] });
+    const view = fogFixtureCorrect.playerView(state, 0) as unknown as Record<string, unknown>;
+    expect("secret" in view).toBe(false);
+  });
+
+  it("after reveal, the view DOES carry `secret` — that's the whole point of the move", () => {
+    const state = fogFixtureCorrect.setup(1, { next: () => 0.5, int: () => 41, shuffle: (xs) => [...xs] });
+    const revealed = fogFixtureCorrect.apply(state, new Map([[0, { kind: "reveal" as const }]]), {
+      next: () => 0.5,
+      int: () => 0,
+      shuffle: (xs) => [...xs],
+    });
+    const view = fogFixtureCorrect.playerView(revealed, 0);
+    expect(view.revealed && view.secret).toBe(revealed.secret);
+  });
+});
+
 describe("testkit self-test: mutants do NOT spuriously fail unrelated properties", () => {
   // A mutant that fails every property would also be "theater" — it wouldn't prove the
   // testkit discriminates between bugs. Spot-check a couple of the less-obvious pairs.
