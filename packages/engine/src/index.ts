@@ -12,4 +12,4 @@ export type {
 export { rngFor, rngForSetup, rngFromSeed } from "./rng";
 export { stableStringify } from "./encode";
 export type { ReplayRecord, StepRecord } from "./replay";
-export { appendStep, replay, replayTo } from "./replay";
+export { appendStep, IllegalReplayMoveError, replay, replayTo } from "./replay";

@@ -82,8 +82,8 @@ describe("testkit self-test: every mutant fails exactly the property it targets"
   it("mutantStatusUnstableUnderEncodeDecode fails the status-stable-under-encode-decode property", () => {
     // runs: 20 (not fewer) — the bug only manifests at a `draw` terminal, and a `draw` is a
     // minority outcome under uniform-random TTT play (roughly 1-in-12); empirically the first
-    // draw among seeds "encode-2-0".."encode-2-19" appears at run 11, so 20 runs reliably
-    // exercises it.
+    // draw among seeds "encode-2-0".."encode-2-19" is at run INDEX 11 — the 12th playout — so
+    // `runs` must be >= 12. Verified: runs of 10 and 11 do NOT catch it. 20 keeps real margin.
     expect(() =>
       checkEncodeDecodeAndEffects(mutantStatusUnstableUnderEncodeDecode, { maxPlies: 9, runs: 20 })
     ).toThrow(/status-stable-under-encode-decode/);
