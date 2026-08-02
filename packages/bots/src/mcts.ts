@@ -29,9 +29,10 @@
 // sequential alternating (2P zero-sum or general-sum) and solo trees without special-casing,
 // and reduces exactly to standard single-player MCTS when there is only one seat.
 
-import type { GameEngine, Json, PlayerId, Rng, Status, WithEffects } from "@twist-arcade/engine";
+import type { GameEngine, Json, PlayerId, Status, WithEffects } from "@twist-arcade/engine";
 import { stableStringify } from "@twist-arcade/engine";
 import type { Policy, SearchStats } from "./policy";
+import { rolloutToHorizon, valueOfStatus } from "./search-utils";
 
 export class MctsTerminalStateError extends Error {
   constructor() {
@@ -119,61 +120,6 @@ function makeNode<S extends WithEffects, M extends Json>(
   };
 }
 
-/** Value of a (possibly non-terminal, ply-cap-hit) outcome, from `player`'s perspective. */
-function leafValue<S extends WithEffects, M extends Json>(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  engine: GameEngine<S, M, any>,
-  status: Status,
-  state: S,
-  player: PlayerId
-): number {
-  switch (status.kind) {
-    case "won":
-      return status.winner === player ? 1 : -1;
-    case "lost":
-      return -1;
-    case "draw":
-      return 0;
-    case "scored":
-      return status.scores[player] ?? 0;
-    case "ongoing":
-      if (engine.score) return engine.score(state, player);
-      if (engine.heuristic) return engine.heuristic(state, player) / 9;
-      return 0;
-  }
-}
-
-function rollout<S extends WithEffects, M extends Json>(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  engine: GameEngine<S, M, any>,
-  start: S,
-  rng: Rng,
-  maxPlies: number
-): { status: Status; state: S } {
-  let state = start;
-  let status = engine.status(state);
-  let plies = 0;
-  while (status.kind === "ongoing" && plies < maxPlies) {
-    const active = engine.active(state);
-    const actors = active.mode === "sequential" ? [active.player] : active.players;
-    const jm = new Map<PlayerId, M>();
-    for (const p of actors) {
-      const legal = engine.legalMoves(state, p);
-      if (legal.length === 0) {
-        throw new Error(
-          `mctsPolicy rollout: active player ${p} has no legal moves while status is ongoing ` +
-            "— this violates the engine contract's no-hidden-pass rule."
-        );
-      }
-      jm.set(p, legal[rng.int(legal.length)]!);
-    }
-    state = engine.apply(state, jm, rng);
-    status = engine.status(state);
-    plies += 1;
-  }
-  return { status, state };
-}
-
 export function mctsPolicy<S extends WithEffects, M extends Json>(opts: MctsOptions = {}): Policy<S, M> {
   const explorationC = opts.explorationC ?? 1.4;
   const rolloutCapPlies = opts.rolloutCapPlies ?? 200;
@@ -229,12 +175,12 @@ export function mctsPolicy<S extends WithEffects, M extends Json>(opts: MctsOpti
         }
 
         // --- ROLLOUT (simulate randomly from the new leaf to a terminal/horizon) ---
-        const { status: leafStatus, state: leafState } = rollout(engine, node.state, rng, rolloutCapPlies);
+        const { status: leafStatus, state: leafState } = rolloutToHorizon(engine, node.state, rng, rolloutCapPlies);
 
         // --- BACKPROPAGATE ---
         for (let i = path.length - 1; i >= 0; i--) {
           const owner = i === 0 ? player : owners[i - 1]!;
-          const value = leafValue(engine, leafStatus, leafState, owner);
+          const value = valueOfStatus(engine, leafStatus, leafState, owner);
           path[i]!.visits += 1;
           path[i]!.totalValue += value;
         }
