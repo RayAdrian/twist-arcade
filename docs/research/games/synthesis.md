@@ -69,11 +69,26 @@ shareable scores, no opponent needed). Game theory's entire validation apparatus
 draw rate, self-play ladders — **does not apply to single-player games**, and the
 architecture's harness assumes two seats.
 
-**Resolution: launch is 2-player abstracts only.** Single-player score twists are a
-*second product line* with its own validation model (difficulty curve, score
-distribution, solvability of the daily seed) and belong in Phase 3 at the earliest — not
-because they're bad, but because they'd fork the harness and the shell before either is
-proven. Logged as an explicit deferral, not an oversight.
+**Original resolution (2026-08-02, superseded):** launch is 2-player abstracts only;
+single-player is a Phase 3 second product line, because it would fork the harness and the
+shell before either is proven.
+
+**Revised resolution (2026-08-02, after the user chose to include solo at launch and a
+fifth research pass examined it — `solo-games-lens.md`):** **two solo games ship at
+launch.** The deferral over-sized the cost. Solo is an *extension*, not a fork: the
+purity/seeded-RNG/replay spine already carries it, and the engine delta is one new
+`Status` variant (`lost`), one optional `score?()`, and legalizing `minPlayers: 1`. The
+solo *validation* model is genuinely different and is specified in full in
+`solo-games-lens.md` §3 — skill measured as distribution separation between policies over
+paired seed sets, with Grind / Always-Safe / Greedy-Only probes replacing the mirror and
+stall bots.
+
+The original caution survives as **binding guardrails**: turn-quantized games only (the
+real fork is the real-time tick loop, still deferred), and the two-player slate keeps
+priority when time is short. Launch slate: **Crackstep** (crumbling-floor daily puzzle —
+the house decay mechanic in solo form) and **Mine Run** (press-your-luck minesweeper score
+chase). One per format proves the whole solo platform. Cost: ~5–8 platform dev-days plus
+~1–2 days per game.
 
 ### 2.3 Two different "game interface" specs
 
@@ -212,14 +227,12 @@ realistic scenario — that is the honest framing, not a pessimistic one.
 
 ---
 
-## 5. Open questions for the user
+## 5. Decisions — resolved by the user, 2026-08-02
 
-1. **Site name and domain.** Strongest candidates from the market pass: **"One Rule Off"**
-   (states the thesis), **"Twist Arcade"** (states library + genre), "Recess Remixed"
-   (owns the school tone). No trademark clearance done.
-2. **Flagship name:** "Fadeout" (market) vs "Fade" (game theory). Recommend **Fadeout** —
-   more searchable, and "Fade" collides with common UI vocabulary.
-3. **Ads.** Roadmap assumes no ads until month 2+, and never inside the play loop (end
-   screen only). Confirm that's acceptable, since it delays revenue that is small anyway.
-4. **Single-player score twists** (snake/minesweeper family) — deferred to Phase 3 per
-   §2.2. Confirm the deferral, or accept the harness fork earlier.
+1. **Site name: Twist Arcade.** Repo `twist-arcade`
+   (github.com/RayAdrian/twist-arcade). No trademark clearance performed.
+2. **Flagship name: Fadeout.**
+3. **Ads: yes**, from month 2 — end screen and between games only, never inside the play
+   loop.
+4. **Single-player twists: included at launch**, not deferred. See the revised §2.2 and
+   `solo-games-lens.md`.

@@ -3,6 +3,9 @@
 *Derived from the four research passes in `docs/research/games/` and their synthesis
 (`docs/research/games/synthesis.md`). Written 2026-08-02. Week 1 = the first build week.*
 
+**The site is called Twist Arcade.** Repo: `twist-arcade`
+(github.com/RayAdrian/twist-arcade).
+
 **The product in one sentence:** classic games you already know how to play, with one rule
 changed that changes everything — free, in the browser, a new twist every week.
 
@@ -41,6 +44,7 @@ marketing surface, no polish beyond the shell, not public.
 | `packages/harness` | Headless self-play CLI. Reports first-player win rate, draw rate, mean/median/p95 plies, branching factor, strong-vs-random, tier ordering, plus game theory's degeneracy probes: **mirror bot, stall bot, rush bot, opening-move concentration, comeback fraction**. Exact solver (value iteration on the cyclic game graph) for any game under ~10⁷ reachable states. |
 | Game shell | `GameShell` and the component inventory from the UX pass: `RuleCard`, `BoardShell`, `Cell`, `CountdownBadge`, `StatusLine`, `ControlsRow`, `ResultModal`, `ShareCard`, `AriaAnnouncer`, `PassDeviceInterstitial`. Shell owns chrome, teaching, a11y, undo, persistence, end screen; the game owns rules + board + strings. |
 | Game 1 | **Fadeout** (decay tic-tac-toe), solo-vs-bot + hotseat, with the "Sentence → Telegraph → Aha-callout" teaching pattern fully implemented. |
+| Solo support | Per `research/games/solo-games-lens.md`: `Status` gains a `lost` variant, engines gain an optional `score?()`, `minPlayers: 1` is legal, and the harness gains the solo agent roster (Random / Greedy / Strong-beam), the solo degeneracy probes (Grind, Always-Safe, Greedy-Only), and the **daily solvability-certificate pipeline** (generate → exact-solve → reject unsolvable/trivial/off-band → store certificate; the certificate's optimal length is published as "par"). ~5–8 dev-days. Lands before the v1 interface freeze — a solo engine is one of the diversity-validating games risk #1 demands. |
 | Scaffold | `pnpm new-game <id>` stamping engine skeleton + pre-wired contract tests + Board wired to the platform hook + manifest + `CHECKLIST.md`. |
 
 ### Sequencing note
@@ -69,9 +73,16 @@ Prove the ritual and the artifact — not the catalog size.
 
 ### Scope
 
-**The six launch games** (synthesis §3): Fadeout · Nine Grids · Wrap · Order vs Chaos ·
-Tilt · Bid-Tac-Toe. Four tic-tac-toe-family twists give the classic-family shelf and the
-"Next twist" adjacency loop something real to work with; Tilt opens the second family.
+**The eight launch games:** six two-player (synthesis §3) — Fadeout · Nine Grids · Wrap ·
+Order vs Chaos · Tilt · Bid-Tac-Toe — plus two solo (`solo-games-lens.md`) — **Crackstep**
+(crumbling-floor daily puzzle; the house decay mechanic in solo form, trivial DFS solver)
+and **Mine Run** (press-your-luck minesweeper score chase). Four tic-tac-toe-family twists
+give the classic-family shelf and the "Next twist" adjacency loop something real to work
+with; Tilt opens the second family; the two solo games prove both solo formats (daily
+puzzle and seeded bounded score chase).
+
+**Cut order if the 4-week date comes under pressure:** Mine Run first, then Crackstep.
+Shipping solo in Phase 2 instead is zero-shame — the two-player slate keeps priority.
 
 Each ships with: bot at three levels (Casual / Standard / Ruthless), hotseat, the
 one-sentence rule card, telegraph encoding, first-occurrence callout, `announce()` strings,
@@ -171,10 +182,10 @@ catalog. Stop shipping games; fix the daily and the end-screen loop.
 - **Creator outreach** at scale on whichever game performs best.
 - **Supporter tier**, $2–3/mo or $15–25/yr: ad-free, daily archive, extra stats. Priced well
   under NYT Games and BGA.
-- **Single-player score twists** (snake/minesweeper family) — the deferred second product
-  line from synthesis §2.2, if and only if the two-player pipeline is running at cadence.
-  They need their own validation model (difficulty curve, score distribution, seed
-  solvability); do not fork the harness before Phase 2's exit criteria are met.
+- **More solo twists** beyond the two launch titles, now that the solo platform exists.
+  Still turn-quantized only — the real-time tick loop remains deferred, and Tetris-family
+  games are excluded outright (*Tetris Holding v. Xio*, 2012 protects look-and-feel, not
+  just the name).
 - Held games unblocked here: Blindfold Reversi and Secret Lines, once determinized/ISMCTS
   bots exist.
 
@@ -229,6 +240,15 @@ incremental; no re-architecture is on the path until well beyond 1M sessions/mon
 A game may declare an intentional exception (e.g. deliberate role asymmetry) in its
 manifest with a justification string, visible in review.
 
+**Solo games use a parallel gate** — there is no opponent, so first-player advantage, draw
+rate, and self-play balance are meaningless. The full two-tier table is in
+`research/games/solo-games-lens.md` §3.8; the CI hard-fails are: Strong/Random median score
+ratio < 1.5 (it's a slot machine, not a game) · Always-Safe agent ≥95% of Strong (the risk
+is fake) · any zero-risk unbounded farming loop · >1% of runs hitting the 2,000-move cap ·
+**any daily seed without a solvability certificate**. A daily that can't be certified
+within the solver budget is rejected, never shipped uncertified — one unsolvable daily
+ruins the day for everyone at once.
+
 **Design gate — Fable review, human judgment** (from the game-theory pass): first-player
 win rate 45–55% raw or after a balancing device · draw rate <10% · median 10–40 plies ·
 MCTS-1k vs MCTS-100 ≥60% (search must keep paying) · ladder Elo spread ≥300 for a "skill"
@@ -273,11 +293,12 @@ a fast business. Plan accordingly and don't let revenue pressure distort the gam
 
 ---
 
-## 9. Decisions still owed by the user
+## 9. Decisions — resolved 2026-08-02
 
-1. **Site name + domain.** Candidates: "One Rule Off", "Twist Arcade", "Recess Remixed". No
-   trademark clearance performed.
-2. **Flagship name:** "Fadeout" (recommended) vs "Fade".
-3. **Ads from month 2** on the end screen only — confirm.
-4. **Single-player score twists deferred to Phase 3** — confirm, or accept an earlier
-   harness fork.
+1. **Site name: Twist Arcade.** Repo `twist-arcade`. No trademark clearance performed.
+2. **Flagship name: Fadeout.**
+3. **Ads: yes**, from month 2, end screen and between games only — never inside the play loop.
+4. **Single-player twists: included at launch** (Crackstep + Mine Run), not deferred.
+
+Still open, and not blocking: domain purchase, Vercel + Supabase accounts (needed ~week 3),
+and the five-person hotseat playtest at the end of Phase 0.
