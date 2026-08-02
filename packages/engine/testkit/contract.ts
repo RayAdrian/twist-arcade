@@ -7,13 +7,12 @@
 // against deliberately-broken mutant engines and assert they throw — "the kit's own suite
 // asserts each mutant fails the right property" (plan §4) is only possible to express
 // cleanly if the properties are callable outside of vitest's `it()` registration.
-//
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- see verifyCertificate below
+
 import type { Effect, GameEngine, Json, PlayerId, Rng, WithEffects } from "../src/types";
 import { rngFor, rngFromSeed } from "../src/rng";
 import { stableStringify } from "../src/encode";
 import { replay, type ReplayRecord } from "../src/replay";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 export interface ContractOptions {
   runs?: number; // fast-check-style iteration count per property (default: 20)
@@ -548,9 +547,10 @@ export function checkScoreCoherence<S extends WithEffects, M extends Json, V ext
   }
 }
 
-/** All properties, run once per fixture. Exposed so a self-test can run "everything" and
- *  so games with unusual needs can compose a subset if they ever must (not expected). */
-function runAllProperties<S extends WithEffects, M extends Json, V extends WithEffects>(
+/** All properties, run once per fixture. Exported so a self-test (or a game with unusual
+ *  needs) can run "everything" outside of vitest's describe/it registration if it ever must
+ *  (not expected — engineContract() below is the normal entry point). */
+export function runAllProperties<S extends WithEffects, M extends Json, V extends WithEffects>(
   engine: GameEngine<S, M, V>,
   opts: ContractOptions
 ): void {

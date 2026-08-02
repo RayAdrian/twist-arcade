@@ -1,7 +1,10 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "composite": true,
+    // Not composite: nothing references this project's outputs, it only references
+    // engine/game-spec — composite+noEmit together is invalid (TS6304), and composite is
+    // only required for a project that is itself a dependency of another `tsc -b` project.
+    "composite": false,
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "preserve",

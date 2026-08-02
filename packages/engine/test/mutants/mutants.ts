@@ -5,7 +5,7 @@
 // catch what they claim to catch (plan §4: "A testkit that cannot catch planted bugs is
 // theater"). NEVER imported by anything outside this test suite.
 
-import type { ActiveSpec, Effect, GameEngine, PlayerId, Rng, Status, WithEffects } from "../../src/types";
+import type { ActiveSpec, Effect, GameEngine, Json, PlayerId, Rng, Status, WithEffects } from "../../src/types";
 import { stableStringify } from "../../src/encode";
 import type { TTTMove, TTTState } from "../../testkit/fixtures/classic-ttt";
 import { classicTicTacToe } from "../../testkit/fixtures/classic-ttt";
@@ -49,7 +49,7 @@ export const mutantMathRandomLeak: GameEngine<BankRunState, BankRunMove, BankRun
     if (!move) throw new Error("no move");
     if (move.kind === "bank") return cleanBankRun.apply(state, moves, rng);
     // BUG: uses Math.random() instead of rng.next() — breaks the determinism property.
-    // eslint-disable-next-line no-restricted-properties
+    // (no-restricted-properties is disabled repo-wide for this directory; see eslint.config.mjs)
     const success = Math.random() < 0.6;
     const effects: Effect[] = success
       ? [{ type: "revealed", result: "success" }]
@@ -198,7 +198,7 @@ export interface FogState extends WithEffects {
   readonly secret: number; // hidden content (e.g. an unrevealed mine position analogue)
   readonly revealed: boolean;
 }
-export type FogMove = { readonly kind: "reveal" };
+export type FogMove = { readonly kind: "reveal"; readonly [key: string]: Json };
 
 function makeFogEngine(leaky: boolean): GameEngine<FogState, FogMove, FogState> {
   return {

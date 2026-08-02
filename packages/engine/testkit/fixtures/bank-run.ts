@@ -9,7 +9,7 @@
 // all bust risk — a future M3c Grind-probe test will exercise it to prove the harness
 // catches zero-risk unbounded farming.
 
-import type { ActiveSpec, Effect, GameEngine, PlayerId, Rng, Status, WithEffects } from "../../src/types";
+import type { ActiveSpec, Effect, GameEngine, Json, PlayerId, Rng, Status, WithEffects } from "../../src/types";
 import { stableStringify } from "../../src/encode";
 
 const ROUND_CAP = 6;
@@ -21,7 +21,11 @@ export interface BankRunState extends WithEffects {
   readonly round: number;
 }
 
-export type BankRunMove = { readonly kind: "push" } | { readonly kind: "bank" };
+// Explicit index signatures: see TTTMove's comment in classic-ttt.ts for why a plain
+// interface/type-literal needs one to satisfy `extends Json`.
+export type BankRunMove =
+  | { readonly kind: "push"; readonly [key: string]: Json }
+  | { readonly kind: "bank"; readonly [key: string]: Json };
 
 function computeStatus(state: BankRunState): Status {
   if (state.round >= ROUND_CAP) return { kind: "scored", scores: [state.banked] };

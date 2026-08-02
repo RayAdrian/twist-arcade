@@ -17,7 +17,7 @@
 // decay (no backtracking at all) removes the cycle structurally: the visited set only
 // grows, so the game is bounded by the 9-cell grid and always terminates within 8 moves.
 
-import type { ActiveSpec, Effect, GameEngine, PlayerId, Rng, Status, WithEffects } from "../../src/types";
+import type { ActiveSpec, Effect, GameEngine, Json, PlayerId, Rng, Status, WithEffects } from "../../src/types";
 import { stableStringify } from "../../src/encode";
 
 const GRID_SIZE = 3;
@@ -31,6 +31,7 @@ export interface CrackstepState extends WithEffects {
 
 export interface CrackstepMove {
   readonly to: number;
+  readonly [key: string]: Json; // see TTTMove's comment in classic-ttt.ts
 }
 
 function rowCol(cell: number): [number, number] {

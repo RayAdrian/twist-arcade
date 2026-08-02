@@ -5,7 +5,7 @@
 // engineContract's two-player branch and gives replay/encode a real 2P engine to test
 // against.
 
-import type { ActiveSpec, Effect, GameEngine, PlayerId, Rng, Status, WithEffects } from "../../src/types";
+import type { ActiveSpec, Effect, GameEngine, Json, PlayerId, Rng, Status, WithEffects } from "../../src/types";
 import { stableStringify } from "../../src/encode";
 
 export interface TTTState extends WithEffects {
@@ -15,6 +15,11 @@ export interface TTTState extends WithEffects {
 
 export interface TTTMove {
   readonly cell: number; // 0..8
+  // Explicit index signature: a plain `interface` has no implicit index signature, so
+  // without this, TS refuses `TTTMove extends Json` (the object arm of Json requires
+  // `{ [k: string]: Json }`). `cell: number` is compatible with a `Json`-valued index
+  // signature since number ⊆ Json.
+  readonly [key: string]: Json;
 }
 
 const LINES: readonly (readonly [number, number, number])[] = [
