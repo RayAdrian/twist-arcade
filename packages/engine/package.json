@@ -1,0 +1,24 @@
+{
+  "name": "@twist-arcade/engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testkit": "./testkit/contract.ts",
+    "./testkit/checks": "./testkit/checks.ts",
+    "./testkit/fixtures/*": "./testkit/fixtures/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b --pretty false",
+    "test": "vitest run"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "fast-check": "^3.22.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

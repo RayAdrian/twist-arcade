@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    // Not composite: nothing references this project's outputs, it only references
+    // engine/game-spec — composite+noEmit together is invalid (TS6304), and composite is
+    // only required for a project that is itself a dependency of another `tsc -b` project.
+    "composite": false,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "preserve",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "plugins": [{ "name": "next" }],
+    "noEmit": true,
+    "declaration": false,
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": ["app/**/*.ts", "app/**/*.tsx", "games/**/*.ts", "next-env.d.ts", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"],
+  "references": [{ "path": "./packages/engine" }, { "path": "./packages/game-spec" }]
+}

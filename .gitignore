@@ -4,6 +4,8 @@ dist/
 build/
 coverage/
 *.log
+*.tsbuildinfo
+next-env.d.ts
 
 # per-worktree local env — never shared between agent teams
 .env
@@ -22,3 +24,4 @@ test-results/
 .DS_Store
 .vscode/
 .idea/
+*.timestamp-*.mjs
