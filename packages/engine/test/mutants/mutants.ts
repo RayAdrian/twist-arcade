@@ -346,3 +346,122 @@ export function fogSecretExtractor(state: unknown, _player: PlayerId): string[] 
   const s = state as FogState;
   return s.revealed ? [] : [String(s.secret)];
 }
+
+// -----------------------------------------------------------------------------------------
+// 11. Effects-array leak, ISOLATED from the state-field leak (M1 review — required gap
+//    closure, RED-002 in the M1 test plan; DoD §13's "a planted secret-leaking effect on a
+//    fog fixture variant is caught"). mutantFogLeak (above) leaks the secret via the WHOLE
+//    state (playerView is the identity) — its `secret` FIELD leaks too, so a reviewer
+//    checking only "is `secret` present in the view" would already catch it, and the effects
+//    path specifically has never been exercised on its own. mutantFogLeak's single-move
+//    design also can't isolate it: its one "reveal" move sets `revealed: true` and emits the
+//    secret-carrying effect in the SAME apply() call, so by the time lastEffects carries the
+//    secret, the field would leak too regardless.
+//
+// This two-phase toy engine (hidden -> peeked -> revealed) has a "peek" move that emits a
+// spoiler effect carrying the raw secret WITHOUT setting phase to "revealed" — modeling a
+// real bug shape (a "warmer/colder" or near-miss effect that embeds the raw value instead of
+// a redacted hint). The correct variant's playerView omits BOTH the `secret` field AND the
+// effect pre-reveal; the leaky variant correctly omits the FIELD (so field-only inspection
+// would wrongly call it safe) but passes lastEffects through unredacted, leaking the secret
+// via the effects array alone.
+// -----------------------------------------------------------------------------------------
+export interface EffectsLeakState extends WithEffects {
+  readonly secret: number;
+  readonly phase: "hidden" | "peeked" | "revealed";
+}
+export type EffectsLeakMove = { readonly kind: "peek" | "reveal"; readonly [key: string]: Json };
+
+export type EffectsLeakView =
+  | ({ readonly phase: "hidden" | "peeked" } & WithEffects)
+  | ({ readonly phase: "revealed"; readonly secret: number } & WithEffects);
+
+function makeEffectsLeakEngine(leaky: boolean): GameEngine<EffectsLeakState, EffectsLeakMove, EffectsLeakView> {
+  return {
+    meta: {
+      id: leaky ? "mutant-fog-effects-leak" : "fog-fixture-effects-leak-correct",
+      name: "Fog toy engine (effects-leak isolation)",
+      minPlayers: 1,
+      maxPlayers: 1,
+      hiddenInformation: true,
+      simultaneous: false,
+      stochastic: true,
+      version: 1,
+    },
+    setup(_n, rng) {
+      return { secret: rng.int(1000) + 1, phase: "hidden", lastEffects: [] };
+    },
+    legalMoves(state, player) {
+      if (player !== 0) return [];
+      if (state.phase === "hidden") return [{ kind: "peek" }];
+      if (state.phase === "peeked") return [{ kind: "reveal" }];
+      return [];
+    },
+    isLegal(state, player, move) {
+      if (player !== 0) return false;
+      if (state.phase === "hidden") return move.kind === "peek";
+      if (state.phase === "peeked") return move.kind === "reveal";
+      return false;
+    },
+    active(_state) {
+      return { mode: "sequential", player: 0 };
+    },
+    apply(state, moves, _rng) {
+      const move = moves.get(0);
+      if (!move) throw new Error("effects-leak toy: apply() called without a move");
+      if (move.kind === "peek" && state.phase === "hidden") {
+        // The spoiler effect carries the raw secret, but phase stays "peeked" — NOT
+        // revealed. A correct playerView must still redact this.
+        return {
+          secret: state.secret,
+          phase: "peeked",
+          lastEffects: [{ type: "revealed", secretValue: state.secret }],
+        };
+      }
+      if (move.kind === "reveal" && state.phase === "peeked") {
+        return {
+          secret: state.secret,
+          phase: "revealed",
+          lastEffects: [{ type: "revealed", secretValue: state.secret }],
+        };
+      }
+      throw new Error(`effects-leak toy: illegal move ${stableStringify(move as unknown as Json)} at phase ${state.phase}`);
+    },
+    status(state) {
+      return state.phase === "revealed" ? { kind: "won", winner: 0 } : { kind: "ongoing" };
+    },
+    playerView(state, _player): EffectsLeakView {
+      if (state.phase !== "revealed") {
+        if (leaky) {
+          // BUG: the `secret` FIELD is correctly omitted here — field-only inspection would
+          // call this redaction correct — but lastEffects passes straight through
+          // unredacted, so the peek's spoiler effect leaks the secret anyway.
+          return { phase: state.phase, lastEffects: state.lastEffects };
+        }
+        return { phase: state.phase, lastEffects: [] };
+      }
+      return { phase: "revealed", secret: state.secret, lastEffects: state.lastEffects };
+    },
+    encode(state) {
+      return stableStringify({ secret: state.secret, phase: state.phase });
+    },
+    decode(encoded) {
+      const parsed = JSON.parse(encoded) as { secret: number; phase: "hidden" | "peeked" | "revealed" };
+      return { secret: parsed.secret, phase: parsed.phase, lastEffects: [] };
+    },
+  };
+}
+
+/** Correct variant: omits `secret` AND redacts the peek's spoiler effect until revealed. */
+export const fogFixtureEffectsLeakCorrect = makeEffectsLeakEngine(false);
+
+/** Leaky variant: the `secret` FIELD is correctly omitted pre-reveal (this is the isolation
+ *  point), but lastEffects is passed through unredacted, so the secret leaks via the effects
+ *  array alone. */
+export const mutantFogEffectsLeak = makeEffectsLeakEngine(true);
+
+/** secretExtractor for the effects-leak toy engine: sensitive until the "revealed" phase. */
+export function fogEffectsLeakSecretExtractor(state: unknown, _player: PlayerId): string[] {
+  const s = state as EffectsLeakState;
+  return s.phase === "revealed" ? [] : [String(s.secret)];
+}

@@ -16,11 +16,14 @@ import {
   checkTermination,
 } from "../testkit/checks";
 import {
+  fogEffectsLeakSecretExtractor,
   fogFixtureCorrect,
+  fogFixtureEffectsLeakCorrect,
   fogSecretExtractor,
   mutant2PEmitsLost,
   mutantEffectsAccumulate,
   mutantEncodeIncludesEffects,
+  mutantFogEffectsLeak,
   mutantFogLeak,
   mutantIsLegalAlwaysTrue,
   mutantMathRandomLeak,
@@ -108,6 +111,42 @@ describe("testkit self-test: every mutant fails exactly the property it targets"
     expect(() =>
       checkRedaction(fogFixtureCorrect, { maxPlies: 5, runs: 10, secretExtractor: fogSecretExtractor })
     ).not.toThrow();
+  });
+
+  // RED-002 (M1 test plan) / DoD §13's "a planted secret-leaking effect on a fog fixture
+  // variant is caught" — a REQUIRED gap closure. mutantFogLeak leaks the secret via the
+  // whole state (its `secret` FIELD leaks too), so the effects-array leak path specifically
+  // has never been exercised in isolation. mutantFogEffectsLeak correctly omits the `secret`
+  // field pre-reveal but passes a secret-carrying effect straight through.
+  it("mutantFogEffectsLeak fails checkRedaction via lastEffects ALONE (the field itself is correctly redacted), while the correct effects-leak fixture passes it", () => {
+    expect(() =>
+      checkRedaction(mutantFogEffectsLeak, {
+        maxPlies: 5,
+        runs: 10,
+        secretExtractor: fogEffectsLeakSecretExtractor,
+      })
+    ).toThrow(/redaction/);
+
+    expect(() =>
+      checkRedaction(fogFixtureEffectsLeakCorrect, {
+        maxPlies: 5,
+        runs: 10,
+        secretExtractor: fogEffectsLeakSecretExtractor,
+      })
+    ).not.toThrow();
+  });
+
+  it("mutantFogEffectsLeak's `secret` FIELD is itself correctly omitted pre-reveal — the leak is isolated to lastEffects", () => {
+    const state = mutantFogEffectsLeak.setup(1, { next: () => 0.5, int: () => 41, shuffle: (xs) => [...xs] });
+    const peeked = mutantFogEffectsLeak.apply(state, new Map([[0, { kind: "peek" as const }]]), {
+      next: () => 0.5,
+      int: () => 0,
+      shuffle: (xs) => [...xs],
+    });
+    const view = mutantFogEffectsLeak.playerView(peeked, 0) as unknown as Record<string, unknown>;
+    expect("secret" in view).toBe(false);
+    // ...yet the secret is recoverable from lastEffects alone.
+    expect(JSON.stringify(view)).toContain(String(peeked.secret));
   });
 
   // M1 review finding 4 / gap G-10: the ORIGINAL checkLegalityCoherence only asserted
