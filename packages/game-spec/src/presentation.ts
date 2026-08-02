@@ -61,11 +61,20 @@ export interface GamePresentation<
 > {
   Board: ComponentType<BoardProps<V, M>>;
   announce(ev: GameEvent<V>): string;
+  /**
+   * ARRAY, not a single entry (platform-corrections.md, folded in while this shape is still
+   * pre-freeze — M1 review finding 5): games have more than one teachable "first" (e.g. the
+   * first crumble AND the first near-miss decay warning both deserve a one-time callout), and
+   * a single slot could only ever key one of them. Each entry's `flagKey` is independent —
+   * it namespaces that entry's own once-per-device "seen it" flag, so triggering one entry
+   * never suppresses another.
+   */
   firstOccurrence?: {
+    flagKey: string;
     trigger(ev: GameEvent<V>): boolean;
     text: string;
     anchor(ev: GameEvent<V>): Json;
-  };
+  }[];
   /** Emoji move-timeline BODY only; shell owns the frame. Solo games get the certificate
    *  handed alongside by the shell (par lives in the header) — the artifact body may diff
    *  the player's log against solver values (🟩🟨🟥 struggle-shape) offline. */
