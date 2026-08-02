@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./testkit": "./testkit/contract.ts",
+    "./testkit/checks": "./testkit/checks.ts",
     "./testkit/fixtures/*": "./testkit/fixtures/*.ts"
   },
   "scripts": {

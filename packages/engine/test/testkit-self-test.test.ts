@@ -8,12 +8,13 @@ import { describe, expect, it } from "vitest";
 import {
   checkDeterminism,
   checkEncodeDecodeAndEffects,
+  checkLegalityCoherence,
   checkPurity,
   checkRedaction,
   checkScoreCoherence,
   checkStatusDiscipline,
   checkTermination,
-} from "../testkit/contract";
+} from "../testkit/checks";
 import {
   fogFixtureCorrect,
   fogSecretExtractor,
@@ -21,12 +22,14 @@ import {
   mutantEffectsAccumulate,
   mutantEncodeIncludesEffects,
   mutantFogLeak,
+  mutantIsLegalAlwaysTrue,
   mutantMathRandomLeak,
   mutantMutatesInput,
   mutantNonTerminating,
   mutantScoreDisagreesWithTerminal,
   mutantSoloEmitsDraw,
 } from "./mutants/mutants";
+import { classicTicTacToe } from "../testkit/fixtures/classic-ttt";
 
 describe("testkit self-test: every mutant fails exactly the property it targets", () => {
   it("mutantMutatesInput fails checkPurity", () => {
@@ -83,6 +86,21 @@ describe("testkit self-test: every mutant fails exactly the property it targets"
     expect(() =>
       checkRedaction(fogFixtureCorrect, { maxPlies: 5, runs: 10, secretExtractor: fogSecretExtractor })
     ).not.toThrow();
+  });
+
+  // M1 review finding 4 / gap G-10: the ORIGINAL checkLegalityCoherence only asserted
+  // legalMoves(s,p) ⊆ isLegal-accepted (⇒), never that isLegal rejects everything else (⇐).
+  // An `isLegal: () => true` engine passed the whole contract suite under that one-sided
+  // check. This proves the (now bidirectional) property actually catches it, while the
+  // healthy fixture it's based on still passes.
+  it("mutantIsLegalAlwaysTrue fails checkLegalityCoherence (the reverse direction: isLegal must reject non-members too)", () => {
+    expect(() => checkLegalityCoherence(mutantIsLegalAlwaysTrue, { maxPlies: 9, runs: 5 })).toThrow(
+      /legality-coherence/
+    );
+  });
+
+  it("the healthy classic-ttt fixture passes checkLegalityCoherence in both directions", () => {
+    expect(() => checkLegalityCoherence(classicTicTacToe, { maxPlies: 9, runs: 5 })).not.toThrow();
   });
 });
 

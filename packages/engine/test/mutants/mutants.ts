@@ -189,7 +189,23 @@ export const mutantEffectsAccumulate: GameEngine<TTTState, TTTMove, TTTState> = 
 };
 
 // -----------------------------------------------------------------------------------------
-// 9. Fog-leak pair — a minimal hidden-info toy engine (guess-the-number-adjacent) with a
+// 9. isLegal too permissive — classic-ttt variant whose isLegal() accepts every move
+//    regardless of legalMoves(). legalMoves() ⊆ isLegal-accepted still holds trivially (every
+//    legal move IS accepted, since everything is), so the ORIGINAL one-directional
+//    legalityCoherence check missed this entirely (M1 review finding 4 / gap G-10). replay()
+//    and future server-side validation trust isLegal alone to refuse forged moves; this
+//    mutant models an engine that would silently accept a fabricated/corrupt move log.
+// -----------------------------------------------------------------------------------------
+export const mutantIsLegalAlwaysTrue: GameEngine<TTTState, TTTMove, TTTState> = {
+  ...classicTicTacToe,
+  isLegal(_state, _player, _move) {
+    // BUG: accepts everything, including foreign-seat moves and already-occupied cells.
+    return true;
+  },
+};
+
+// -----------------------------------------------------------------------------------------
+// 10. Fog-leak pair — a minimal hidden-info toy engine (guess-the-number-adjacent) with a
 //    correct redacting playerView and a leaky variant that forgets to redact an effect.
 //    Needed because none of the three named testkit fixtures are hiddenInformation:true, but
 //    the redaction property (and its DoD test) needs a real fog engine to exercise against.
