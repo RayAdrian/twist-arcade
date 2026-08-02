@@ -21,6 +21,15 @@ export interface BoardContextValue {
   registerCell(cellId: string, reg: CellRegistration): () => void;
   /** Moves the roving-tabindex cursor AND real DOM focus to (row, col), clamped to bounds. */
   moveCursor(row: number, col: number): void;
+  /** Resolves a registered cell's DOM element by id — used by CalloutLayer to anchor a
+   *  first-occurrence callout at the cell the game names (plan §6.3's anchor-resolution
+   *  convention). Returns undefined for an unregistered id (the cell vanished, or the game
+   *  passed something that was never a real cellId) — CalloutLayer degrades to the board's
+   *  top edge in that case, never throwing. */
+  getCellElement(cellId: string): HTMLElement | undefined;
+  /** The board grid's own container element, used as CalloutLayer's degraded fallback
+   *  anchor ("the board's top edge") when a named cellId isn't registered. */
+  boardEl: HTMLElement | null;
   /** Requests a commit for `cellId`. `actionAt` is the instant the GESTURE began (pointerdown
    *  for pointer input, the keydown instant for keyboard) — NOT necessarily "now", since a
    *  drag can complete after a lockout window closes but must still be judged by when it

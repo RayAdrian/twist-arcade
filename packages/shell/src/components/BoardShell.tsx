@@ -17,6 +17,10 @@ export interface BoardShellProps {
    *  dropped even if it completes later (plan §4.4/§7 — the 250ms post-state-change lockout). */
   lockedUntil?: number;
   reducedMotion?: boolean;
+  /** Rendered as an absolutely-positioned sibling over the grid, still inside
+   *  BoardContext.Provider — this is the slot CalloutLayer (plan §4.15) is meant to fill,
+   *  since it needs the same cell registry the board itself uses to resolve anchors. */
+  overlay?: ReactNode;
   children: ReactNode;
 }
 
@@ -28,11 +32,13 @@ export function BoardShell({
   boardLabel,
   lockedUntil = 0,
   reducedMotion = false,
+  overlay,
   children,
 }: BoardShellProps) {
   const [cursor, setCursor] = useState({ row: 0, col: 0 });
   const registryRef = useRef(new Map<string, CellRegistration>());
   const byPosRef = useRef(new Map<string, string>()); // "row,col" -> cellId
+  const [boardEl, setBoardEl] = useState<HTMLElement | null>(null);
 
   function moveCursor(row: number, col: number) {
     const clampedRow = Math.max(0, Math.min(rows - 1, row));
@@ -79,6 +85,10 @@ export function BoardShell({
         };
       },
       moveCursor,
+      getCellElement(cellId: string): HTMLElement | undefined {
+        return registryRef.current.get(cellId)?.el;
+      },
+      boardEl,
       commit(cellId: string, actionAt: number, cellDisabled?: boolean) {
         if (disabled || cellDisabled) return;
         if (actionAt < lockedUntil) return; // dropped silently — plan §4.4/§7
@@ -88,7 +98,7 @@ export function BoardShell({
     // `moveCursor` is intentionally omitted: it's a plain function recreated every render
     // (not memoized) that only closes over `rows`/`cols`/`byPosRef`/`registryRef`, all of
     // which are otherwise already covered by this same dependency list or are stable refs.
-    [rows, cols, disabled, reducedMotion, cursor, lockedUntil, onCellAction]
+    [rows, cols, disabled, reducedMotion, cursor, lockedUntil, onCellAction, boardEl]
   );
 
   // ARIA's grid pattern requires role="gridcell" to be a child of role="row" (axe:
@@ -102,26 +112,29 @@ export function BoardShell({
 
   return (
     <BoardContext.Provider value={contextValue}>
-      <div
-        role="grid"
-        aria-label={boardLabel}
-        aria-rowcount={rows}
-        aria-colcount={cols}
-        onKeyDown={onKeyDown}
-        style={{
-          width: "min(calc(100vw - 32px), 52svh)",
-          aspectRatio: "1 / 1",
-          display: "grid",
-          gridTemplateColumns: `repeat(${cols}, 1fr)`,
-          gridTemplateRows: `repeat(${rows}, 1fr)`,
-        }}
-        className="mx-auto gap-1"
-      >
-        {Array.from({ length: rows }, (_, r) => (
-          <div key={r} role="row" aria-rowindex={r + 1} style={{ display: "contents" }}>
-            {flatCells.slice(r * cols, r * cols + cols)}
-          </div>
-        ))}
+      <div className="relative mx-auto" style={{ width: "min(calc(100vw - 32px), 52svh)" }}>
+        <div
+          ref={setBoardEl}
+          role="grid"
+          aria-label={boardLabel}
+          aria-rowcount={rows}
+          aria-colcount={cols}
+          onKeyDown={onKeyDown}
+          style={{
+            aspectRatio: "1 / 1",
+            display: "grid",
+            gridTemplateColumns: `repeat(${cols}, 1fr)`,
+            gridTemplateRows: `repeat(${rows}, 1fr)`,
+          }}
+          className="gap-1"
+        >
+          {Array.from({ length: rows }, (_, r) => (
+            <div key={r} role="row" aria-rowindex={r + 1} style={{ display: "contents" }}>
+              {flatCells.slice(r * cols, r * cols + cols)}
+            </div>
+          ))}
+        </div>
+        {overlay}
       </div>
     </BoardContext.Provider>
   );
