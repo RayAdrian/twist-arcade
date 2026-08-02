@@ -87,6 +87,55 @@ repeat, so `encode` is a sound key and the generic dedup works directly.
 
 ---
 
+## C4 — `decode` must throw on malformed input, never return a partial state
+
+**Milestone: contract ruling now; enforcement property in M2. Severity: contract decision.**
+
+*Raised by: the M1 re-review (gap G-7). Ruled by the orchestrator 2026-08-03.*
+
+The plan never said what `decode` does with input that is not a valid encoding of that
+game's state. Crackstep and Mine Run are both registered and would each answer it
+differently, and divergence here gets expensive once games ship.
+
+**Ruling:** `decode(x)` either returns a state satisfying the engine's own invariants, or
+it **throws a typed error**. It must never return a partially-constructed, type-unsound,
+or silently-defaulted state.
+
+The reason is the trust boundary, not tidiness. `decode` feeds `replay()` and
+`verifyCertificate` — the two places where the platform decides whether a submitted move
+log or a shipped daily is genuine. A `decode` that quietly accepts garbage and returns a
+plausible-looking state means a forged record can validate. That failure is invisible: no
+exception, no red test, just a bad record treated as good.
+
+Scope for now: every game's `decode` honours this. Full schema validation and a testkit
+property that plants malformed encodings land in M2 — the ruling binds today so nobody
+writes a lenient `decode` in the meantime.
+
+---
+
+## M2 entry checklist (from the M1 re-review's deferrals)
+
+Conditions attached to approving M1 with these gaps open. Each names the point at which it
+stops being deferrable:
+
+- **G-2 (encode injectivity) and G-9 (`Map`-mutation purity blind spot) — before the first
+  game team's contract gate runs.** G-9 is the likeliest real-bug catcher of the set:
+  mutating the `moves` Map is an easy mistake, and a collision-prone `encode` breaks solver
+  dedup silently.
+- **G-6 (`replay()` ignores `gameId`/`gameVersion`) — before any engine version bump**, so
+  a replay can never be validated against the wrong game or the wrong rules. The
+  certificate boundary already validates both; `replay()` itself does not.
+- **G-4 (NaN/Infinity encode as `null`) — early in M2**, before games generate real states.
+  Tightening later cannot orphan valid replays, since anything containing NaN was never
+  JSON-plain to begin with.
+- **G-14 — accepted deviation**, with two conditions: fix `checkDeterminism`'s undocumented
+  default of 10 to match the documented 20, and have M3's CI gate configs pass an explicit
+  `runs` (≥100) rather than relying on defaults.
+- **G-12 (`ruleSentence` assertion home) — re-scoped to M5 template tests**, recorded so the
+  decision is not silently lost.
+
+---
+
 ## Related, already routed to their owning teams
 
 - **`firstOccurrence` becomes an array** (shell). Games have more than one teachable
