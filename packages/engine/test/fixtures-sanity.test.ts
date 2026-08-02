@@ -88,7 +88,17 @@ describe("bank-run sanity", () => {
     record = appendStep(record, new Map([[0, { kind: "bank" }]]));
     const result = replay(bankRun, record);
     expect(result.status.kind).toBe("scored");
-    // score() at every reachable state must equal banked exactly.
+    // score() at every reachable state must equal banked exactly — but this alone is
+    // satisfied trivially by an engine that discards the streak on every push AND every
+    // bank (banked stays 0 the whole way, and score() === banked === 0 throughout). M1
+    // review finding 6: pin the actual COMMITTED value under this real seed (seed
+    // "bank-run-commit-seed" busts push 1 then succeeds push 2 under the real rngFor
+    // stream — computed via replay(), not stubbed — so exactly one point banks), so a
+    // banking-is-a-no-op regression is caught even though the per-state score/banked
+    // equality above would not catch it.
+    if (result.status.kind === "scored") {
+      expect(result.status.scores).toEqual([1]);
+    }
     for (const s of result.states) {
       expect(bankRun.score?.(s, 0)).toBe(s.banked);
     }
