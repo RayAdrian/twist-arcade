@@ -13,6 +13,7 @@ import type { ContractOptions } from "./checks";
 import {
   checkDeterminism,
   checkEncodeDecodeAndEffects,
+  checkEncodeInjectivity,
   checkLegalityCoherence,
   checkPerfectInfoIdentity,
   checkPlayerViewTotal,
@@ -55,6 +56,10 @@ export function engineContract<S extends WithEffects, M extends Json, V extends 
         checkEncodeDecodeAndEffects(engine, opts);
       }
     );
+
+    it("encode() is injective: logically distinct states never share an encoded string", () => {
+      checkEncodeInjectivity(engine, opts);
+    });
 
     it("isLegal agrees with legalMoves in both directions (iff)", () => {
       checkLegalityCoherence(engine, opts);

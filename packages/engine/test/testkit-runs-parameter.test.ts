@@ -12,6 +12,7 @@
 import { describe, expect, it } from "vitest";
 import type { GameEngine, Json, Rng, WithEffects } from "../src/types";
 import {
+  checkDeterminism,
   checkEncodeDecodeAndEffects,
   checkLegalityCoherence,
   checkPerfectInfoIdentity,
@@ -66,5 +67,27 @@ describe("contract properties honor opts.runs (M1 review finding 7)", () => {
     const { wrapped, getCalls } = withSetupSpy<FogState, FogMove, FogView>(fogFixtureCorrect);
     checkRedaction(wrapped, { maxPlies: 5, runs: RUNS, secretExtractor: fogSecretExtractor, playerCounts: [1] });
     expect(getCalls()).toBe(RUNS);
+  });
+
+  it("checkDeterminism drives exactly `runs` playouts when given explicitly", () => {
+    const { wrapped, getCalls } = withSetupSpy<TTTState, TTTMove, TTTState>(classicTicTacToe);
+    checkDeterminism(wrapped, { maxPlies: 9, runs: RUNS, playerCounts: [2] });
+    // checkDeterminism calls randomPlayout TWICE per run (the "a" and "b" trajectories) PLUS
+    // one more setup() call inside its replay()-cross-check, so setup() is called 3x per run.
+    expect(getCalls()).toBe(RUNS * 3);
+  });
+});
+
+// Gap G-14 (M2 entry checklist, platform-corrections.md): ContractOptions.runs's docstring
+// says "default: 20", and checkTermination/checkEncodeDecodeAndEffects/etc. all honor that —
+// but checkDeterminism alone defaulted to `opts.runs ?? 10`, silently sampling at half the
+// documented rate whenever a caller omitted `runs`. Fixed to match the documented default.
+describe("checkDeterminism's default `runs` matches the documented default of 20 (Gap G-14)", () => {
+  it("checkDeterminism with no `runs` option drives exactly 20 playouts per player count", () => {
+    const { wrapped, getCalls } = withSetupSpy<TTTState, TTTMove, TTTState>(classicTicTacToe);
+    checkDeterminism(wrapped, { maxPlies: 9, playerCounts: [2] });
+    // 3x per run (the "a"/"b" trajectories plus the internal replay() cross-check) — 20 runs
+    // ⇒ 60 setup() calls.
+    expect(getCalls()).toBe(60);
   });
 });

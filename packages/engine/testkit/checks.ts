@@ -159,9 +159,16 @@ function playerCountsFor<S extends WithEffects, M extends Json, V extends WithEf
 // Property check functions — each throws ContractViolation on failure.
 // ---------------------------------------------------------------------------------------
 
-/** Purity: apply() must not mutate its `state` or `moves` arguments. Detected by deep-
- *  freezing the input before calling apply(); a mutation attempt throws a TypeError in
- *  strict mode (ESM modules are always strict), which we re-surface as a ContractViolation. */
+/** Purity: apply() must not mutate its `state` or `moves` arguments. `state` (and each move
+ *  VALUE placed into the map) is caught by deep-freezing: a mutation attempt throws a
+ *  TypeError in strict mode (ESM modules are always strict), re-surfaced as a
+ *  ContractViolation. The `moves` Map OBJECT itself is a separate case (M2 entry checklist
+ *  Gap G-9): `Object.freeze(aMap)` does NOT stop `aMap.set()`/`.clear()`/`.delete()`, because
+ *  a Map's storage lives in internal slots, not enumerable own properties visible to
+ *  `Object.freeze`/`Object.keys`. So freezing alone is a blind spot for engines that mutate
+ *  their `moves` argument in place. Guarded instead by snapshotting the map's entries before
+ *  the call and diffing them against the same (still-live) Map reference afterward — the
+ *  only way that diff differs is if `apply()` itself mutated it. */
 export function checkPurity<S extends WithEffects, M extends Json, V extends WithEffects>(
   engine: GameEngine<S, M, V>,
   opts: ContractOptions = {}
@@ -181,6 +188,7 @@ export function checkPurity<S extends WithEffects, M extends Json, V extends Wit
         movesMap.set(p, deepFreeze(legal[0]!));
       }
       if (movesMap.size === 0) break;
+      const movesSnapshotBefore = canonical(Array.from(movesMap.entries()));
       let next: S;
       try {
         next = engine.apply(state, movesMap, rngFor(seed, ply));
@@ -192,6 +200,16 @@ export function checkPurity<S extends WithEffects, M extends Json, V extends Wit
           );
         }
         throw err;
+      }
+      const movesSnapshotAfter = canonical(Array.from(movesMap.entries()));
+      if (movesSnapshotBefore !== movesSnapshotAfter) {
+        throw new ContractViolation(
+          "purity",
+          `apply() mutated its \`moves\` Map argument at ply ${ply}: entries were ` +
+            `${movesSnapshotBefore} before the call and ${movesSnapshotAfter} after — apply() ` +
+            "MUST NOT mutate any input, including the moves Map itself (Object.freeze cannot " +
+            "guard a Map's internal slots, so this must be checked by snapshot comparison)."
+        );
       }
       state = deepFreeze(next);
     }
@@ -228,7 +246,11 @@ export function checkDeterminism<S extends WithEffects, M extends Json, V extend
   opts: ContractOptions = {}
 ): void {
   const maxPlies = opts.maxPlies ?? 200;
-  const runs = opts.runs ?? 10;
+  // Gap G-14 (M2 entry checklist, platform-corrections.md): ContractOptions.runs's docstring
+  // says "default: 20" (matching every other property in this file) — checkDeterminism alone
+  // defaulted to 10, silently sampling at half the documented rate whenever a caller omitted
+  // `runs`. Fixed to match the documented default.
+  const runs = opts.runs ?? 20;
   for (const numPlayers of playerCountsFor(engine, opts)) {
     for (let i = 0; i < runs; i++) {
       const seed = `determinism-${numPlayers}-${i}`;
@@ -364,6 +386,57 @@ export function checkEncodeDecodeAndEffects<
             `apply()'s output lastEffects depended on the INPUT state's stale lastEffects at ` +
               `step ${k} (${realEffects} vs ${inflatedEffects}) — effects must be fully ` +
               "overwritten every apply(), never appended to."
+          );
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Encode injectivity (M2 entry checklist Gap G-2): distinct logical states (i.e. states that
+ * differ in any field OTHER than `lastEffects`, which `encode` deliberately excludes) must
+ * produce DISTINCT `encode()` strings. Plan §3: "solvers hash on this" — a collision-prone
+ * (or outright constant) `encode` would silently mis-value every future solve, and neither
+ * the canonical-form property (`encode(decode(encode(s))) === encode(s)`, trivially true for
+ * a constant function) nor `checkDeterminism` (which compares trajectories via `encode()`
+ * itself, so a constant encode "matches" vacuously) can catch it. Detected here directly:
+ * collect encode() -> logical-form pairs across many playout states and refuse if any two
+ * DIFFERENT logical states ever share the same encoded string.
+ */
+export function checkEncodeInjectivity<S extends WithEffects, M extends Json, V extends WithEffects>(
+  engine: GameEngine<S, M, V>,
+  opts: ContractOptions = {}
+): void {
+  const maxPlies = opts.maxPlies ?? 200;
+  const runs = opts.runs ?? 20;
+  const seenLogicalByEncoding = new Map<string, string>();
+  for (const numPlayers of playerCountsFor(engine, opts)) {
+    for (let run = 0; run < runs; run++) {
+      const { states } = randomPlayout(
+        engine,
+        `encode-injectivity-${numPlayers}-${run}`,
+        numPlayers,
+        maxPlies
+      );
+      for (const state of states) {
+        const enc = engine.encode(state);
+        // `lastEffects` is deliberately excluded from encode()'s canonical form (plan §3.2),
+        // so it must also be excluded from the "logical state" this property compares —
+        // otherwise this property would wrongly demand encode() to distinguish states that
+        // are ONLY allowed to collide.
+        const rest: Record<string, unknown> = { ...(state as unknown as Record<string, unknown>) };
+        delete rest.lastEffects;
+        const logical = canonical(rest);
+        const seenLogical = seenLogicalByEncoding.get(enc);
+        if (seenLogical === undefined) {
+          seenLogicalByEncoding.set(enc, logical);
+        } else if (seenLogical !== logical) {
+          throw new ContractViolation(
+            "encode-injectivity",
+            `encode() produced the SAME string ${JSON.stringify(enc)} for two logically ` +
+              `DISTINCT states (${seenLogical} vs ${logical}). Solvers hash on encode(S) — a ` +
+              "collision silently mis-values every future solve/replay-dedup."
           );
         }
       }
@@ -630,6 +703,7 @@ export function runAllProperties<S extends WithEffects, M extends Json, V extend
   checkTermination(engine, opts);
   checkDeterminism(engine, opts);
   checkEncodeDecodeAndEffects(engine, opts);
+  checkEncodeInjectivity(engine, opts);
   checkLegalityCoherence(engine, opts);
   checkPlayerViewTotal(engine, opts);
   checkPerfectInfoIdentity(engine, opts);
