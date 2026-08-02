@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "check:engine-purity": "node scripts/check-engine-purity.mjs",
     "dev": "next dev",
     "build": "next build"
   },

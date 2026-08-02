@@ -32,5 +32,13 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Engine dependency purity check
+        run: pnpm check:engine-purity
+        # Scoped rule (plan §13 DoD, amended 2026-08-02): packages/engine must have zero
+        # runtime dependencies and never import react/react-dom/next. This is NOT a
+        # repo-wide ban — @twist-arcade/shell (a future UI package) is explicitly permitted
+        # to depend on React for real; only packages/engine is constrained. See
+        # scripts/check-engine-purity.mjs.
+
       # Harness CI suites (packages/harness) and the size-limit budget check land in M3/M4;
-      # this workflow is the M0 skeleton only — typecheck -> lint -> test.
+      # this workflow is the M0 skeleton only — typecheck -> lint -> test -> engine purity.
