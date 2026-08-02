@@ -59,6 +59,55 @@ if (!failed) {
   console.log("✓ packages/engine/{src,testkit} import no framework code (react/react-dom/next)");
 }
 
+// 3. No file under packages/engine/src (the SHIPPED runtime surface — not testkit/, which
+// legitimately depends on vitest for its adapter, contract.ts, a separate documented
+// exception) may import a bare (non-relative, non-node-builtin) specifier that isn't
+// declared in package.json#dependencies. Without this, `import fc from "fast-check"` in
+// src/ would pass checks 1-2 above AND pass `pnpm typecheck`/`pnpm test` (fast-check is a
+// real, installed devDependency here) — then break every real consumer at runtime, since
+// devDependencies are not installed for consumers of the published package.
+const bareSpecifierPattern = /\bfrom\s+["']([^"']+)["']|^\s*import\s+["']([^"']+)["']/gm;
+
+function isRelativeSpecifier(specifier) {
+  return specifier.startsWith("./") || specifier.startsWith("../");
+}
+
+function isNodeBuiltin(specifier) {
+  return specifier.startsWith("node:");
+}
+
+function packageNameOf(specifier) {
+  if (specifier.startsWith("@")) {
+    return specifier.split("/").slice(0, 2).join("/");
+  }
+  return specifier.split("/")[0];
+}
+
+const engineSrcOnlyDir = join(repoRoot, "packages/engine/src");
+let bareImportViolationFound = false;
+walk(engineSrcOnlyDir, (file) => {
+  const contents = readFileSync(file, "utf8");
+  bareSpecifierPattern.lastIndex = 0;
+  let match;
+  while ((match = bareSpecifierPattern.exec(contents)) !== null) {
+    const specifier = match[1] ?? match[2];
+    if (!specifier || isRelativeSpecifier(specifier) || isNodeBuiltin(specifier)) continue;
+    const pkgName = packageNameOf(specifier);
+    if (!depNames.includes(pkgName)) {
+      bareImportViolationFound = true;
+      fail(
+        `${file.replace(repoRoot, "")} imports "${specifier}" — not declared in ` +
+          "packages/engine/package.json#dependencies (a bare import from src/ must be a real " +
+          "runtime dependency; a devDependency imported directly from src/ would pass " +
+          "typecheck/tests here but break every real consumer at runtime)"
+      );
+    }
+  }
+});
+if (!bareImportViolationFound) {
+  console.log("✓ packages/engine/src imports no undeclared bare (non-relative) package");
+}
+
 if (failed) {
   console.error(
     "\nNote: this check is scoped to packages/engine ONLY. Other packages (e.g. a future " +
