@@ -51,6 +51,27 @@ export default tseslint.config(
     rules: purityRules,
   },
   {
+    // Purity boundary, bots edition: search algorithms (mcts/minimax/beam/flat-mc/tiers/
+    // probes) must be as deterministic as the engines they search — all randomness through
+    // the injected Rng, all timing through the injected Clock (plan §6: "bots may not touch
+    // Date.now()"). Scoped to src/ only (not test/), and excludes src/worker/** — the worker
+    // HOST is the one place that constructs a REAL Clock to hand to policies at runtime, and
+    // that construction legitimately reads the wall clock (see the override below).
+    files: ["packages/bots/src/**/*.ts"],
+    rules: purityRules,
+  },
+  {
+    // The worker host's real Clock implementation (`{ now: () => Date.now() }`) and its
+    // deadline-based time-boxing loop are the one sanctioned wall-clock read in this
+    // package — everything downstream of it (the policies) still only ever sees the
+    // injected Clock, never Date.now() directly.
+    files: ["packages/bots/src/worker/**/*.ts"],
+    rules: {
+      "no-restricted-globals": "off",
+      "no-restricted-properties": "off",
+    },
+  },
+  {
     // Test files get a relaxed no-explicit-any (vitest/fast-check plumbing sometimes needs it).
     files: ["**/*.test.ts", "**/*.test.tsx"],
     rules: {
