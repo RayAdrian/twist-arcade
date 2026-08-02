@@ -10,7 +10,7 @@ import { stableStringify } from "../../src/encode";
 import type { TTTMove, TTTState } from "../../testkit/fixtures/classic-ttt";
 import { classicTicTacToe } from "../../testkit/fixtures/classic-ttt";
 import type { BankRunMove, BankRunState } from "../../testkit/fixtures/bank-run";
-import { createBankRun } from "../../testkit/fixtures/bank-run";
+import { bankRun, createBankRun } from "../../testkit/fixtures/bank-run";
 import type { CrackstepMove, CrackstepState } from "../../testkit/fixtures/mini-crackstep";
 import { miniCrackstep } from "../../testkit/fixtures/mini-crackstep";
 
@@ -185,6 +185,46 @@ export const mutantEffectsAccumulate: GameEngine<TTTState, TTTMove, TTTState> = 
     const real = classicTicTacToe.apply(state, moves, rng);
     // BUG: folds the input's stale lastEffects into the output instead of overwriting.
     return { ...real, lastEffects: [...state.lastEffects, ...real.lastEffects] };
+  },
+};
+
+// -----------------------------------------------------------------------------------------
+// 8b. status unstable under encode/decode — classic-ttt variant whose status() at a `draw`
+//     depends on whether lastEffects is populated. decode() always resets lastEffects to []
+//     (plan §3.2), so status(decode(encode(s))) diverges from status(s) exactly at a draw:
+//     the live state (real lastEffects) reports `draw`, the decoded/rehydrated state (empty
+//     lastEffects) reports `ongoing`. This is the async-refetch failure class (M1 review
+//     finding 8 / gap G-3): a client reloading mid-game from stored state would see a
+//     different outcome than the live session did. Narrowly scoped to the draw branch only,
+//     so it does not also trip termination (live playouts never call status() on a decoded
+//     state, so this never fires during a normal playout — only inside the encode/decode
+//     check, which explicitly compares status(state) vs status(decode(encode(state)))).
+// -----------------------------------------------------------------------------------------
+export const mutantStatusUnstableUnderEncodeDecode: GameEngine<TTTState, TTTMove, TTTState> = {
+  ...classicTicTacToe,
+  status(state) {
+    const real = classicTicTacToe.status(state);
+    if (real.kind === "draw" && state.lastEffects.length === 0) {
+      return { kind: "ongoing" };
+    }
+    return real;
+  },
+};
+
+// -----------------------------------------------------------------------------------------
+// 8c. scored.scores.length !== numPlayers — bank-run variant that pads an extra bogus entry
+//     onto the scores array at the scored terminal. Plan §3's Status comment states
+//     `scores.length === numPlayers` as an invariant, but nothing enforced it until M1 review
+//     finding 8 / gap G-11.
+// -----------------------------------------------------------------------------------------
+export const mutantScoredWrongLength: GameEngine<BankRunState, BankRunMove, BankRunState> = {
+  ...bankRun,
+  status(state) {
+    const real = bankRun.status(state);
+    if (real.kind === "scored") {
+      return { kind: "scored", scores: [...real.scores, 99] };
+    }
+    return real;
   },
 };
 

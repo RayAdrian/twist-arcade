@@ -27,7 +27,9 @@ import {
   mutantMutatesInput,
   mutantNonTerminating,
   mutantScoreDisagreesWithTerminal,
+  mutantScoredWrongLength,
   mutantSoloEmitsDraw,
+  mutantStatusUnstableUnderEncodeDecode,
 } from "./mutants/mutants";
 import { classicTicTacToe } from "../testkit/fixtures/classic-ttt";
 
@@ -70,6 +72,26 @@ describe("testkit self-test: every mutant fails exactly the property it targets"
     expect(() =>
       checkScoreCoherence(mutantScoreDisagreesWithTerminal, { maxPlies: 20, runs: 10 })
     ).toThrow(/score-coherence/);
+  });
+
+  // M1 review finding 8 / gap G-3: "status stable under encode/decode" was named in plan §4
+  // but never implemented in the kit.
+  it("mutantStatusUnstableUnderEncodeDecode fails the status-stable-under-encode-decode property", () => {
+    // runs: 20 (not fewer) — the bug only manifests at a `draw` terminal, and a `draw` is a
+    // minority outcome under uniform-random TTT play (roughly 1-in-12); empirically the first
+    // draw among seeds "encode-2-0".."encode-2-19" appears at run 11, so 20 runs reliably
+    // exercises it.
+    expect(() =>
+      checkEncodeDecodeAndEffects(mutantStatusUnstableUnderEncodeDecode, { maxPlies: 9, runs: 20 })
+    ).toThrow(/status-stable-under-encode-decode/);
+  });
+
+  // M1 review finding 8 / gap G-11: `scored.scores.length === numPlayers` is a Status
+  // invariant stated in plan §3's comment but enforced nowhere until now.
+  it("mutantScoredWrongLength fails checkStatusDiscipline's scores.length invariant", () => {
+    expect(() =>
+      checkStatusDiscipline(mutantScoredWrongLength, { maxPlies: 20, runs: 10 })
+    ).toThrow(/status-discipline/);
   });
 
   it("mutant2PEmitsLost fails checkStatusDiscipline (two-player branch)", () => {
