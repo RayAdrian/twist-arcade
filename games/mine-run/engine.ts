@@ -14,6 +14,7 @@
 import type { ActiveSpec, Effect, GameEngine, Json, PlayerId, Rng, Status, WithEffects } from "@twist-arcade/engine";
 import { stableStringify } from "@twist-arcade/engine";
 import { countAdjacentMines, floodFrom, neighbors } from "./board";
+import { sampleConsistentState as sampleConsistentStateImpl } from "./csp";
 
 export const DEFAULT_WIDTH = 10;
 export const DEFAULT_HEIGHT = 10;
@@ -467,6 +468,15 @@ export function createMineRun(opts: CreateMineRunOptions = {}): GameEngine<MineR
 
     score(state: MineRunState, _player: PlayerId): number {
       return state.banked;
+    },
+
+    /**
+     * View-honest by construction (csp.ts never touches MineRunState/mines — it operates
+     * only on MineRunView). Powers determinized MCTS/hint (plan §4.4/O1) and its own
+     * correctness tests (test/sample-consistent-state.test.ts, test/view-honesty.test.ts).
+     */
+    sampleConsistentState(view: MineRunView, rng: Rng): MineRunState {
+      return sampleConsistentStateImpl(view, rng);
     },
   };
 
