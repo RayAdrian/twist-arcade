@@ -58,6 +58,21 @@ export default tseslint.config(
     },
   },
   {
+    // Node-executed one-off scripts (not shipped to the browser/engine/games) need the
+    // Node global environment — flat config doesn't infer this the way old .eslintrc
+    // `env: { node: true }` did.
+    files: ["scripts/**/*.mjs", "scripts/**/*.ts"],
+    languageOptions: {
+      globals: {
+        console: "readonly",
+        process: "readonly",
+        URL: "readonly",
+        __dirname: "readonly",
+        __filename: "readonly",
+      },
+    },
+  },
+  {
     // packages/engine/test/mutants/**: deliberately-broken engines used ONLY by the
     // testkit's own self-tests (test/testkit-self-test.test.ts) to prove engineContract()
     // actually catches planted bugs at RUNTIME — including one mutant whose whole point is
