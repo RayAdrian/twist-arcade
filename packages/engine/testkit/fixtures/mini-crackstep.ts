@@ -1,12 +1,21 @@
 // packages/engine/testkit/fixtures/mini-crackstep.ts
 //
 // mini-crackstep — a tiny solo PUZZLE fixture: a 3x3 crumbling-floor board (the house decay
-// mechanic in solo form). The player walks a path from cell 0 to cell 8; any cell you are
-// NOT currently on or didn't just come from crumbles and can never be revisited. Reach the
-// goal ⇒ won (winner: 0); run out of legal moves before the goal ⇒ lost. Deterministic —
-// no procedural generation, so setup()/apply() do not consume the injected rng (accepted
-// for interface uniformity only). Used by the testkit's solo-puzzle branch and by
-// `verifyCertificate` tests.
+// mechanic in solo form). The player walks a path from cell 0 to cell 8; the cell you step
+// off crumbles THE INSTANT you leave it (zero-delay decay of your own trail) and can never
+// be revisited — no backtracking, ever. Reach the goal ⇒ won (winner: 0); run out of legal
+// moves before the goal ⇒ lost. Deterministic — no procedural generation, so setup()/
+// apply() do not consume the injected rng (accepted for interface uniformity only). Used by
+// the testkit's solo-puzzle branch and by `verifyCertificate` tests.
+//
+// Design note: an earlier revision let the immediately-previous cell stay solid for one
+// extra step (so the player could "step back" once). engineContract's termination property
+// caught a real bug in that design: bouncing between two adjacent cells was ALWAYS legal
+// under that rule, so a random legal playout could loop forever and never hit the ply cap
+// naturally — exactly the zero-risk farming shape the harness's Grind probe exists to
+// catch (solo-games-lens §3.6), except here it wasn't even risky, just infinite. Zero-delay
+// decay (no backtracking at all) removes the cycle structurally: the visited set only
+// grows, so the game is bounded by the 9-cell grid and always terminates within 8 moves.
 
 import type { ActiveSpec, Effect, GameEngine, PlayerId, Rng, Status, WithEffects } from "../../src/types";
 import { stableStringify } from "../../src/encode";
@@ -38,11 +47,10 @@ function neighbors(cell: number): number[] {
   return out;
 }
 
-/** A cell is solid iff it is the current position, the immediately-previous position, or
- *  has never been visited. Anything visited earlier than that has crumbled. */
+/** A cell is crumbled iff it has ever been visited (zero-delay decay — see the design note
+ *  above). The current cell is technically "visited" too, but it is never its own
+ *  neighbor, so that never matters for legality. */
 function isCrumbled(visitOrder: readonly number[], cell: number): boolean {
-  const safe = new Set(visitOrder.slice(-2));
-  if (safe.has(cell)) return false;
   return visitOrder.includes(cell);
 }
 
@@ -93,12 +101,11 @@ export const miniCrackstep: GameEngine<CrackstepState, CrackstepMove, CrackstepS
       throw new Error(`mini-crackstep: illegal move ${stableStringify(move ?? null)}`);
     }
     const newVisitOrder = [...state.visitOrder, move.to];
-    const effects: Effect[] = [{ type: "moved", from: state.pos, to: move.to }];
-    // The cell that becomes newly crumbled this turn (if any) is the one now 3rd-from-last.
-    if (newVisitOrder.length >= 3) {
-      const justCrumbled = newVisitOrder[newVisitOrder.length - 3]!;
-      effects.push({ type: "crumbled", cell: justCrumbled });
-    }
+    // The cell you just left crumbles immediately (zero-delay decay of your own trail).
+    const effects: Effect[] = [
+      { type: "moved", from: state.pos, to: move.to },
+      { type: "crumbled", cell: state.pos },
+    ];
     return { pos: move.to, visitOrder: newVisitOrder, lastEffects: effects };
   },
 

@@ -51,13 +51,24 @@ export default tseslint.config(
     rules: purityRules,
   },
   {
-    // Test files may construct deliberately-broken mutants that reference Math.random to
-    // prove the lint rule (and the testkit) catch it — but the mutant fixtures themselves
-    // still live under packages/engine/testkit and ARE linted; only true unit test files
-    // that assert-about the rule (none yet) would be exempted here.
+    // Test files get a relaxed no-explicit-any (vitest/fast-check plumbing sometimes needs it).
     files: ["**/*.test.ts", "**/*.test.tsx"],
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
+    },
+  },
+  {
+    // packages/engine/test/mutants/**: deliberately-broken engines used ONLY by the
+    // testkit's own self-tests (test/testkit-self-test.test.ts) to prove engineContract()
+    // actually catches planted bugs at RUNTIME — including one mutant whose whole point is
+    // to leak Math.random() so the determinism property can catch it. That is a different
+    // defense than static lint and must not be blocked by it. These files are never a real
+    // game and never ship; the purity lint rule stays enforced everywhere else under
+    // packages/engine/** and games/**.
+    files: ["packages/engine/test/mutants/**/*.ts"],
+    rules: {
+      "no-restricted-globals": "off",
+      "no-restricted-properties": "off",
     },
   }
 );

@@ -28,35 +28,22 @@ describe("mini-crackstep sanity", () => {
     // 0 1 2
     // 3 4 5
     // 6 7 8
-    // Path 0 -> 3 -> 6 -> 7: after this, visited = [0,3,6,7], solid = {6,7}. Neighbors of 7
-    // are 6 (solid but already visited, so it's not a NEW destination—still blocked since
-    // it's in visitOrder... wait 6 is solid (last-2) but already visited, so it's not a
-    // legal destination per our rule (legal destinations exclude crumbled cells, but 6 is
-    // solid=not crumbled AND already visited — moving back onto it just re-adds it). Use a
-    // genuinely stuck path instead: 0 -> 3 -> 6 (corner). From 6, neighbors are 3 (visited,
-    // solid, revisit allowed structurally) and 7 (new). This fixture's rule permits stepping
-    // back onto the immediately-previous cell, so true dead ends require reaching a corner
-    // whose only neighbors have both crumbled. Use: 0->1->4->3->6: visited=[0,1,4,3,6],
-    // solid={3,6}. Neighbors of 6: 3 (solid, revisit ok) and 7 (new, ok) — still not stuck.
-    // A real dead end needs both neighbors of the current corner crumbled. Use a longer
-    // path that boxes itself in: 0->1->2->5->4->3->6->7... this reaches the goal's
-    // neighbor honestly. Given the "step back one" allowance, true stuck states are rare in
-    // a 3x3 grid — assert the simpler, unconditionally true property instead: the engine
-    // never claims `lost` while a legal move still exists (checked generically by the
-    // testkit's status-discipline + no-hidden-pass property). This test instead pins one
-    // concrete stuck construction: 0 -> 3 -> 4 -> 1 -> 2 -> 5 -> 4 is illegal (4 crumbled by
-    // then), so we just assert isLegal correctly rejects a crumbled-cell move.
-    let state = miniCrackstep.setup(1, { next: () => 0, int: () => 0, shuffle: (xs) => [...xs] });
-    const path = [3, 4, 1, 2];
-    for (const to of path) {
-      state = miniCrackstep.apply(state, new Map([[0, { to }]]), {
-        next: () => 0,
-        int: () => 0,
-        shuffle: (xs) => [...xs],
-      });
+    // Path 0 -> 1 -> 4 -> 7 -> 6 -> 3: visited = {0,1,4,7,6,3}. Cell 3's neighbors are
+    // {0,6,4} — all crumbled — and 3 !== the goal (8), so the run is stuck: lost.
+    let record: ReplayRecord = {
+      gameId: miniCrackstep.meta.id,
+      gameVersion: miniCrackstep.meta.version,
+      engineVersion: "0.1.0",
+      numPlayers: 1,
+      seed: "crackstep-dead-end",
+      steps: [],
+    };
+    for (const to of [1, 4, 7, 6, 3]) {
+      record = appendStep(record, new Map([[0, { to }]]));
     }
-    // visitOrder now [0,3,4,1,2]; cell 3 crumbled (not in last two [1,2]).
-    expect(miniCrackstep.isLegal(state, 0, { to: 3 })).toBe(false);
+    const result = replay(miniCrackstep, record);
+    expect(result.status).toEqual({ kind: "lost" });
+    expect(miniCrackstep.legalMoves(result.final, 0)).toEqual([]);
   });
 });
 
