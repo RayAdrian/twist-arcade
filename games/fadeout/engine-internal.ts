@@ -33,6 +33,39 @@ export interface RulesetConfig {
    *  not, are solid; nobody may place there (only decayTiming can make a mover's OWN doomed
    *  cell targetable, and only for that mover). */
   playThrough: boolean;
+  /**
+   * AXIS COLLAPSE, PINNED (orchestrator ruling R1 — read before touching either axis).
+   * Under playThrough=true, decayTiming governs ONLY the effect order of the mover's own
+   * overflow when it lands on their OWN doomed cell (decayed-then-placed for remove-first,
+   * placed-then-decayed for place-first) — cellIsTargetable's two branches (decayTiming's
+   * self-vacate OR playThrough's either-side) are combined with OR, and once playThrough
+   * already makes the mover's own doomed cell legal (B2's "either player" clause),
+   * decayTiming's self-vacate branch never adds a legality/outcome case that playThrough
+   * didn't already cover. Consequence: A1+B2 and A2+B2 produce byte-identical legal-move sets
+   * and byte-identical successor positions for EVERY reachable state — verified by exhaustive
+   * BFS (141,850 positions, identical graphs) and pinned by a bounded random-walk regression
+   * test in engine.test.ts ("A1+B2 vs A2+B2 equivalence"). The only observable difference is
+   * lastEffects ordering, which makes A2+B2's self-target path animation-hostile (placed(c)
+   * then decayed(c) on the SAME cell — drawing a mark on top of a live one, then fading the
+   * wrong glyph).
+   *
+   * This means the ruleset config space is 8 syntactic combinations but only 6 distinct GAMES
+   * once playThrough=true collapses the decayTiming axis. Two consequences for F2, recorded
+   * here so nobody re-derives them under time pressure:
+   *   1. The solve MUST report identical values for {A1,B2,*} and {A2,B2,*} configs — a free
+   *      solver cross-check; a divergence there means the solver is broken, not that these are
+   *      different games.
+   *   2. If a B2 (playThrough=true) variant is the one that ships, use A1's (remove-first)
+   *      effect ordering for it — strictly better for animation, and free, since the two
+   *      configs are worth exactly the same to the solve.
+   *
+   * The alternative reading — A2 overriding B2 for the mover's OWN mark specifically, so the
+   * mover's own doomed cell stays a normal overflow rather than a playThrough-eligible target
+   * — was considered and rejected: it requires a special case ("B2's either-player rule,
+   * except not for your own mark") that is harder to state in one sentence than the rule this
+   * engine implements. If a future rule change adopts that reading anyway, this collapse
+   * un-happens and must be re-verified, not assumed.
+   */
   /** C1 superko: a move whose resulting position (queues + toMove) already appears in
    *  `history` is illegal. C2 threefold: repetition is never illegal; the THIRD occurrence of
    *  the same full position (with the same player to move) is a draw. */

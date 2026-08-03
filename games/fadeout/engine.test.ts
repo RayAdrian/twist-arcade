@@ -223,6 +223,63 @@ describe("fadeout engine — decay timing (A) x playable-through (B)", () => {
 });
 
 // ---------------------------------------------------------------------------------------
+// A1+B2 vs A2+B2 equivalence — the R1 axis collapse, pinned. Under playThrough=true, decayTiming
+// is provably a no-op on legality/outcome (see RulesetConfig's AXIS COLLAPSE doc comment in
+// engine-internal.ts): a full exhaustive BFS found the two arms' 141,850-position game graphs
+// byte-identical. A bounded random walk here is the fast regression guard for that: if a future
+// change to cellIsTargetable/transition breaks the collapse, this drifts and fails loudly,
+// rather than the divergence only surfacing as an unexplained mismatch in F2's solve output.
+// ---------------------------------------------------------------------------------------
+
+describe("fadeout engine — A1+B2 vs A2+B2 equivalence (R1: 6 distinct games, not 8)", () => {
+  it("bounded random walks see identical legalMoves and identical resulting positionKey at every step", () => {
+    const engineA1 = createFadeoutEngine({ decayTiming: "remove-first", playThrough: true, repetition: "superko" });
+    const engineA2 = createFadeoutEngine({ decayTiming: "place-first", playThrough: true, repetition: "superko" });
+    const asMultiset = (effects: FadeoutState["lastEffects"]) =>
+      [...effects].map((e) => `${e.type}:${e.player}:${e.cell}`).sort();
+
+    let totalPlies = 0;
+    // Many independent games, not one long walk: a 3x3 board frequently resolves in well under
+    // 20 plies (a win or a superko-exhaustion loss), so a single walk can't be relied on to
+    // exercise much of the graph — summing across games gives a meaningful sample instead.
+    for (let game = 0; game < 25; game++) {
+      const seed = `a1-a2-collapse-${game}`;
+      const picker = rngFromSeed(`${seed}:picker`);
+      let s1 = engineA1.setup(2, rngForSetup(seed));
+      let s2 = engineA2.setup(2, rngForSetup(seed));
+
+      for (let ply = 0; ply < 300; ply++) {
+        const status1 = engineA1.status(s1);
+        const status2 = engineA2.status(s2);
+        expect(status2).toEqual(status1);
+        if (status1.kind !== "ongoing") break;
+
+        const legal1 = engineA1.legalMoves(s1, s1.toMove).map((m) => m.cell).sort((a, b) => a - b);
+        const legal2 = engineA2.legalMoves(s2, s2.toMove).map((m) => m.cell).sort((a, b) => a - b);
+        expect(legal2).toEqual(legal1); // identical legal-move sets, per the collapse claim
+        expect(legal1.length).toBeGreaterThan(0); // "ongoing" guarantees at least one legal move
+
+        const cell = legal1[picker.int(legal1.length)]!;
+        s1 = apply(engineA1, s1, s1.toMove, cell, seed, ply);
+        s2 = apply(engineA2, s2, s2.toMove, cell, seed, ply);
+        totalPlies++;
+
+        expect(positionKey(s2)).toBe(positionKey(s1)); // identical successor position
+
+        // Effects can legitimately differ in ORDER (that's the whole point — see the doc
+        // comment) but never in which (type, player, cell) triples occur.
+        expect(asMultiset(s2.lastEffects)).toEqual(asMultiset(s1.lastEffects));
+      }
+    }
+
+    // Sanity: the walks collectively explored a meaningful number of plies rather than every
+    // game ending immediately — a suite of walks that all exit on ply 0 would vacuously "pass"
+    // every assertion above without ever exercising the collapse.
+    expect(totalPlies).toBeGreaterThan(100);
+  });
+});
+
+// ---------------------------------------------------------------------------------------
 // longestLife — regression guard for the R2 redefinition (plies survived on the board, not
 // "own placements survived"). The old metric was provably confined to {0, cap, cap-1} = {0, 2,
 // 3}; this sweep proves the new one is NOT, so a future refactor that accidentally reverts to
