@@ -88,6 +88,7 @@ describe("C2 — gate table selection by manifest.solo.format, never by player c
       "generatorRejectionRate",
       "dayOverDayDrift",
       "certifiedBufferDays",
+      "fogDeductionOnly",
     ]) {
       const row = byName.get(name);
       expect(row).toBeDefined();
@@ -292,5 +293,33 @@ describe("daily-puzzle gate thresholds (docs/plans/crackstep.md §5)", () => {
       puzzle: { ...healthyPuzzleInputs, dayOverDayDriftSigma: 2.1 },
     });
     expect(results.find((r) => r.name === "dayOverDayDrift")?.status).toBe("fail");
+  });
+
+  // C11: fog dailies must be rejected unless deduction-only. `certifyDay` now enforces this
+  // (certify.test.ts), and this gate row is the reporting side — before C11 the concern was
+  // *silently omitted* from both gate tables rather than reported n/a (C2's own standard).
+  it("reports fogDeductionOnly as n/a (with a reason) for a non-fog puzzle — healthyPuzzleInputs never mentions fog", () => {
+    const results = evaluateSoloGates({ manifest: puzzleManifest(), puzzle: healthyPuzzleInputs });
+    const row = results.find((r) => r.name === "fogDeductionOnly")!;
+    expect(row.status).toBe("n/a");
+    expect(row.detail).toMatch(/non-fog|not.*fog/i);
+  });
+
+  it("passes fogDeductionOnly for a fog puzzle whose certified day was solved by deduction alone", () => {
+    const results = evaluateSoloGates({
+      manifest: puzzleManifest(),
+      puzzle: { ...healthyPuzzleInputs, fogDeductionOnly: true },
+    });
+    expect(results.find((r) => r.name === "fogDeductionOnly")?.status).toBe("pass");
+  });
+
+  it("fails fogDeductionOnly for a fog puzzle whose certified day required a guess", () => {
+    const results = evaluateSoloGates({
+      manifest: puzzleManifest(),
+      puzzle: { ...healthyPuzzleInputs, fogDeductionOnly: false },
+    });
+    const row = results.find((r) => r.name === "fogDeductionOnly")!;
+    expect(row.status).toBe("fail");
+    expect(allGatesPass(results)).toBe(false);
   });
 });

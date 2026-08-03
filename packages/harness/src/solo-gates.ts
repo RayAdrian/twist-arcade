@@ -60,6 +60,14 @@ export interface SoloGatePuzzleInputs {
    *  gate reports "n/a" with that reason, not a format exclusion either. */
   dayOverDayDriftSigma?: number;
   certifiedBufferDays: number;
+  /** platform-corrections.md C11: undefined for a non-fog (perfect-information) puzzle — the
+   *  gate reports "n/a" with that reason (not a format exclusion; a fog vs. non-fog puzzle
+   *  are both `daily-puzzle` format). For a fog (hidden-information) puzzle this MUST be
+   *  supplied: `true` iff the certified day's `DailyCertificate.guessFree` was true (solved
+   *  by deduction alone), `false` if the certified day required a guess — which `certifyDay`
+   *  now refuses to certify in the first place, so a `false` here means the certify-time
+   *  rejection was bypassed or this report is stale. */
+  fogDeductionOnly?: boolean;
 }
 
 export interface EvaluateSoloGatesInput {
@@ -184,7 +192,8 @@ function evaluateChaseGates(inputs: SoloGateChaseInputs, t: SoloThresholds): Gat
     na("forcedMoveFraction", "score-chase format — no optimal solve path to measure"),
     na("generatorRejectionRate", "score-chase format — no certify-time generator"),
     na("dayOverDayDrift", "score-chase format — no daily difficulty band"),
-    na("certifiedBufferDays", "score-chase format — no certificate buffer to deplete")
+    na("certifiedBufferDays", "score-chase format — no certificate buffer to deplete"),
+    na("fogDeductionOnly", "score-chase format — no daily certificate, no guess-free requirement to check")
   );
 
   return results;
@@ -249,6 +258,20 @@ function evaluatePuzzleGates(inputs: SoloGatePuzzleInputs, t: SoloThresholds): G
       `${inputs.certifiedBufferDays} days buffered (alert < 30, fail if < ${t.minCertifiedBufferDays})`
     )
   );
+
+  if (inputs.fogDeductionOnly === undefined) {
+    results.push(na("fogDeductionOnly", "non-fog (perfect-information) puzzle — no guess-free requirement to check"));
+  } else {
+    results.push(
+      passFail(
+        "fogDeductionOnly",
+        !inputs.fogDeductionOnly,
+        inputs.fogDeductionOnly
+          ? "solved by deduction alone, no guess required"
+          : "the certified day requires guessing — fog dailies must be deduction-only (C11)"
+      )
+    );
+  }
 
   // Score-chase-only rows, explicitly N/A for a daily puzzle (docs/plans/crackstep.md §5's own
   // ruling: these guard skill expression via distributions that a puzzle — which has no

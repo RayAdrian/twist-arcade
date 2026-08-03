@@ -169,6 +169,20 @@ export function certifyDay<S extends WithEffects, M extends Json, V extends With
     const length = solveResult.length!;
     const moveLog = solveResult.moveLog!;
 
+    // Correction C11: spine §7.7 and solo-lens §3.3 both list "fog games — if not
+    // deduction-only" as an explicit rejection clause, and this used to be recorded
+    // (`guessFree`, below) but never REJECTED on — a fog daily requiring a guess certified
+    // and shipped. Non-fog (`hiddenInformation: false`) engines are entirely unaffected:
+    // `solveResult.guessFree` is meaningless for them (it stays `undefined`, same as before).
+    if (opts.engine.meta.hiddenInformation && !solveResult.guessFree) {
+      rejections.push({
+        nonce,
+        seed,
+        reason: "fog game requires a guess to solve (guessFree=false) — fog dailies must be deduction-only",
+      });
+      continue;
+    }
+
     if (length < minPar) {
       rejections.push({ nonce, seed, reason: `trivial: L*=${length} < minPar ${minPar}` });
       continue;

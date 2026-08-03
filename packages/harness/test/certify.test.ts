@@ -8,6 +8,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { GameEngine } from "@twist-arcade/engine";
 import { rngForSetup } from "@twist-arcade/engine";
 import { miniCrackstep, MINI_CRACKSTEP_KNOWN_SOLUTION } from "@twist-arcade/engine/testkit/fixtures/mini-crackstep";
 import type { DailyCertificate } from "@twist-arcade/game-spec";
@@ -169,6 +170,62 @@ describe("certifyDay — the reject-and-redraw loop, against a real generated pu
     });
     expect(result.outcome).toBe("rejected-all-attempts");
     expect(result.rejections[0]?.reason).toMatch(/difficulty band/);
+  });
+
+  it("(C11) rejects a fog (hidden-information) candidate whose solve required a guess, then certifies once one is deduction-only", () => {
+    // C11: `certifyDay` used to RECORD `guessFree` for a hidden-information engine but never
+    // REJECT on it — a fog daily requiring a guess certified and shipped anyway. Wraps
+    // holeWalk as a fog engine (hiddenInformation: true) and a solver whose first call
+    // reports guessFree:false (a guess was required) and second+ call reports guessFree:true
+    // (deduction-only) — same solvable board both times (SOLVABLE_SEED), so guessFree is the
+    // ONLY thing distinguishing the two attempts.
+    const fogEngine: GameEngine<HoleWalkState, HoleWalkMove, HoleWalkState> = {
+      ...holeWalk,
+      meta: { ...holeWalk.meta, hiddenInformation: true },
+    };
+    const realSolver = dfsSolver<HoleWalkState, HoleWalkMove>();
+    let calls = 0;
+    const guessFreeOnSecondCallSolver = {
+      solve(engine: GameEngine<HoleWalkState, HoleWalkMove, HoleWalkState>, initial: HoleWalkState, budget: Parameters<typeof realSolver.solve>[2]) {
+        const result = realSolver.solve(engine, initial, budget);
+        if (result.outcome !== "solved") return result;
+        const guessFree = calls > 0;
+        calls += 1;
+        return { ...result, guessFree };
+      },
+    };
+    const result = certifyDay({
+      ...baseOptions,
+      engine: fogEngine,
+      solver: guessFreeOnSecondCallSolver,
+      seedFor: () => SOLVABLE_SEED,
+      maxNonceAttempts: 2,
+      minPar: 3,
+      maxForcedMoveFraction: 0.9,
+      maxRandomPlayoutSolveRate: 0.9,
+    });
+    expect(result.outcome).toBe("certified");
+    expect(result.certificate?.nonce).toBe(1);
+    expect(result.certificate?.guessFree).toBe(true);
+    expect(result.rejections).toHaveLength(1);
+    expect(result.rejections[0]?.reason).toMatch(/guess/i);
+  });
+
+  it("(C11) does NOT reject a perfect-information (non-fog) puzzle even though its solver never reports guessFree at all", () => {
+    // Regression guard: the rejection clause is gated on `engine.meta.hiddenInformation`, so
+    // holeWalk itself (hiddenInformation: false, and dfsSolver never sets guessFree at all —
+    // it stays `undefined`) must keep certifying exactly as it did before C11.
+    const seedFor = () => SOLVABLE_SEED;
+    const result = certifyDay({
+      ...baseOptions,
+      seedFor,
+      maxNonceAttempts: 1,
+      minPar: 3,
+      maxForcedMoveFraction: 0.9,
+      maxRandomPlayoutSolveRate: 0.9,
+    });
+    expect(result.outcome).toBe("certified");
+    expect(result.certificate?.guessFree).toBeUndefined(); // non-fog: the field isn't even set
   });
 
   it("computes rejectionRate as rejections / total attempts, for both outcomes", () => {
