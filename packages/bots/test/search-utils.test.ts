@@ -9,19 +9,21 @@ import { classicTicTacToe, type TTTState } from "@twist-arcade/engine/testkit/fi
 import { valueOfStatus } from "../src/search-utils";
 
 describe("valueOfStatus: 'ongoing' (horizon-capped, no terminal reached) falls back to score()/heuristic()", () => {
-  it("returns engine.heuristic()'s RAW value, un-scaled — heuristic() has no documented range in the engine contract (GameEngine.heuristic's doc says only 'positive = good for player'), so this shared cross-game helper must not silently assume any particular game's range (the previous `/ 9` was classic-ttt-specific normalization baked into code every search algorithm shares)", () => {
+  it("squashes engine.heuristic()'s value through Math.tanh — heuristic() has no documented range in the engine contract (GameEngine.heuristic's doc now says only sign/ordering are contractual, magnitude is NOT), so a horizon-capped rollout's estimate must land strictly inside (-1, 1), below every won/lost terminal's ±1 — otherwise a heuristic like classic-ttt's (span ~±8) lets a horizon-capped 'ongoing' value outrank an actual averaged win, exactly the scale-mixing bug MUST FIX 2 closes. This is a deliberate reversal of an earlier version of this same test, which asserted the RAW un-scaled value was returned and required every game's heuristic to already be ±1-commensurate by convention alone — a convention with no enforcement, which is why it's squashed in code now instead of merely documented (see this file's — and search-utils.ts's — comments for why 'the author must remember' contracts are avoided here)", () => {
     // A center-heavy midgame position: classic-ttt's heuristic clearly exceeds ±1 here, which
-    // is exactly the point — if this helper silently rescaled it, that TTT-specific assumption
-    // would leak into mcts.ts/flat-mc.ts's value accounting for every OTHER game too.
+    // is exactly the point — an un-squashed helper would let this leak straight into
+    // mcts.ts/flat-mc.ts's value accounting as though it were already commensurate with ±1.
     const state: TTTState = {
       board: [0, null, null, null, 0, null, null, null, 1],
       turn: 0,
       lastEffects: [],
     };
     const rawHeuristic = classicTicTacToe.heuristic!(state, 0);
-    expect(rawHeuristic).not.toBe(0);
+    expect(Math.abs(rawHeuristic)).toBeGreaterThan(1); // otherwise this fixture wouldn't prove anything
     const value = valueOfStatus(classicTicTacToe, { kind: "ongoing" }, state, 0);
-    expect(value).toBe(rawHeuristic);
+    expect(value).toBe(Math.tanh(rawHeuristic));
+    expect(value).toBeGreaterThan(-1);
+    expect(value).toBeLessThan(1);
   });
 
   it("prefers score() over heuristic() when both exist", () => {

@@ -30,16 +30,27 @@ export function valueOfStatus<S extends WithEffects, M extends Json>(
     case "scored":
       return status.scores[player] ?? 0;
     case "ongoing":
+      // score() is NOT squashed: a "scored" game's terminal value (the `case "scored"` branch
+      // above) is already the raw status.scores[player] — no ±1 convention exists for these
+      // games at all — so a mid-game score() estimate stays commensurate with its OWN game's
+      // terminal by construction. Squashing it here would instead make it LESS commensurate
+      // with its own terminal, the opposite of the problem this function exists to prevent.
       if (engine.score) return engine.score(state, player);
-      // No division/rescaling here: `heuristic()`'s doc (packages/engine/src/types.ts) promises
-      // only "positive = good for player" — no bound on its range. An earlier version of this
-      // line divided by a hardcoded 9 (classic-ttt's own open-line-count max), baking one
-      // fixture's specific range into code every search algorithm in this package shares. Any
-      // OTHER game's heuristic — with a different natural range — would have been silently
-      // (and wrongly) rescaled by that same constant. Return the raw value; callers that need
-      // it commensurate with won/lost's ±1 must supply a heuristic that is already scaled that
-      // way (a per-game concern, not this shared helper's).
-      if (engine.heuristic) return engine.heuristic(state, player);
+      // heuristic() IS squashed, via Math.tanh (order-preserving, and bounded strictly inside
+      // (-1, 1)). `heuristic()`'s doc (packages/engine/src/types.ts) promises only "positive =
+      // good for player" — no bound on its range — and is used exclusively by won/lost/draw-
+      // style games where ±1/0 IS the terminal convention. An earlier version of this line
+      // returned the heuristic raw and pushed the "must already be ±1-commensurate" requirement
+      // onto every game author instead: a requirement nothing checks, silently violated by
+      // classic-ttt's own heuristic (span ~±8) the moment a rollout hit `rolloutCapPlies`
+      // before a terminal — a horizon-capped "ongoing" value could then outrank an actual
+      // averaged win. (An even earlier version divided by a hardcoded 9 — classic-ttt's own
+      // open-line-count max — which "fixed" that one fixture while silently mis-scaling every
+      // OTHER game's differently-ranged heuristic instead.) Squashing removes the failure mode
+      // structurally rather than documenting around it — the same call made for the masked-vs-
+      // omitted fog fixture and the decode-ordering pin elsewhere in this package's history: a
+      // contract a future game author has to remember has already failed here more than once.
+      if (engine.heuristic) return Math.tanh(engine.heuristic(state, player));
       return 0;
   }
 }
