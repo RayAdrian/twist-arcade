@@ -510,6 +510,11 @@ describe("GameShell — restart count in the share text is gated to daily/solo c
   });
 
   it("omits the restart line entirely for a casual (non-daily) solo-bot rematch — restartCount reflects 'hit Rematch', not a meaningful retry signal there", async () => {
+    // userEvent.setup() installs its OWN navigator.clipboard stub (for keyboard copy/paste
+    // emulation) unconditionally — calling it AFTER vi.stubGlobal("navigator", ...) below would
+    // silently clobber this test's clipboard mock, so the spy never sees the Share click's write.
+    // Setup first, THEN stub navigator, so this test's mock is the one still standing.
+    const user = userEvent.setup();
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
 
@@ -542,7 +547,6 @@ describe("GameShell — restart count in the share text is gated to daily/solo c
       await clickCell(2);
     }
 
-    const user = userEvent.setup();
     await winTopRow();
     await waitFor(() => expect(screen.getByRole("button", { name: "Rematch" })).toBeInTheDocument(), { timeout: 2000 });
     await user.click(screen.getByRole("button", { name: "Rematch" })); // restartCount -> 1
@@ -557,6 +561,9 @@ describe("GameShell — restart count in the share text is gated to daily/solo c
   });
 
   it("still includes the restart line for a daily game (orchestrator addendum §15.3 — comparability is sacred, even in a casual-shaped mode)", async () => {
+    // See the identical note in the test above: userEvent.setup() must run BEFORE
+    // vi.stubGlobal("navigator", ...) or its own clipboard stub silently wins.
+    const user = userEvent.setup();
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
 
@@ -591,7 +598,6 @@ describe("GameShell — restart count in the share text is gated to daily/solo c
       await clickCell(2);
     }
 
-    const user = userEvent.setup();
     await winTopRow();
     await waitFor(() => expect(screen.getByRole("button", { name: "Rematch" })).toBeInTheDocument(), { timeout: 2000 });
     await user.click(screen.getByRole("button", { name: "Rematch" })); // restartCount -> 1
