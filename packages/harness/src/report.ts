@@ -5,6 +5,8 @@
 import type { SolveResult } from "./solver/solve";
 import type { MatchupReport } from "./runner";
 import type { CiSuiteReport } from "./suites";
+import type { GameCiGateReport } from "./ci-gates";
+import type { GateResult as SoloGateResult } from "./solo-gates";
 
 /** Plain `JSON.stringify(value, null, 2)` — every report this package produces is a plain
  *  object with a fixed key order from the code that built it (never from variable insertion
@@ -69,4 +71,41 @@ export function formatCiSuiteTable(report: CiSuiteReport): string {
     lines.push(`  [${label}] ${gate.gate}: ${gate.detail}${exception}`);
   }
   return lines.join("\n");
+}
+
+/**
+ * The solo-lane analogue of `formatCiSuiteTable` — same `STATUS_LABEL` mapping (so "N/A " is
+ * visually as distinct from "PASS"/"FAIL"/"WARN" here as it is on the two-player table; C2's
+ * whole point is that a skipped gate and a passed gate must never look the same in a report,
+ * in EITHER lane's rendering).
+ */
+export function formatSoloGateTable(
+  gameId: string,
+  format: "score-chase" | "daily-puzzle",
+  ok: boolean,
+  gates: readonly SoloGateResult[]
+): string {
+  const lines = [`solo-ci (${format}) for "${gameId}" — ${ok ? "OK" : "FAILED"}`];
+  for (const gate of gates) {
+    const label = STATUS_LABEL[gate.status] ?? gate.status;
+    lines.push(`  [${label}] ${gate.name}: ${gate.detail}`);
+  }
+  return lines.join("\n");
+}
+
+/** One call site for a CI script driving `runGameCiGate` (ci-gates.ts) across every registered
+ *  game: dispatches to the right table formatter by the report's own `kind`, so a caller never
+ *  has to re-derive which lane produced a given report. */
+export function formatGameCiGateReport(result: GameCiGateReport): string {
+  if (result.kind === "two-player") return formatCiSuiteTable(result.report);
+  return formatSoloGateTable(result.gameId, result.report.format, result.ok, result.report.gates);
+}
+
+/** JSON form of a `GameCiGateReport` — plain `JSON.stringify`, same posture as `toReportJson`:
+ *  every field here is already a plain, deterministically-ordered object built by ci-gates.ts,
+ *  so no extra canonicalization is needed. Kept as its own named export (rather than callers
+ *  reaching for `toReportJson` directly) so the M4 CI script's JSON artifact shape has one
+ *  documented entry point. */
+export function toGameCiGateReportJson(result: GameCiGateReport): string {
+  return JSON.stringify(result, null, 2);
 }

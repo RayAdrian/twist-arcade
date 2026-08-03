@@ -1,0 +1,20 @@
+// games/__GAME_ID__/probes.ts — the MANDATORY Always-Safe hook (platform §6/§7.4): every solo
+// score chase MUST export a `safeMove` — the harness HARD-ERRORS (`MissingSafeMoveError`)
+// without one, because the Always-Safe gate ("is the risk in press-your-luck real?") cannot
+// run without it. Do not delete this file for a score-chase game.
+//
+// View-honest by construction (platform-corrections.md C1): `safeMove` takes the VIEW, never
+// the canonical state — for a hidden-information chase this makes peeking at a secret a
+// compile error, not a discipline someone has to remember. This template's placeholder game
+// has no hidden information, so `V === S`, but keep the parameter typed as the view even so —
+// changing your game to hide information later then costs nothing here.
+//
+// TODO(you): implement the real "minimum-variance option" — whatever taking NO risk means for
+// your game. The placeholder below just plays the only legal move, which is honest (never
+// throws, never returns an illegal move) but is not yet a real safety strategy.
+
+import type { __PASCAL_ID__Move, __PASCAL_ID__State } from "./engine";
+
+export function safeMove(_view: __PASCAL_ID__State): __PASCAL_ID__Move {
+  return { kind: "increment" };
+}

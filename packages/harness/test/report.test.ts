@@ -3,9 +3,11 @@
 // no logic of its own beyond formatting, per its module doc).
 
 import { describe, expect, it } from "vitest";
-import { formatCiSuiteTable } from "../src/report";
+import { formatCiSuiteTable, formatGameCiGateReport, formatSoloGateTable, toGameCiGateReportJson } from "../src/report";
 import type { CiSuiteReport, GateResult } from "../src/suites";
 import type { MatchupReport } from "../src/runner";
+import type { GameCiGateReport } from "../src/ci-gates";
+import type { GateResult as SoloGateResult } from "../src/solo-gates";
 
 function fakeMatchupReport(): MatchupReport {
   return {
@@ -66,5 +68,96 @@ describe("formatCiSuiteTable() — exception marker keyed on presence, not truth
       ])
     );
     expect(output).toContain("(exception: )");
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// formatSoloGateTable / formatGameCiGateReport / toGameCiGateReportJson — C2's own
+// requirement restated at the FORMATTER layer: "a skipped gate and a passed gate must never
+// look the same in a report", proven for both the human table and the JSON artifact.
+// ---------------------------------------------------------------------------------------
+
+const MIXED_SOLO_GATES: readonly SoloGateResult[] = [
+  { name: "strongVsRandomRatio", status: "pass", detail: "3.200 (fail if < 1.5)" },
+  { name: "grindProbe", status: "fail", detail: "zero-risk cycle found (length 1, scoreDelta 0)" },
+  { name: "certificatePresent", status: "n/a", detail: "score-chase format — no daily certificate pipeline" },
+];
+
+describe("formatSoloGateTable() — N/A is visually distinct from PASS/FAIL/WARN", () => {
+  it("prints a distinct [N/A ] label, never collapsing into [PASS] or an empty marker", () => {
+    const output = formatSoloGateTable("bank-run-fixture", "score-chase", false, MIXED_SOLO_GATES);
+    expect(output).toContain("[PASS] strongVsRandomRatio");
+    expect(output).toContain("[FAIL] grindProbe");
+    expect(output).toContain("[N/A ] certificatePresent");
+    // The three labels must all differ from one another as rendered text — the literal
+    // failure shape C2 exists to prevent is "n/a" reading identically to "pass".
+    const passLine = output.split("\n").find((l) => l.includes("strongVsRandomRatio"))!;
+    const naLine = output.split("\n").find((l) => l.includes("certificatePresent"))!;
+    expect(passLine).not.toEqual(naLine);
+  });
+
+  it("reports FAILED in the header when any gate is a real fail (n/a rows never count as fail)", () => {
+    const output = formatSoloGateTable("bank-run-fixture", "score-chase", false, MIXED_SOLO_GATES);
+    expect(output).toContain('for "bank-run-fixture" — FAILED');
+  });
+});
+
+describe("formatGameCiGateReport() / toGameCiGateReportJson() — dispatch by report kind", () => {
+  const soloReport: GameCiGateReport = {
+    kind: "solo-chase",
+    gameId: "bank-run-fixture",
+    ok: false,
+    report: {
+      gameId: "bank-run-fixture",
+      format: "score-chase",
+      ok: false,
+      gates: MIXED_SOLO_GATES,
+      metrics: {
+        strongVsRandomRatio: 3.2,
+        greedyVsRandomRatio: 1.8,
+        strongVsGreedyRatio: 1.6,
+        strongMedian: 100,
+        randomMedian: 30,
+        greedyMedian: 55,
+        strongP10: 80,
+        randomP75: 40,
+        randomP90: 45,
+        distributionSeparated: true,
+        distributionOverlapsBadly: false,
+        strongScoreCV: 0.4,
+        medianRunLength: 90,
+        p95RunLength: 200,
+        capHitRate: 0,
+        ceilingPileUp: 0.02,
+      },
+      grind: { found: true },
+      alwaysSafeVsStrong: 0.5,
+    },
+  };
+
+  it("formatGameCiGateReport renders a solo report via formatSoloGateTable", () => {
+    const output = formatGameCiGateReport(soloReport);
+    expect(output).toContain("solo-ci (score-chase)");
+    expect(output).toContain("[N/A ] certificatePresent");
+  });
+
+  it("toGameCiGateReportJson keeps the n/a status as a distinct string value, not coerced to pass/omitted", () => {
+    const json = toGameCiGateReportJson(soloReport);
+    const parsed = JSON.parse(json) as GameCiGateReport & { report: { gates: SoloGateResult[] } };
+    const naGate = parsed.report.gates.find((g) => g.name === "certificatePresent")!;
+    expect(naGate.status).toBe("n/a");
+    expect(naGate.status).not.toBe("pass");
+  });
+
+  it("formatGameCiGateReport renders a two-player report via formatCiSuiteTable", () => {
+    const twoPlayerReport: GameCiGateReport = {
+      kind: "two-player",
+      gameId: "classic-ttt-fixture",
+      ok: true,
+      report: fakeSuiteReport([{ gate: "strong-vs-random", status: "pass", detail: "95.0% (min 90.0%)" }]),
+    };
+    const output = formatGameCiGateReport(twoPlayerReport);
+    expect(output).toContain("CI suite (ci)");
+    expect(output).toContain("[PASS] strong-vs-random");
   });
 });

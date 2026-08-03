@@ -1,0 +1,14 @@
+[
+  {
+    "name": "catalog route (/)",
+    "path": ".next/static/chunks/app/page-*.js",
+    "limit": "75 kB",
+    "gzip": true
+  },
+  {
+    "name": "game route (/play/[gameId])",
+    "path": ".next/static/chunks/app/play/*/page-*.js",
+    "limit": "75 kB",
+    "gzip": true
+  }
+]
