@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertEraChangeIsReviewed, findEraReviewViolations } from "../src/era-guard";
+import { assertEraChangeIsReviewed, assertManifestBotMatchesEra, findEraReviewViolations } from "../src/era-guard";
 import type { DailyBotRecord, EraFile } from "../src/era";
 
 // Plan §2.3, point 1: "Era snapshot test — a committed vitest snapshot of era.json. Any edit
@@ -74,5 +74,29 @@ describe("era-guard.ts — findEraReviewViolations() / assertEraChangeIsReviewed
     const oldEra: EraFile = { fadeout: bot({ era: 1 }) };
     const newEra: EraFile = { fadeout: bot({ era: 2 }) };
     expect(() => assertEraChangeIsReviewed(oldEra, newEra, true)).not.toThrow();
+  });
+});
+
+describe("era-guard.ts — assertManifestBotMatchesEra() (plan §2.2: 'CI asserts the embedded copy is byte-identical to era.json for that era')", () => {
+  // This is the exact check a live demonstration surfaced as MISSING while proving the
+  // immutability guard: retuning a manifest's EMBEDDED bot copy (rather than era.json itself)
+  // sailed straight past both the immutability guard's target (data/daily/*.json, which DOES
+  // change so it's not an immutability violation on an already-future day) and the
+  // era-changelog guard (which only ever looks at era.json, untouched in that scenario). Without
+  // this check, a manifest's bot record and era.json's own copy of "the same era" could silently
+  // diverge — exactly the comparability break plan §2.2 exists to prevent.
+  const era: EraFile = { fadeout: bot({ era: 1, budget: { kind: "rollouts", n: 1000 } }) };
+
+  it("accepts a manifest bot that is byte-identical to era.json's entry for the same gameId", () => {
+    expect(() => assertManifestBotMatchesEra("fadeout", bot({ era: 1, budget: { kind: "rollouts", n: 1000 } }), era)).not.toThrow();
+  });
+
+  it("PLANTED VIOLATION: rejects a manifest bot that diverges from era.json under the SAME era number", () => {
+    const divergedBot = bot({ era: 1, budget: { kind: "rollouts", n: 5000 } }); // retuned in the manifest only
+    expect(() => assertManifestBotMatchesEra("fadeout", divergedBot, era)).toThrow(/era\.json/i);
+  });
+
+  it("rejects a manifest naming an era.json entry that doesn't exist at all", () => {
+    expect(() => assertManifestBotMatchesEra("crackstep", bot(), era)).toThrow(/no era\.json entry/i);
   });
 });

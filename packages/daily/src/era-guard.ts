@@ -66,3 +66,26 @@ export function assertEraChangeIsReviewed(oldEra: EraFile, newEra: EraFile, chan
     `era-guard.ts: ${violations.length} unreviewed era.json change(s):\n` + violations.map((v) => `  - [${v.gameId}] ${v.reason}`).join("\n")
   );
 }
+
+/**
+ * Plan §2.2: "Each day's manifest embeds a resolved copy of the record (self-contained client)
+ * ... CI asserts the embedded copy is byte-identical to era.json for that era." This is that
+ * assertion — a check a LIVE demonstration of the immutability guard surfaced as missing: a
+ * manifest's own embedded `bot` field can be retuned in place while data/daily/era.json (and
+ * therefore the era-changelog guard, which only ever looks at era.json) sees nothing change at
+ * all. Without this check that specific divergence sails past every other guard in this module.
+ * Throws naming the gameId on any mismatch, including "era.json has no entry for this game at
+ * all" — a manifest can never reference a bot record that doesn't exist in the reviewed file.
+ */
+export function assertManifestBotMatchesEra(gameId: string, manifestBot: DailyBotRecord, era: EraFile): void {
+  const canonical = era[gameId];
+  if (!canonical) {
+    throw new Error(`era-guard.ts: manifest for "${gameId}" embeds a bot record, but there is no era.json entry for "${gameId}" at all.`);
+  }
+  if (!recordsEqual(canonical, manifestBot)) {
+    throw new Error(
+      `era-guard.ts: manifest for "${gameId}"'s embedded bot record does not byte-match era.json["${gameId}"] — ` +
+        "the manifest's copy has silently diverged from the reviewed record (plan §2.2)."
+    );
+  }
+}

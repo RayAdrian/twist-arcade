@@ -17,11 +17,22 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { classifyBuffer } from "../buffer";
 import { todayUTC } from "../day";
+import { assertManifestBotMatchesEra } from "../era-guard";
+import type { EraFile } from "../era";
 import { assertValidManifest, type DailyManifest } from "../manifest";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const DAILY_DIR = path.join(REPO_ROOT, "data", "daily");
+const ERA_PATH = path.join(DAILY_DIR, "era.json");
 const DAY_FILE_RE = /^(\d{4}-\d{2}-\d{2})\.json$/;
+
+function readEra(): EraFile {
+  try {
+    return JSON.parse(readFileSync(ERA_PATH, "utf8")) as EraFile;
+  } catch {
+    return {};
+  }
+}
 
 function parseArgs(argv: readonly string[]): { today: string } {
   let today = todayUTC();
@@ -44,6 +55,7 @@ async function main(): Promise<void> {
     entries = [];
   }
   const dayFiles = entries.filter((f) => DAY_FILE_RE.test(f)).sort();
+  const era = readEra();
 
   let failedCount = 0;
   for (const file of dayFiles) {
@@ -59,6 +71,12 @@ async function main(): Promise<void> {
     }
     try {
       await assertValidManifest(manifest, { filenameDay });
+      // Plan §2.2: the manifest's embedded bot copy must be byte-identical to era.json's entry
+      // for that game — checked separately from assertValidManifest (which only validates the
+      // manifest's OWN internal consistency, not cross-file agreement with the reviewed record).
+      if (manifest.kind === "vs-bot" && manifest.bot) {
+        assertManifestBotMatchesEra(manifest.gameId, manifest.bot, era);
+      }
     } catch (err) {
       console.error(`FAIL ${file}: ${(err as Error).message}`);
       failedCount++;
