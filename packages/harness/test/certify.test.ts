@@ -4,14 +4,14 @@
 // seed-generated puzzle fixture (hole-walk.ts) for the reject/accept LOOP and a real, known
 // solution (mini-crackstep) for the pure feature-computation helpers.
 
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { GameEngine } from "@twist-arcade/engine";
 import { rngForSetup } from "@twist-arcade/engine";
 import { miniCrackstep, MINI_CRACKSTEP_KNOWN_SOLUTION } from "@twist-arcade/engine/testkit/fixtures/mini-crackstep";
-import type { DailyCertificate } from "@twist-arcade/game-spec";
+import type { DailyCertificate, SoloSolveBudget } from "@twist-arcade/game-spec";
 import {
   bufferDaysRemaining,
   certificatePath,
@@ -142,6 +142,43 @@ describe("certifyDay — the reject-and-redraw loop, against a real generated pu
     });
     expect(result.outcome).toBe("rejected-all-attempts");
     expect(result.rejections[0]?.reason).toMatch(/randomPlayoutSolveRate/);
+  });
+
+  it("(Notes fold-in) self-verifies through verifyCertificate before returning certified — a bespoke solver's inconsistent (par, moveLog) pair is caught at certify time, not just nightly", () => {
+    // Simulates a bespoke-solver bug (the class this fold-in exists to catch generically,
+    // without hardcoding a par-vs-moveLog check inside certify.ts itself): nonce 0's "solved"
+    // result reports a `length` one greater than its ACTUAL moveLog (a realistic off-by-one in
+    // a hand-written solver's own bookkeeping) — this is exactly the (par, moveLog.length)
+    // mismatch verifyCertificate's own C10 fix rejects. nonce 1 gets the real, consistent
+    // result. Without wiring verifyCertificate into certifyDay, nonce 0 would certify with a
+    // silently-wrong par; with it wired in, nonce 0 is rejected and nonce 1 ships instead.
+    const realSolver = dfsSolver<HoleWalkState, HoleWalkMove>();
+    let calls = 0;
+    const sometimesInconsistentSolver = {
+      solve(engine: GameEngine<HoleWalkState, HoleWalkMove, HoleWalkState>, initial: HoleWalkState, budget: SoloSolveBudget) {
+        const result = realSolver.solve(engine, initial, budget);
+        if (result.outcome !== "solved") return result;
+        calls += 1;
+        if (calls === 1) {
+          return { ...result, length: result.length! + 1 }; // par no longer matches moveLog.length
+        }
+        return result;
+      },
+    };
+    const result = certifyDay({
+      ...baseOptions,
+      solver: sometimesInconsistentSolver,
+      seedFor: () => SOLVABLE_SEED,
+      maxNonceAttempts: 2,
+      minPar: 3,
+      maxForcedMoveFraction: 0.9,
+      maxRandomPlayoutSolveRate: 0.9,
+    });
+    expect(result.outcome).toBe("certified");
+    expect(result.certificate?.nonce).toBe(1); // nonce 0's inconsistent result was rejected, not shipped
+    expect(result.certificate?.par).toBe(result.certificate?.moveLog.length);
+    expect(result.rejections).toHaveLength(1);
+    expect(result.rejections[0]?.reason).toMatch(/self-verif|par/i);
   });
 
   it("(SHOULD FIX item 6) refuses a stochastic engine BEFORE calling seedFor or the solver at all", () => {
@@ -339,6 +376,39 @@ describe("certificate storage — committed JSON under data/certificates/<gameId
 
     const none = await readAllCertificates(dir, "never-certified-game");
     expect(none).toEqual([]);
+  });
+
+  // Notes fold-in: writeCertificate wasn't atomic (write directly to the final path — a crash
+  // or concurrent reader mid-write could observe a partially-written file). The real fix is
+  // write-to-tmp-then-rename; a full crash-injection proof is out of scope here (not cheap),
+  // so this is a regression proxy: no tmp litter survives, and an overwrite leaves exactly one
+  // clean, fully-updated file rather than two or a half-written one.
+  it("writeCertificate is atomic: no stray tmp file survives a successful write, only the final <day>.json", async () => {
+    await writeCertificate(dir, sampleCertificate);
+    const entries = await readdir(path.join(dir, sampleCertificate.gameId));
+    expect(entries).toEqual([`${sampleCertificate.day}.json`]);
+  });
+
+  it("writeCertificate overwriting an existing day still leaves exactly one clean file behind (no leftover tmp)", async () => {
+    await writeCertificate(dir, sampleCertificate);
+    await writeCertificate(dir, { ...sampleCertificate, nonce: 7 });
+    const entries = await readdir(path.join(dir, sampleCertificate.gameId));
+    expect(entries).toEqual([`${sampleCertificate.day}.json`]);
+    const readBack = await readCertificate(dir, sampleCertificate.gameId, sampleCertificate.day);
+    expect(readBack?.nonce).toBe(7);
+  });
+
+  // Notes fold-in: readAllCertificates never checked that a file's OWN cert.day field agrees
+  // with the day encoded in its filename — a corrupted/hand-edited/mis-copied file would be
+  // silently read back under the WRONG day, mismatched from where it's actually stored.
+  it("readAllCertificates throws when a stored file's cert.day disagrees with its own filename", async () => {
+    await writeCertificate(dir, sampleCertificate); // writes to 2026-09-14.json, cert.day="2026-09-14"
+    // Simulate corruption: rename the file to a DIFFERENT day than its own cert.day content.
+    const gameDir = path.join(dir, sampleCertificate.gameId);
+    const original = path.join(gameDir, `${sampleCertificate.day}.json`);
+    const mismatched = path.join(gameDir, "2026-09-20.json");
+    await rename(original, mismatched);
+    await expect(readAllCertificates(dir, sampleCertificate.gameId)).rejects.toThrow(/day/i);
   });
 });
 

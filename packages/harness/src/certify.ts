@@ -11,10 +11,11 @@
 // both are injected by the caller, keeping this module a small, additive piece of shared
 // plumbing rather than a place that reaches into another team's scope.
 
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { GameEngine, Json, WithEffects } from "@twist-arcade/engine";
 import { rngFor, rngForSetup } from "@twist-arcade/engine";
+import { verifyCertificate } from "@twist-arcade/engine/testkit/checks";
 import type { DailyCertificate, SoloSolveBudget, SoloSolver } from "@twist-arcade/game-spec";
 
 const DEFAULT_SOLVE_BUDGET: SoloSolveBudget = { maxNodes: 1e7, maxMs: 10_000 };
@@ -244,6 +245,14 @@ export function certifyDay<S extends WithEffects, M extends Json, V extends With
       continue;
     }
 
+    // Notes fold-in: `greedyGap: null` is DELIBERATELY ambiguous between two different facts —
+    // "no `greedySolve` was supplied at all" (no data collected) vs. "`greedySolve` WAS
+    // supplied and returned `null`" (greedy tried and failed to solve this seed at all, which
+    // is itself a notable difficulty signal, not an absence of one). `DailyCertificate.
+    // features.greedyGap` is a fixed `number | null` field in the shared game-spec schema —
+    // splitting this into a real tri-state would be a cross-team schema change, out of scope
+    // for a documentation fold-in. Recorded here so a future reader of a `null` greedyGap
+    // does not assume it always means "greedy wasn't run".
     const greedyMoveLog = opts.greedySolve ? opts.greedySolve(opts.engine, initial) : null;
     const greedyGap = greedyMoveLog ? greedyMoveLog.length - length : null;
     const zScore = opts.zScoreFor ? opts.zScoreFor(length) : 0;
@@ -268,6 +277,32 @@ export function certifyDay<S extends WithEffects, M extends Json, V extends With
         zScore,
       },
     };
+
+    // Notes fold-in: self-verify through the SAME verifyCertificate the CI re-verification
+    // job and the certify-time `harness certify` caller both eventually run, BEFORE returning
+    // "certified" — catches a bespoke solver's own bugs (an inconsistent (par, moveLog) pair,
+    // a moveLog that doesn't actually replay to `won`, an rng-convention mismatch) at
+    // certify time, when the candidate can simply be rejected and redrawn, rather than at
+    // nightly re-verification, when a bad daily may already be live.
+    try {
+      verifyCertificate(opts.engine, {
+        gameId: certificate.gameId,
+        gameVersion: certificate.gameVersion,
+        engineVersion: certificate.engineVersion,
+        seed: certificate.seed,
+        moveLog: certificate.moveLog,
+        par: certificate.par,
+        parKind: certificate.parKind,
+        ...(certificate.guessFree !== undefined ? { guessFree: certificate.guessFree } : {}),
+      });
+    } catch (err) {
+      rejections.push({
+        nonce,
+        seed,
+        reason: `self-verification failed (verifyCertificate): ${(err as Error).message}`,
+      });
+      continue;
+    }
 
     return { outcome: "certified", certificate, rejections };
   }
@@ -295,10 +330,19 @@ export function certificatePath(baseDir: string, gameId: string, day: string): s
   return path.join(baseDir, gameId, `${day}.json`);
 }
 
+/** Writes ATOMICALLY (notes fold-in, stage-5 fix): serializes to a tmp file in the same
+ *  directory, then `rename`s it onto the final path. `rename` within one directory is atomic
+ *  on the filesystems this runs on (a concurrent reader/crash mid-write can never observe a
+ *  partially-written certificate — it sees either the old file or the fully-written new one,
+ *  never a half-written one). A bare `writeFile` straight to the final path does not have
+ *  this property. The tmp name includes pid + a random suffix so concurrent writers (e.g. two
+ *  `certifyDay` runs for different games) never collide on the same tmp file. */
 export async function writeCertificate(baseDir: string, certificate: DailyCertificate): Promise<void> {
   const file = certificatePath(baseDir, certificate.gameId, certificate.day);
   await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, `${JSON.stringify(certificate, null, 2)}\n`, "utf8");
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  await writeFile(tmp, `${JSON.stringify(certificate, null, 2)}\n`, "utf8");
+  await rename(tmp, file);
 }
 
 export async function readCertificate(baseDir: string, gameId: string, day: string): Promise<DailyCertificate | undefined> {
@@ -308,6 +352,23 @@ export async function readCertificate(baseDir: string, gameId: string, day: stri
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw err;
+  }
+}
+
+/** Thrown by `readAllCertificates` when a stored file's OWN `cert.day` field disagrees with
+ *  the day its filename encodes (notes fold-in, stage-5 fix) — `writeCertificate`'s own naming
+ *  convention (`certificatePath`) always keeps these in agreement, so a mismatch here means
+ *  the file was corrupted, hand-edited, or copied/renamed without updating its contents. Fails
+ *  loudly rather than silently returning the certificate under a day it doesn't actually claim
+ *  to be, which would corrupt `bufferDaysRemaining`'s contiguous-run count and nightly
+ *  re-verification alike. */
+export class CertificateDayMismatchError extends Error {
+  constructor(gameId: string, filenameDay: string, certDay: string) {
+    super(
+      `readAllCertificates: certificate for "${gameId}" stored at "${filenameDay}.json" has ` +
+        `cert.day="${certDay}" — the filename and the certificate's own contents disagree.`
+    );
+    this.name = "CertificateDayMismatchError";
   }
 }
 
@@ -328,7 +389,10 @@ export async function readAllCertificates(baseDir: string, gameId: string): Prom
   const certs: DailyCertificate[] = [];
   for (const day of days) {
     const cert = await readCertificate(baseDir, gameId, day);
-    if (cert) certs.push(cert);
+    if (cert) {
+      if (cert.day !== day) throw new CertificateDayMismatchError(gameId, day, cert.day);
+      certs.push(cert);
+    }
   }
   return certs;
 }

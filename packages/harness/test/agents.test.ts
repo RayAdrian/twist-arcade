@@ -90,6 +90,11 @@ describe("C1 — hidden-information view honesty (mine-run)", () => {
     const view = engine.playerView(state, 0);
     const resampled = engine.sampleConsistentState!(view, rngFromSeed("resample-seed"));
     expect(engine.playerView(resampled, 0)).toEqual(view); // sanity: resampled really shares the view
+    // Note (fold-in): without this, the test below would pass vacuously if `resampled` ever
+    // happened to equal `state` outright (true today only by seed luck) — pin that the two
+    // canonical states are actually DIFFERENT worlds, so "same move for both" is proving
+    // something about view-honesty, not just "same move for the same state twice".
+    expect(engine.encode(resampled)).not.toBe(engine.encode(state));
 
     const budget = { kind: "rollouts" as const, n: 20 };
     const clock = staticClock();
@@ -126,6 +131,9 @@ describe("C1 — hidden-information view honesty (mine-run)", () => {
     const state = engine.setup(1, rngFromSeed("safe-mine-seed:setup"));
     const view = engine.playerView(state, 0);
     const resampled = engine.sampleConsistentState!(view, rngFromSeed("safe-resample-seed"));
+    // Same fold-in as the test above: prove `resampled` is a genuinely different world, not a
+    // vacuous "same move for the same state" pass.
+    expect(engine.encode(resampled)).not.toBe(engine.encode(state));
     const { move: moveA } = agent.chooseMove({
       engine,
       state,
