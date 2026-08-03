@@ -5,5 +5,10 @@
     "rootDir": "."
   },
   "include": ["src/**/*.ts", "test/**/*.ts"],
-  "references": [{ "path": "../engine" }, { "path": "../game-spec" }, { "path": "../bots" }]
+  "references": [
+    { "path": "../engine" },
+    { "path": "../game-spec" },
+    { "path": "../bots" },
+    { "path": "../../games/mine-run" }
+  ]
 }
