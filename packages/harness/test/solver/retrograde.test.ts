@@ -17,11 +17,20 @@ describe("retrograde() on classic-ttt (published free oracle)", () => {
   });
 
   it("agrees with a hand-verified forced-win position (two-in-a-row, mover to complete it)", () => {
-    // Board: X at 0,1 (mover to move, about to complete the top row at 2). O has one mark
-    // elsewhere (4, center) that cannot block in time. Hand-computed: this MUST be a win for
-    // the mover (X) — X plays cell 2 and wins outright, on the very next ply.
+    // Board: X at 0,1 (mover to move, about to complete the top row at 2). O has marks at
+    // 4 and 8 — both on the diagonal line [0,4,8], which is already dead (X occupies cell 0),
+    // so O poses no live threat and cannot block in time regardless. Hand-computed: this MUST
+    // be a win for the mover (X) — X plays cell 2 and wins outright, on the very next ply.
+    //
+    // NOTE on why O needs *two* marks, not one: `turn: 0` (X to move) is only reachable when
+    // X and O have placed an EQUAL number of marks (X moves first, so turn returns to X only
+    // right after O's move evens the count back up). X has 2 marks here, so O must also have 2
+    // — a single O mark alongside 2 X marks is a turn=1 (O-to-move) position, never turn=0; an
+    // earlier version of this fixture had exactly that mismatch and was consequently never
+    // reachable from setup() under legal alternating play (caught by the very next assertion,
+    // which is exactly why it's there).
     const state = {
-      board: [0, 0, null, null, 1, null, null, null, null] as const,
+      board: [0, 0, null, null, 1, null, null, null, 1] as const,
       turn: 0 as const,
       lastEffects: [],
     };
