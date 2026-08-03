@@ -264,7 +264,14 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
         artifactBody,
         url: shareUrl,
         ...(daily ? { daily: { dayNumber: daily.dayNumber, ...(daily.par !== undefined ? { par: daily.par } : {}) } } : {}),
-        ...(game.restartCount > 0 ? { restarts: game.restartCount } : {}),
+        // Minor (stage-6 finding): restartCount accumulates across CASUAL rematches too — it
+        // reflects "hit Rematch N times", not a meaningful retry signal outside daily. The share
+        // frame's restart line is only meaningful where the plan defines it (§15 addendum 3):
+        // daily contexts, where comparability is the point and a fifth attempt must never be
+        // presented as a first. Gate on `daily` here, not just `restartCount > 0` — share-frame's
+        // own contract ("mandatory whenever > 0") is correct for what IS passed to it; the bug was
+        // this call site passing a casual restartCount at all.
+        ...(daily && game.restartCount > 0 ? { restarts: game.restartCount } : {}),
       });
       setShareFallbackText(text);
       return await invokeShare(text);
