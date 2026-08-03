@@ -54,15 +54,15 @@ function analysis(overrides: Partial<FrontierAnalysis>): FrontierAnalysis {
 
 describe("chooseSafeMove — decision ordering (pure, given a fixed analysis)", () => {
   it("reveals a provably-safe cell that is ALSO provably zero, over a provably-safe-but-nonzero one", () => {
-    // View: cell A (10) is revealed-safe (its neighbor cell would be "known safe" material);
-    // cell B (11) is provably safe but has an unrevealed, non-safe (mine) neighbor -> NOT
-    // provably zero; cell C (12) is provably safe and every one of ITS neighbors is either
-    // revealed-safe or provably-safe -> provably zero. Board geometry is simplified to a
-    // single row (width=20, height=1) purely so `neighbors()` gives predictable, easy-to-hand-
-    // construct adjacency (each cell's only neighbors are its immediate left/right).
+    // View: cell 11 is provably safe but has an unrevealed, non-safe (mine) neighbor (cell 10,
+    // marked provablyMine below) -> NOT provably zero. Cell 15 is provably safe and every one
+    // of ITS neighbors (14, 16) is itself provably safe -> provably zero. Board geometry is
+    // simplified to a single row (width=20, height=1) purely so `neighbors()` gives
+    // predictable, easy-to-hand-construct adjacency (each cell's only neighbors are its
+    // immediate left/right).
     const width = 20;
     const height = 1;
-    const revealed = new Map<number, number>([[9, 0]]); // arbitrary revealed anchor, irrelevant to neighbors of 11/12
+    const revealed = new Map<number, number>([[9, 0]]); // arbitrary revealed anchor, irrelevant to neighbors of 11/15
     const view = makeView(width, height, revealed, 3);
     // cell 11's neighbors are 10,12. Make 10 provablyMine (not safe) so 11 is NOT provably-zero.
     // cell 15's neighbors are 14,16. Make both provablySafe so 15 IS provably-zero.
