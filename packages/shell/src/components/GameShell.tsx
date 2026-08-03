@@ -258,6 +258,19 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
         <div className="my-2">
           {mode === "solo-single" ? (
             <ScoreHUD movesUsed={game.moveCount} {...(game.score !== undefined ? { score: game.score } : {})} />
+          ) : game.botError ? (
+            // Plan §5.2.4: a retryable error state, never a silent hang — the board stays
+            // legally inert (it's still the bot's turn) until this recovers.
+            <div role="alert" className="flex flex-col items-center gap-2 text-center text-sm text-ink">
+              <p>The bot couldn&apos;t make a move.</p>
+              <button
+                type="button"
+                onClick={game.retryBot}
+                className="rounded border border-ink px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+              >
+                Retry
+              </button>
+            </div>
           ) : (
             <StatusLine
               phase={game.botThinking ? "bot-thinking" : game.status.kind !== "ongoing" ? "finished" : game.activeSeat === game.presentingSeat ? "your-turn" : "their-turn"}

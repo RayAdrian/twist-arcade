@@ -315,6 +315,65 @@ describe("useGame — daily mode budget assertion", () => {
   });
 });
 
+describe("useGame — bot driver failure exposes a retryable error, never a silent hang (C2)", () => {
+  it("exposes botError on a rejected bot request (not a hang), and retryBot() with a now-succeeding driver recovers", async () => {
+    let callCount = 0;
+    const flakyDriver: BotDriver = {
+      chooseMove() {
+        callCount += 1;
+        if (callCount === 1) return Promise.reject(new Error("bot backend unavailable"));
+        return Promise.resolve({ move: { cell: 4 } });
+      },
+      cancel() {},
+      dispose() {},
+    };
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const { result } = renderHook(() =>
+      useGame({
+        definition: tttDefinition,
+        mode: "solo-bot",
+        seed: "bot-fail-seed",
+        humanSeat: 0,
+        persist: false,
+        botDriver: flakyDriver,
+      })
+    );
+
+    expect(result.current.botError).toBe(false);
+    act(() => result.current.submitMove({ cell: 0 }));
+
+    await waitFor(() => expect(result.current.botError).toBe(true));
+    // Never a silent hang: botThinking must drop back to false so the "Bot is thinking…" state
+    // doesn't linger forever alongside the error.
+    expect(result.current.botThinking).toBe(false);
+    expect(errorSpy).toHaveBeenCalled();
+
+    act(() => result.current.retryBot());
+
+    await waitFor(() => expect(result.current.moveCount).toBe(2));
+    expect(result.current.botError).toBe(false);
+    expect(result.current.view.board[4]).toBe(1);
+
+    errorSpy.mockRestore();
+  });
+
+  it("retryBot() is a no-op when there is no pending bot error", () => {
+    const { result } = renderHook(() =>
+      useGame({
+        definition: tttDefinition,
+        mode: "solo-bot",
+        seed: "s",
+        humanSeat: 0,
+        persist: false,
+        botDriver: scriptedBotDriver([{ cell: 4 }]),
+      })
+    );
+    expect(() => act(() => result.current.retryBot())).not.toThrow();
+    expect(result.current.botError).toBe(false);
+  });
+});
+
 describe("useGame — cancels the in-flight bot request on undo", () => {
   it("calls driver.cancel() with the pending requestId when undo() is invoked mid-flight", async () => {
     let capturedRequestId: string | undefined;

@@ -93,6 +93,10 @@ export interface UseGameResult<M extends Json, V extends WithEffects> {
   activeSeat: PlayerId | null;
   presentingSeat: PlayerId;
   botThinking: boolean;
+  /** True when the bot driver's last `chooseMove()` REJECTED (not cancelled) — plan §5.2.4:
+   *  "a retryable StatusLine error state — never a hang." The board stays legally inert (it's
+   *  still the bot's turn) until `retryBot()` re-dispatches. */
+  botError: boolean;
   lockedUntil: number;
   canUndo: boolean;
   score?: number;
@@ -109,6 +113,9 @@ export interface UseGameResult<M extends Json, V extends WithEffects> {
   confirmHandoff(): void;
   setTier(t: TierId): void;
   describeBoard(): void;
+  /** Re-dispatches the bot for the current state after a `botError`. No-op when there is no
+   *  pending bot error (C2). */
+  retryBot(): void;
 }
 
 interface Internal<S extends WithEffects> {
@@ -119,6 +126,7 @@ interface Internal<S extends WithEffects> {
   restartCount: number;
   lockedUntil: number;
   botThinking: boolean;
+  botError: boolean;
   firstOccurrence: { text: string; anchor: Json } | null;
   announcement: AnnouncementState;
 }
@@ -214,6 +222,7 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
             restartCount: stored.restartCount,
             lockedUntil: 0,
             botThinking: false,
+            botError: false,
             firstOccurrence: null,
             announcement: {},
           };
@@ -241,6 +250,7 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
       restartCount: 0,
       lockedUntil: 0,
       botThinking: false,
+      botError: false,
       firstOccurrence: null,
       announcement: {},
     };
@@ -300,7 +310,9 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
     const requestId = randomSeed();
     pendingRequestIdRef.current = requestId;
     const myEpoch = epochRef.current;
-    setInternal((prev) => ({ ...prev, botThinking: true }));
+    // Clearing `botError` here (not just on success) covers both the manual retryBot() path and
+    // any automatic re-dispatch that happens to land after a prior failure (C2).
+    setInternal((prev) => ({ ...prev, botThinking: true, botError: false }));
 
     const req: BotMoveRequest = {
       requestId,
@@ -317,16 +329,22 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
       (res) => {
         if (epochRef.current !== myEpoch || pendingRequestIdRef.current !== requestId) return;
         pendingRequestIdRef.current = null;
-        setInternal((prev) => ({ ...prev, botThinking: false }));
+        setInternal((prev) => ({ ...prev, botThinking: false, botError: false }));
         applyMove(res.move as M, false);
       },
       (err: unknown) => {
         if (epochRef.current !== myEpoch || pendingRequestIdRef.current !== requestId) return;
         pendingRequestIdRef.current = null;
-        setInternal((prev) => ({ ...prev, botThinking: false }));
-        if (!(err instanceof BotCancelledError)) {
-              console.error("useGame: bot request failed", err);
+        if (err instanceof BotCancelledError) {
+          setInternal((prev) => ({ ...prev, botThinking: false }));
+          return;
         }
+        // Plan §5.2.4: "a retryable StatusLine error state — never a hang." Nothing re-dispatches
+        // on its own here — `retryBot()` (driven by the UI's Retry affordance) is the only way
+        // forward, exactly like a real network/worker failure should require an explicit retry
+        // rather than silently spinning forever.
+        console.error("useGame: bot request failed", err);
+        setInternal((prev) => ({ ...prev, botThinking: false, botError: true }));
       }
     );
   }
@@ -461,6 +479,7 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
       restartCount: cur.restartCount,
       lockedUntil,
       botThinking,
+      botError: false,
       firstOccurrence,
       announcement,
     });
@@ -495,6 +514,7 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
       state,
       record,
       botThinking: false,
+      botError: false,
       firstOccurrence: null,
       announcement: {},
     });
@@ -523,11 +543,18 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
       restartCount: cur.restartCount + 1,
       lockedUntil: 0,
       botThinking: false,
+      botError: false,
       firstOccurrence: null,
       announcement: {},
     };
     setInternal(next);
     dispatchRef.current(state, record);
+  }
+
+  function retryBot(): void {
+    const cur = internalRef.current;
+    if (!cur.botError) return;
+    dispatchRef.current(cur.state, cur.record);
   }
 
   function confirmHandoff(): void {
@@ -592,6 +619,7 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
     activeSeat,
     presentingSeat: internal.presentingSeat,
     botThinking: internal.botThinking,
+    botError: internal.botError,
     lockedUntil: internal.lockedUntil,
     canUndo: computeCanUndo(internal),
     ...(engine.score ? { score: engine.score(internal.state, humanSeat) } : {}),
@@ -608,6 +636,7 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
     confirmHandoff,
     setTier,
     describeBoard,
+    retryBot,
   };
 }
 

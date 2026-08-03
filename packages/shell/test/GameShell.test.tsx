@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
 import type { RegistryEntry } from "@twist-arcade/game-spec";
 import { GameShell } from "../src/components/GameShell";
-import { scriptedBotDriver } from "../src/bot-driver";
+import { scriptedBotDriver, type BotDriver } from "../src/bot-driver";
 import { tttDefinition, tttManifest } from "./fixtures/ttt-definition";
 import { secretPickDefinition, secretPickManifest } from "./fixtures/secret-pick";
 
@@ -196,6 +196,51 @@ describe("GameShell — result modal", () => {
       const cells = screen.getAllByRole("gridcell");
       expect(cells.every((c) => c.textContent === "")).toBe(true);
     });
+  });
+});
+
+describe("GameShell — bot driver failure shows a retryable error, never a silent hang (C2)", () => {
+  it("shows Retry in the StatusLine region after a bot failure, and clicking it recovers (bot lands its move)", async () => {
+    let callCount = 0;
+    const flakyDriver: BotDriver = {
+      chooseMove() {
+        callCount += 1;
+        if (callCount === 1) return Promise.reject(new Error("bot backend unavailable"));
+        return Promise.resolve({ move: { cell: 4 } });
+      },
+      cancel() {},
+      dispose() {},
+    };
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const registryEntry = makeRegistryEntry();
+    render(
+      <GameShell
+        gameId={tttManifest.id}
+        registryEntry={registryEntry}
+        manifests={[tttManifest]}
+        mode="solo-bot"
+        botDriver={flakyDriver}
+      />
+    );
+    await waitFor(() => expect(screen.getAllByRole("gridcell").length).toBe(9));
+
+    await act(async () => {
+      firstCellButton().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      firstCellButton().dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 0, clientY: 0 }));
+    });
+
+    // The board must stay legally inert (never a hang) but a Retry affordance must appear —
+    // not silence, not a stuck "Bot is thinking…" forever.
+    const retryButton = await screen.findByRole("button", { name: /retry/i });
+    expect(retryButton).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(retryButton);
+
+    await waitFor(() => expect(screen.getAllByRole("gridcell")[4]?.textContent).toBe("O"));
+    expect(screen.queryByRole("button", { name: /retry/i })).toBeNull();
+
+    errorSpy.mockRestore();
   });
 });
 
