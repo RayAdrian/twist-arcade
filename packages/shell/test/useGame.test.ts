@@ -83,6 +83,10 @@ describe("useGame — undo (replay-based)", () => {
 
     act(() => result.current.submitMove({ cell: 0 }));
     await waitFor(() => expect(result.current.moveCount).toBe(2));
+    // Real wait past the bot-landing lockout (I3: submitMove() now enforces `now < lockedUntil`
+    // itself, not just BoardShell/Cell — the same real constraint GameShell's own result-modal
+    // test already waits out between clicks).
+    await new Promise((resolve) => setTimeout(resolve, 260));
 
     act(() => result.current.submitMove({ cell: 1 }));
     await waitFor(() => expect(result.current.moveCount).toBe(4));
@@ -118,6 +122,53 @@ describe("useGame — input lockout", () => {
 
     await waitFor(() => expect(result.current.moveCount).toBe(2));
     expect(result.current.lockedUntil).toBeGreaterThanOrEqual(before + 250);
+  });
+});
+
+describe("useGame — submitMove has its own conservative lockout guard (I3, belt-and-braces)", () => {
+  it("drops submitMove() called while `now < lockedUntil`, even if the caller bypasses BoardShell/Cell entirely", async () => {
+    // BoardProps.onMove is a game's own Board's escape hatch straight to submitMove — it never
+    // has to go through BoardShell's Cell (whose pointer/keyboard handlers are the ONLY place
+    // the 250ms post-state-change lockout was previously enforced). This exercises that same
+    // bypass directly: calling submitMove() itself during the lockout window, with no Cell/
+    // BoardShell involved at all.
+    const { result } = renderHook(() =>
+      useGame({
+        definition: tttDefinition,
+        mode: "solo-bot",
+        seed: "i3-seed",
+        humanSeat: 0,
+        persist: false,
+        botDriver: scriptedBotDriver([{ cell: 4 }]),
+      })
+    );
+
+    act(() => result.current.submitMove({ cell: 0 }));
+    await waitFor(() => expect(result.current.moveCount).toBe(2)); // bot's reply landed, setting lockedUntil ~250ms out
+    expect(result.current.lockedUntil).toBeGreaterThan(performance.now());
+
+    act(() => result.current.submitMove({ cell: 1 }));
+    expect(result.current.moveCount).toBe(2); // still dropped, not applied
+  });
+
+  it("still applies submitMove() once `now >= lockedUntil` has passed", async () => {
+    const { result } = renderHook(() =>
+      useGame({
+        definition: tttDefinition,
+        mode: "solo-bot",
+        seed: "i3-seed-2",
+        humanSeat: 0,
+        persist: false,
+        botDriver: scriptedBotDriver([{ cell: 4 }]),
+      })
+    );
+
+    act(() => result.current.submitMove({ cell: 0 }));
+    await waitFor(() => expect(result.current.moveCount).toBe(2));
+    await new Promise((resolve) => setTimeout(resolve, 260));
+
+    act(() => result.current.submitMove({ cell: 1 }));
+    expect(result.current.moveCount).toBe(3);
   });
 });
 
@@ -212,6 +263,8 @@ describe("useGame — first-occurrence callout (once per device)", () => {
     act(() => result.current.submitMove({ cell: 0 }));
     await waitFor(() => expect(result.current.moveCount).toBe(2));
     expect(result.current.firstOccurrence).toEqual({ text: "First move callout.", anchor: '{"cell":0}' });
+    // Real wait past the bot-landing lockout (I3 — see the undo-replay test's own comment).
+    await new Promise((resolve) => setTimeout(resolve, 260));
 
     act(() => result.current.submitMove({ cell: 1 }));
     await waitFor(() => expect(result.current.moveCount).toBe(4));
@@ -260,10 +313,13 @@ describe("useGame — first-game bot softening", () => {
     );
 
     // Human wins on the top row: 0, 1, 2 with bot replying 3, 4 — a guaranteed short game.
+    // Real waits past each bot-landing lockout (I3 — see the undo-replay test's own comment).
     act(() => result.current.submitMove({ cell: 0 }));
     await waitFor(() => expect(result.current.moveCount).toBe(2));
+    await new Promise((resolve) => setTimeout(resolve, 260));
     act(() => result.current.submitMove({ cell: 1 }));
     await waitFor(() => expect(result.current.moveCount).toBe(4));
+    await new Promise((resolve) => setTimeout(resolve, 260));
     act(() => result.current.submitMove({ cell: 2 }));
 
     await waitFor(() => expect(result.current.status.kind).toBe("won"));

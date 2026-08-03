@@ -520,6 +520,16 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
   }
 
   function submitMove(m: M): void {
+    // I3: BoardShell/Cell's own pointer/keyboard commit path is the PRECISE enforcement of the
+    // 250ms post-state-change lockout (plan §4.4/§7 — judged by when the gesture BEGAN, so a
+    // slow drag that started during the lockout still drops even if it completes after). But
+    // `BoardProps.onMove` is a game's own Board's direct escape hatch straight to this function,
+    // entirely bypassing BoardShell/Cell — a game that wires its own gesture handling to
+    // `onMove` has no lockout enforcement at all today. This conservative `now < lockedUntil`
+    // check is belt-and-braces: coarser than BoardShell's actionAt-based rule (it can't know
+    // when a bypassing caller's gesture actually began), but it closes the "no enforcement
+    // whatsoever" gap for any caller that skips BoardShell.
+    if (performance.now() < internalRef.current.lockedUntil) return;
     applyMove(m, true);
   }
 
