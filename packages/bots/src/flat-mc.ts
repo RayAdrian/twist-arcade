@@ -7,7 +7,8 @@
 
 import type { Json, PlayerId, WithEffects } from "@twist-arcade/engine";
 import type { Policy, SearchStats } from "./policy";
-import { rolloutToHorizon, valueOfStatus } from "./search-utils";
+import { rolloutToHorizon, uniformRandomMoveSelector, valueOfStatus } from "./search-utils";
+import type { MoveSelector } from "./search-utils";
 
 export class FlatMonteCarloTerminalStateError extends Error {
   constructor() {
@@ -16,7 +17,7 @@ export class FlatMonteCarloTerminalStateError extends Error {
   }
 }
 
-export interface FlatMonteCarloOptions {
+export interface FlatMonteCarloOptions<S extends WithEffects = WithEffects, M extends Json = Json> {
   /** Rollouts per candidate move, when the budget is expressed as `deadlineMs` (time-boxed
    *  instead). Under a `rollouts` budget, the total is instead spread evenly across the
    *  legal moves (see chooseMove below) so the deterministic wire-format meaning of
@@ -25,13 +26,20 @@ export interface FlatMonteCarloOptions {
   rolloutsPerAction?: number;
   /** Ply cap for each rollout. Default 200. */
   rolloutCapPlies?: number;
+  /** Move selector each rollout uses at every ply (platform-corrections.md C6). Default
+   *  `uniformRandomMoveSelector` — this package's original, unparameterised behavior, kept as
+   *  the default so every existing caller (the two-player lane, the future hint feature) is
+   *  unaffected unless it opts in. Pass `greedyMoveSelector` for mine-run.md §4.4's "roll out
+   *  with the greedy policy to terminal" (the shipped hidden-info Strong's rollout policy). */
+  rolloutMoveSelector?: MoveSelector<S, M>;
 }
 
 export function flatMonteCarloPolicy<S extends WithEffects, M extends Json>(
-  opts: FlatMonteCarloOptions = {}
+  opts: FlatMonteCarloOptions<S, M> = {}
 ): Policy<S, M> {
   const rolloutsPerActionDefault = opts.rolloutsPerAction ?? 32;
   const rolloutCapPlies = opts.rolloutCapPlies ?? 200;
+  const rolloutMoveSelector = opts.rolloutMoveSelector ?? uniformRandomMoveSelector;
 
   return {
     chooseMove({ engine, state, player, rng, budget, clock }) {
@@ -75,7 +83,13 @@ export function flatMonteCarloPolicy<S extends WithEffects, M extends Json>(
         } else {
           for (let i = 0; i < perActionRollouts; i++) {
             if (deadline !== undefined && clock.now() >= deadline) break;
-            const { status: leafStatus, state: leafState } = rolloutToHorizon(engine, nextState, rng, rolloutCapPlies);
+            const { status: leafStatus, state: leafState } = rolloutToHorizon(
+              engine,
+              nextState,
+              rng,
+              rolloutCapPlies,
+              rolloutMoveSelector
+            );
             sum += valueOfStatus(engine, leafStatus, leafState, player);
             count += 1;
           }

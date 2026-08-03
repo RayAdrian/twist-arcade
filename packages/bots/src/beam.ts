@@ -11,6 +11,7 @@
 
 import type { GameEngine, Json, PlayerId, WithEffects } from "@twist-arcade/engine";
 import type { Policy } from "./policy";
+import { rankingValueOf } from "./search-utils";
 
 export class BeamUnsupportedGameError extends Error {
   constructor(reason: string) {
@@ -40,29 +41,18 @@ function byValueDescending<S extends WithEffects, M extends Json>(a: BeamMember<
   return a.value > b.value ? -1 : 1;
 }
 
-// `won` ranks strictly ABOVE and `lost` strictly BELOW every ongoing score()/heuristic() value
-// (±Infinity — the same convention minimax.ts's terminalValue already uses correctly, and the
-// fix for the identical bug in probes/greedy-only.ts's evaluate()): score()/heuristic() have no
-// documented range, so a finite ±1 for won/lost would let an ongoing lineage's raw value
-// outrank an actual win/avoid an actual loss, which is backwards for a search whose whole job
-// is "find the best reachable outcome".
+// Candidate evaluation is `./search-utils.ts`'s shared `rankingValueOf` (platform-corrections.md
+// C6): `won`/`lost` rank strictly above/below every ongoing score()/heuristic() value
+// (±Infinity — the same convention minimax.ts's terminalValue already uses correctly), and
+// `ongoing` prefers heuristic() over score() — score() is pinned to "however much is already
+// realized" (must equal a scored terminal's `scores[0]`), so a beam that preferred it would be
+// blind to unrealized/potential progress (mine-run.md §4.4/§4.5's press-your-luck streak being
+// the motivating case). This used to be a locally-duplicated `evaluate()` with the OPPOSITE
+// (score-first) priority — the exact blindness C6 found — folded into the shared helper instead
+// of drifting a second copy.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function evaluate<S extends WithEffects, M extends Json>(engine: GameEngine<S, M, any>, state: S, player: PlayerId): number {
-  const status = engine.status(state);
-  switch (status.kind) {
-    case "won":
-      return status.winner === player ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
-    case "lost":
-      return Number.NEGATIVE_INFINITY;
-    case "draw":
-      return 0;
-    case "scored":
-      return status.scores[player] ?? 0;
-    case "ongoing":
-      if (engine.score) return engine.score(state, player);
-      // engine.heuristic existence is checked once up-front in chooseMove; safe to assume here.
-      return engine.heuristic!(state, player);
-  }
+  return rankingValueOf(engine, engine.status(state), state, player);
 }
 
 export function beamPolicy<S extends WithEffects, M extends Json>(opts: BeamOptions = {}): Policy<S, M> {
