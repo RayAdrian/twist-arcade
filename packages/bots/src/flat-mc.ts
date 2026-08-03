@@ -45,10 +45,14 @@ export function flatMonteCarloPolicy<S extends WithEffects, M extends Json>(
         throw new Error(`flatMonteCarloPolicy: player ${String(player)} has no legal moves`);
       }
 
-      // Under a `rollouts` budget, spend EXACTLY `n` total rollouts (spread as evenly as
-      // possible across candidates) so the deterministic wire-format meaning of `n` — "the
-      // same fixed amount of search work regardless of the machine" — holds regardless of
-      // this state's branching factor.
+      // Under a `rollouts` budget, spread `n` as evenly as possible across candidates — NOT
+      // exactly `n` total rollouts. When `n >= legal.length`, the actual total is
+      // `floor(n / legal.length) * legal.length`, which is <= n (the remainder from the
+      // integer division is simply never spent). When `n < legal.length` (fewer rollouts than
+      // candidate moves), `Math.max(1, ...)` guarantees every candidate still gets at least one
+      // rollout, so the actual total is `legal.length` — MORE than `n` was asked for. Either
+      // way, the total is still a pure function of (n, legal.length) — deterministic and
+      // machine-independent — just not exactly `n`.
       const perActionRollouts =
         budget.kind === "rollouts" ? Math.max(1, Math.floor(budget.n / legal.length)) : rolloutsPerActionDefault;
       const deadline = budget.kind === "deadlineMs" ? start + budget.ms : undefined;

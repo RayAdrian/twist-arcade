@@ -66,6 +66,12 @@ export function suicidePolicy<S extends WithEffects, M extends Json>(opts: Suici
       if (legal.length === 0) {
         throw new Error(`suicidePolicy: player ${String(player)} has no legal moves`);
       }
+      // NOTE: a `deadlineMs` budget is NOT honored here — it silently falls back to a fixed
+      // `rolloutsPerActionDefault` (20) rollouts per candidate regardless of the actual time
+      // remaining, unlike beam.ts/minimax.ts's search loops, which check the deadline as they
+      // go. Fine for this probe's own harness-internal use (always driven by a `rollouts`
+      // budget in practice), but a caller handing this a real wall-clock budget would get no
+      // responsiveness guarantee at all.
       const perActionRollouts =
         budget.kind === "rollouts" ? Math.max(1, Math.floor(budget.n / legal.length)) : rolloutsPerActionDefault;
 

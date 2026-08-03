@@ -58,6 +58,7 @@ const SOFTEN_MANIFEST: GameManifest = {
 };
 
 let loadEngineCalls = 0;
+let decodeSpyCalls = 0;
 
 const FOG_MANIFEST: GameManifest = {
   id: "tiny-fog-fixture",
@@ -97,6 +98,23 @@ const registry: Registry = {
     manifest: SOFTEN_MANIFEST,
     async loadEngine() {
       return classicTicTacToe;
+    },
+    async loadPresentation() {
+      throw new Error("not needed for these tests");
+    },
+  },
+  "tiny-fog-decode-spy-fixture": {
+    manifest: { ...FOG_MANIFEST, id: "tiny-fog-decode-spy-fixture" },
+    async loadEngine() {
+      // A decode-spying wrapper around tinyFog, registered separately from the plain
+      // "tiny-fog-fixture" entry above so this counter is never disturbed by other tests.
+      return {
+        ...tinyFog,
+        decode(encoded: string) {
+          decodeSpyCalls += 1;
+          return tinyFog.decode(encoded);
+        },
+      };
     },
     async loadPresentation() {
       throw new Error("not needed for these tests");
@@ -205,6 +223,31 @@ describe("handleBotRequest (worker host, plan §6 + plan §13's headline determi
       if (!response.ok) {
         expect(response.error.name).toBe(HiddenInformationUnsupportedError.name);
       }
+    });
+
+    it("refuses BEFORE ever calling engine.decode() on the caller's encodedState (pins the ordering, not just the outcome)", async () => {
+      // The refusal is currently correctly placed before decode in host.ts, but nothing
+      // pinned that ORDERING against regression — a future edit could move the
+      // hiddenInformation check after decode() (still returning ok:false, so the "refuses"
+      // test above would keep passing) while quietly having already run untrusted input
+      // through decode() first. Prove decode() is never even invoked for a refused request.
+      const before = decodeSpyCalls;
+      const fogState = tinyFog.setup(1, rngFromSeed("worker-fog-decode-spy-setup"));
+      const request: BotRequest = {
+        requestId: "req-fog-decode-spy",
+        gameId: "tiny-fog-decode-spy-fixture",
+        encodedState: tinyFog.encode(fogState),
+        player: 0,
+        tierId: "standard",
+        seed: "worker-fog-decode-spy-seed",
+        step: 0,
+      };
+      const response = await handleBotRequest(registry, request, fakeClock());
+      expect(response.ok).toBe(false);
+      if (!response.ok) {
+        expect(response.error.name).toBe(HiddenInformationUnsupportedError.name);
+      }
+      expect(decodeSpyCalls).toBe(before);
     });
   });
 
