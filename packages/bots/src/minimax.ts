@@ -41,13 +41,17 @@ function terminalValue(status: Status, player: PlayerId): number | undefined {
 /**
  * Depth-limited NEGAMAX with alpha-beta pruning — the standard convention: `negamax(...,
  * mover, ...)` returns the position's value from `mover`'s OWN perspective (not a fixed root
- * player's), and every recursive call negates the child's value (since what's good for the
- * next mover is symmetrically bad for the current one — the standard zero-sum assumption,
- * exact for win/lose/draw games like tic-tac-toe; best-effort for `scored` 2P games whose
- * score vectors are not exactly zero-sum, which is why minimax additionally restricts itself
- * to `maxPlayers <= 2` sequential deterministic perfect-info games in `minimaxPolicy` below).
- * Increments `nodeCounter` for every state visited (the "rollouts" budget is spent as a
- * node-expansion cap, since minimax has no rollouts in the MCTS sense).
+ * player's). Every recursive call reads the CHILD's actual mover from `engine.active()` —
+ * never assumes the two players simply alternate — and negates the child's value only when
+ * the mover actually changes (the standard zero-sum assumption holds only across an ACTUAL
+ * change of perspective; a sequential game where the same player can move again, e.g. an
+ * extra-turn twist, must NOT flip sign on that edge, or the search silently mis-evaluates
+ * every branch downstream of it). Exact for win/lose/draw games like tic-tac-toe; best-effort
+ * for `scored` 2P games whose score vectors are not exactly zero-sum, which is why minimax
+ * additionally restricts itself to `maxPlayers <= 2` sequential deterministic perfect-info
+ * games in `minimaxPolicy` below. Increments `nodeCounter` for every state visited (the
+ * "rollouts" budget is spent as a node-expansion cap, since minimax has no rollouts in the
+ * MCTS sense).
  */
 function negamax<S extends WithEffects, M extends Json>(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -86,11 +90,25 @@ function negamax<S extends WithEffects, M extends Json>(
 
   let value = Number.NEGATIVE_INFINITY;
   let a = alpha;
-  const nextMover: PlayerId = mover === 0 ? 1 : 0;
   for (const move of legal) {
     const next = engine.apply(state, new Map([[mover, move]]), rng);
-    const childValue = negamax(engine, next, depth - 1, -beta, -a, nextMover, rng, nodeCounter, nodeBudget);
-    const candidate = -childValue; // negate: childValue is from nextMover's perspective
+    const nextActive = engine.active(next);
+    if (nextActive.mode !== "sequential") {
+      throw new MinimaxUnsupportedGameError(
+        `engine "${engine.meta.id}" became simultaneous mid-search — minimax fits sequential ` +
+          "games only."
+      );
+    }
+    const nextMover = nextActive.player;
+    const sameMover = nextMover === mover;
+    // Only negate (and swap/negate the alpha-beta window) across an ACTUAL change of
+    // perspective. When the same player moves again (an extra turn), the child's value is
+    // already in `mover`'s own perspective — negating it would flip the sign of a value this
+    // player is still trying to MAXIMIZE, corrupting every ancestor's evaluation.
+    const childValue = sameMover
+      ? negamax(engine, next, depth - 1, a, beta, nextMover, rng, nodeCounter, nodeBudget)
+      : negamax(engine, next, depth - 1, -beta, -a, nextMover, rng, nodeCounter, nodeBudget);
+    const candidate = sameMover ? childValue : -childValue;
     if (candidate > value) value = candidate;
     a = Math.max(a, value);
     if (a >= beta) break; // alpha-beta cutoff
@@ -157,9 +175,17 @@ export function minimaxPolicy<S extends WithEffects, M extends Json>(
         for (const move of legal) {
           if (deadline !== undefined && clock.now() >= deadline) break;
           const next = engine.apply(state, new Map([[player, move]]), rng);
-          const nextMover: PlayerId = player === 0 ? 1 : 0;
           let value: number;
           try {
+            const nextActive = engine.active(next);
+            if (nextActive.mode !== "sequential") {
+              throw new MinimaxUnsupportedGameError(
+                `engine "${engine.meta.id}" became simultaneous mid-search — minimax fits ` +
+                  "sequential games only."
+              );
+            }
+            const nextMover = nextActive.player;
+            const sameMover = nextMover === player;
             const childValue = negamax(
               engine,
               next,
@@ -171,7 +197,9 @@ export function minimaxPolicy<S extends WithEffects, M extends Json>(
               nodeCounter,
               nodeBudget
             );
-            value = -childValue; // negate: childValue is from nextMover's perspective
+            // Only negate across an ACTUAL change of perspective — see negamax's module doc
+            // for why an extra-turn (same mover again) must not flip sign.
+            value = sameMover ? childValue : -childValue;
           } catch (err) {
             if (err instanceof MinimaxUnsupportedGameError) {
               // Ran out of depth/budget without a heuristic at THIS depth — remember it, but
