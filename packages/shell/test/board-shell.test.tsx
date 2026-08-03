@@ -289,3 +289,43 @@ describe("Cell — staged visual (I8)", () => {
     expect(cell.style.opacity).toBe("0.6"); // AGE_OPACITY[2]
   });
 });
+
+describe("BoardShell — cursor clamps against current bounds on render (orchestrator ruling: dynamic boardDimensions)", () => {
+  function ResizableBoard({ rows, cols, onCellAction }: { rows: number; cols: number; onCellAction(cellId: string): void }) {
+    return (
+      <BoardShell rows={rows} cols={cols} disabled={false} onCellAction={onCellAction} boardLabel="Resizable board">
+        {Array.from({ length: rows }, (_, row) =>
+          Array.from({ length: cols }, (_, col) => {
+            const id = `${row}-${col}`;
+            return <Cell key={id} id={id} row={row} col={col} accessibleName={`Row ${row + 1}, column ${col + 1}. Empty.`} />;
+          })
+        )}
+      </BoardShell>
+    );
+  }
+
+  it("re-clamps the roving-tabindex cursor when a shrinking board leaves it stranded outside the new bounds", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<ResizableBoard rows={3} cols={3} onCellAction={() => {}} />);
+
+    // Move the cursor to the bottom-right corner (row 2, col 2) of the 3x3 board.
+    screen.getAllByRole("gridcell")[0]!.focus();
+    await user.keyboard("{ArrowRight}{ArrowRight}{ArrowDown}{ArrowDown}");
+    let tabbable = screen.getAllByRole("gridcell").filter((c) => c.getAttribute("tabindex") === "0");
+    expect(tabbable).toHaveLength(1);
+    expect(tabbable[0]).toHaveAttribute("aria-label", expect.stringContaining("Row 3, column 3"));
+
+    // Shrink to a 1x1 board (a real scenario per the presentation.boardDimensions contract:
+    // a seed-varied or shrinking-board twist can legitimately return smaller dimensions than
+    // the previous render) — (2,2) no longer exists at all.
+    rerender(<ResizableBoard rows={1} cols={1} onCellAction={() => {}} />);
+
+    const cells = screen.getAllByRole("gridcell");
+    expect(cells).toHaveLength(1);
+    // Without the clamp, the stored cursor (2,2) would match no rendered cell at all, leaving
+    // the whole board with ZERO tabIndex=0 cells — an unreachable-by-keyboard grid.
+    tabbable = cells.filter((c) => c.getAttribute("tabindex") === "0");
+    expect(tabbable).toHaveLength(1);
+    expect(tabbable[0]).toBe(cells[0]);
+  });
+});

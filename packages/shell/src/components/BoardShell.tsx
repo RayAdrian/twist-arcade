@@ -73,13 +73,27 @@ export function BoardShell({
     }
   }
 
+  // Orchestrator ruling (boardDimensions escalation): `rows`/`cols` are computed PER VIEW on the
+  // presentation, so they can legitimately shrink between renders (a seed-varied setup, or a
+  // shrinking-board twist) — a `cursor` position stored from a LARGER previous board can be left
+  // pointing at a (row, col) that no longer exists at all, which would match no rendered Cell and
+  // strand the whole grid with ZERO tabIndex=0 cells (unreachable by keyboard/Tab entirely).
+  // Clamped HERE, at render time, directly from the raw `cursor` state — not via an effect (which
+  // would render once with the stale value first) and not by mutating `cursor` state itself
+  // (moveCursor's own arrow-key deltas are computed from the same closure's `rows`/`cols` and
+  // already clamp correctly on their own terms).
+  const clampedCursor = {
+    row: Math.max(0, Math.min(rows - 1, cursor.row)),
+    col: Math.max(0, Math.min(cols - 1, cursor.col)),
+  };
+
   const contextValue = useMemo(
     () => ({
       rows,
       cols,
       disabled,
       reducedMotion,
-      cursor,
+      cursor: clampedCursor,
       registerCell(cellId: string, reg: CellRegistration) {
         registryRef.current.set(cellId, reg);
         byPosRef.current.set(`${reg.row},${reg.col}`, cellId);
@@ -102,7 +116,7 @@ export function BoardShell({
     // `moveCursor` is intentionally omitted: it's a plain function recreated every render
     // (not memoized) that only closes over `rows`/`cols`/`byPosRef`/`registryRef`, all of
     // which are otherwise already covered by this same dependency list or are stable refs.
-    [rows, cols, disabled, reducedMotion, cursor, lockedUntil, onCellAction, boardEl]
+    [rows, cols, disabled, reducedMotion, clampedCursor.row, clampedCursor.col, lockedUntil, onCellAction, boardEl]
   );
 
   // Deliberately NOT the "N row wrappers + Children.toArray().slice()" shape an earlier
