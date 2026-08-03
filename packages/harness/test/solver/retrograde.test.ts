@@ -8,6 +8,8 @@ import { classicTicTacToe } from "@twist-arcade/engine/testkit/fixtures/classic-
 import { reach } from "../../src/solver/reach";
 import { retrograde } from "../../src/solver/retrograde";
 import { corridor } from "../fixtures/corridor";
+import { twinTrack } from "../fixtures/twin-track";
+import { extraTurn } from "../fixtures/extra-turn";
 
 describe("retrograde() on classic-ttt (published free oracle)", () => {
   it("values the initial (empty board) position as a draw under optimal play", () => {
@@ -74,5 +76,46 @@ describe("retrograde() on the hand-built cyclic fixture (plan §2.2/§9)", () =>
     const graph = reach(corridor);
     const result = retrograde(corridor, graph);
     expect(result.valueAt(graph.initialHash)).toBe("draw");
+  });
+});
+
+// Review Note 7: corridor's own values are {WIN, draw-residue} only, so retrograde.ts's
+// LOSS-by-countdown machinery (retrograde.ts:143-145) and its same-mover (extra-turn)
+// unflipped-passthrough branch are never directly exercised by anything above. These two small
+// fixtures close that gap.
+describe("retrograde() on twin-track (both ends win — proves LOSS via the countdown, not just WIN)", () => {
+  it("pos=1 and pos=3 are WIN for the mover (one step from either winning end)", () => {
+    const graph = reach(twinTrack);
+    const result = retrograde(twinTrack, graph);
+    for (const node of graph.nodes.values()) {
+      if (node.status.kind !== "ongoing") continue;
+      if (node.state.pos === 1 || node.state.pos === 3) {
+        expect(result.valueAt(node.hash)).toBe("win");
+      }
+    }
+  });
+
+  it("the initial position (pos=2) is a LOSS — every option hands the opponent an immediate win, " +
+    "provable only once BOTH outgoing edges resolve (the countdown path)", () => {
+    const graph = reach(twinTrack);
+    const result = retrograde(twinTrack, graph);
+    expect(result.valueAt(graph.initialHash)).toBe("loss");
+  });
+});
+
+describe("retrograde() on extra-turn (same-mover child value passes through UNFLIPPED)", () => {
+  it("the root is WIN, not LOSS — a solver that always flipped would get this backwards", () => {
+    const graph = reach(extraTurn);
+    const result = retrograde(extraTurn, graph);
+    expect(result.valueAt(graph.initialHash)).toBe("win");
+  });
+
+  it("the phase-1 (extra-turn) node is itself WIN, resolved straight off its terminal child", () => {
+    const graph = reach(extraTurn);
+    const result = retrograde(extraTurn, graph);
+    const phase1 = [...graph.nodes.values()].find(
+      (n) => n.status.kind === "ongoing" && n.state.phase === 1
+    )!;
+    expect(result.valueAt(phase1.hash)).toBe("win");
   });
 });
