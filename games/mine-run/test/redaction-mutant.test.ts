@@ -12,8 +12,8 @@ import { describe, expect, it } from "vitest";
 import { rngFor, rngForSetup } from "@twist-arcade/engine";
 import { checkRedaction } from "@twist-arcade/engine/testkit/checks";
 import type { GameEngine } from "@twist-arcade/engine";
-import { createMineRun, neighbors } from "../engine";
-import type { MineRunMove, MineRunState, MineRunView } from "../engine";
+import { createMineRun, neighbors, countAdjacentMines } from "../engine";
+import type { MineRunCellView, MineRunMove, MineRunState, MineRunView } from "../engine";
 import { makeMineRunSecretExtractor } from "../secret";
 
 /**
@@ -82,14 +82,88 @@ function makeNearMissMutant(): GameEngine<MineRunState, MineRunMove, MineRunView
       return real;
     },
     playerView(state, player) {
-      // BUG: playerView still calls the real cell-redaction logic (cells stays honomit-based
-      // — proving the mutant's cell OMISSION is not what's broken), but forgets to pass
-      // lastEffects through the allowlist filter, leaking the nearMiss effect straight out.
+      // BUG: playerView still calls the real cell-redaction logic (`cells` stays correctly
+      // omission-based — proving the mutant's leak is NOT a broken cell redaction), but
+      // forgets to pass lastEffects through the allowlist filter, leaking the nearMiss effect
+      // straight out.
       const real = base.playerView(state, player);
       return { ...real, lastEffects: state.lastEffects };
     },
   };
 }
+
+/**
+ * Reproduces the exact regression the Fable review demonstrated defeats the OLD tagged-token
+ * secretExtractor: engine.ts's spectator carve-out guard is
+ * `player === null && status.kind !== "ongoing"`; drop the `status.kind !== "ongoing"` conjunct
+ * and the FULL mine layout leaks to any spectator, mid-run included. This mutant reimplements
+ * playerView's spectator-terminal branch verbatim but gates it on `player === null` alone,
+ * exactly mirroring what a one-line regression in engine.ts would produce.
+ */
+function makeSpectatorCarveOutRegressionMutant(
+  width: number,
+  height: number,
+  mines: number,
+  budget: number
+): GameEngine<MineRunState, MineRunMove, MineRunView> {
+  const base = createMineRun({ width, height, mines, budget });
+  return {
+    ...base,
+    playerView(state, player) {
+      if (player !== null) return base.playerView(state, player);
+
+      // BUG: no status check -- this fires even while the run is genuinely ongoing.
+      const minesSet = new Set(state.mines);
+      const explodedSet = new Set(state.exploded);
+      const cells: Record<number, MineRunCellView> = {};
+      for (let c = 0; c < width * height; c++) {
+        if (minesSet.has(c)) {
+          cells[c] = explodedSet.has(c) ? { exploded: true } : { mine: true };
+        } else {
+          cells[c] = { n: countAdjacentMines(c, minesSet, width, height) };
+        }
+      }
+      const honest = base.playerView(state, player);
+      return {
+        width,
+        height,
+        cells,
+        minesTotal: minesSet.size,
+        minesExploded: explodedSet.size,
+        streakLen: state.streakLen,
+        streakValue: state.streakValue,
+        nextGain: state.streakLen + 1,
+        banked: state.banked,
+        revealsLeft: state.revealsLeft,
+        lastEffects: honest.lastEffects,
+      };
+    },
+  };
+}
+
+describe("Mine Run redaction — spectator carve-out regression mutant (must-fix 2)", () => {
+  it("the regressed carve-out (player === null alone, dropping the ongoing check) FAILS checkRedaction under the structural secretExtractor", () => {
+    const mutant = makeSpectatorCarveOutRegressionMutant(WIDTH, HEIGHT, MINES, BUDGET);
+    expect(() =>
+      checkRedaction(mutant, {
+        runs: 25,
+        maxPlies: 30,
+        secretExtractor: makeMineRunSecretExtractor(TOTAL_CELLS),
+      })
+    ).toThrow(/redaction/);
+  });
+
+  it("the SHIPPING engine (same board config) never fails checkRedaction under the structural secretExtractor", () => {
+    const shipping = createMineRun({ width: WIDTH, height: HEIGHT, mines: MINES, budget: BUDGET });
+    expect(() =>
+      checkRedaction(shipping, {
+        runs: 25,
+        maxPlies: 30,
+        secretExtractor: makeMineRunSecretExtractor(TOTAL_CELLS),
+      })
+    ).not.toThrow();
+  });
+});
 
 describe("Mine Run redaction — planted nearMiss mutant", () => {
   it("the nearMiss-leaking mutant FAILS checkRedaction", () => {
@@ -141,6 +215,34 @@ describe("Mine Run redaction — planted nearMiss mutant", () => {
         const revealedSet = new Set(state.revealed);
         for (const key of Object.keys(view.cells)) {
           expect(revealedSet.has(Number(key))).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("structural assertion (both seats): Object.keys(view.cells) is a subset of the revealed " +
+    "set and no value carries mine:true, for player 0 AND an ONGOING spectator (player null) " +
+    "-- the mutant test above previously only checked player 0, which cannot detect a leak " +
+    "that is specific to the spectator seat", () => {
+    const engine = createMineRun({ width: WIDTH, height: HEIGHT, mines: MINES, budget: BUDGET });
+    for (let run = 0; run < 15; run++) {
+      const seed = `subset-check-both-seats-${run}`;
+      let state = engine.setup(1, rngForSetup(seed));
+      let step = 0;
+      while (engine.status(state).kind === "ongoing" && step < 30) {
+        const legal = engine.legalMoves(state, 0);
+        const move = legal[step % legal.length]!;
+        state = engine.apply(state, new Map([[0, move]]), rngFor(seed, step));
+        step++;
+        if (engine.status(state).kind !== "ongoing") break; // spectator carve-out legitimately fires past this point
+
+        const revealedSet = new Set(state.revealed);
+        for (const seat of [0, null] as const) {
+          const view = engine.playerView(state, seat);
+          for (const key of Object.keys(view.cells)) {
+            expect(revealedSet.has(Number(key))).toBe(true);
+            expect(view.cells[Number(key)]).not.toEqual({ mine: true });
+          }
         }
       }
     }
