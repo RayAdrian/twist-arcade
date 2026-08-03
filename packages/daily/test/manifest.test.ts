@@ -54,7 +54,9 @@ describe("manifest.ts — DailyManifest validation (CI guard: plan §2.3.3, §11
 
   it("rejects a vs-bot manifest with no bot record at all", async () => {
     const manifest = await vsBotManifest();
-    // @ts-expect-error — deliberately omitting the required bot record for a vs-bot manifest.
+    // `bot` is optional in the type (solo manifests have none), so deleting it is not itself
+    // a type violation — the missing-bot case is a runtime "vs-bot requires bot" rule, not a
+    // type-level one. No @ts-expect-error needed here (unlike the forbidden-shape cases below).
     delete manifest.bot;
     await expect(assertValidManifest(manifest)).rejects.toThrow(/bot/i);
   });

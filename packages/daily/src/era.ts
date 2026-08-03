@@ -6,11 +6,25 @@
 
 import type { PolicySpec, SearchBudget } from "@twist-arcade/game-spec";
 
+/**
+ * The daily bot's budget, narrowed to `rollouts` at the TYPE level — not merely runtime-
+ * asserted. `SearchBudget` (game-spec) is a union that includes `deadlineMs` because
+ * interactive casual play legitimately wants it; the daily bot never does (plan §2.2: "NEVER
+ * deadlineMs — a wall-clock budget plays differently on a fast laptop than a slow phone").
+ * Narrowing here means `{ kind: "deadlineMs", ... }` is a compile error wherever a
+ * `DailyBotRecord` is constructed in TypeScript, not just a runtime rejection of JSON loaded
+ * from disk — the type-level-preferred fix from platform-corrections.md C1's pattern, applied
+ * to this record. `assertValidBotRecord`'s runtime check stays regardless (C1: "runtime probe
+ * — keep regardless"), because `data/daily/era.json` is untyped JSON on disk; a hand-edited
+ * file can still contain the forbidden shape and TypeScript cannot see it there.
+ */
+export type DailyRolloutsBudget = Extract<SearchBudget, { kind: "rollouts" }>;
+
 export interface DailyBotRecord {
   era: number; // monotonically increasing per game; bumped on ANY change to this record.
   tier: "standard"; // fixed (fadeout §14 Q3: Standard, not Ruthless).
   policy: PolicySpec; // resolved copy — e.g. { kind: "mcts" }.
-  budget: SearchBudget; // asserted `rollouts` below — NEVER deadlineMs.
+  budget: DailyRolloutsBudget; // NEVER deadlineMs — enforced by the type, re-checked below.
   blunder: { epsilon: number; temperature: number } | null;
   botsVersion: string; // @twist-arcade/bots package version — the search implementation is
   // part of the bot's behavior.
