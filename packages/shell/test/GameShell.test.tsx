@@ -503,3 +503,105 @@ describe("GameShell — hotseat Restart confirms after just ONE move (I10, orche
     expect(screen.queryByText("Restart?")).toBeNull();
   });
 });
+
+describe("GameShell — restart count in the share text is gated to daily/solo contexts (minor)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("omits the restart line entirely for a casual (non-daily) solo-bot rematch — restartCount reflects 'hit Rematch', not a meaningful retry signal there", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+
+    const registryEntry = makeRegistryEntry();
+    render(
+      <GameShell
+        gameId={tttManifest.id}
+        registryEntry={registryEntry}
+        manifests={[tttManifest]}
+        mode="solo-bot"
+        botDriver={scriptedBotDriver([{ cell: 3 }, { cell: 5 }, { cell: 3 }, { cell: 5 }])}
+      />
+    );
+    await waitFor(() => expect(screen.getAllByRole("gridcell").length).toBe(9));
+
+    async function clickCell(index: number) {
+      const cell = screen.getAllByRole("gridcell")[index]!;
+      await act(async () => {
+        cell.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+        cell.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 0, clientY: 0 }));
+      });
+    }
+    async function winTopRow() {
+      await clickCell(0);
+      await waitFor(() => expect(screen.getAllByRole("gridcell")[3]?.textContent).toBe("O"));
+      await new Promise((resolve) => setTimeout(resolve, 260));
+      await clickCell(1);
+      await waitFor(() => expect(screen.getAllByRole("gridcell")[5]?.textContent).toBe("O"));
+      await new Promise((resolve) => setTimeout(resolve, 260));
+      await clickCell(2);
+    }
+
+    const user = userEvent.setup();
+    await winTopRow();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Rematch" })).toBeInTheDocument(), { timeout: 2000 });
+    await user.click(screen.getByRole("button", { name: "Rematch" })); // restartCount -> 1
+    await waitFor(() => expect(screen.getAllByRole("gridcell").every((c) => c.textContent === "")).toBe(true));
+
+    await winTopRow();
+    await waitFor(() => expect(screen.getByRole("button", { name: /share/i })).toBeInTheDocument(), { timeout: 2000 });
+    await user.click(screen.getByRole("button", { name: /share/i }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    expect(writeText.mock.calls[0]?.[0]).not.toMatch(/restart/i);
+  });
+
+  it("still includes the restart line for a daily game (orchestrator addendum §15.3 — comparability is sacred, even in a casual-shaped mode)", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+
+    const registryEntry = makeRegistryEntry();
+    render(
+      <GameShell
+        gameId={tttManifest.id}
+        registryEntry={registryEntry}
+        manifests={[tttManifest]}
+        mode="solo-bot"
+        tierId="ruthless"
+        daily={{ day: "2026-08-03", dayNumber: 1 }}
+        botDriver={scriptedBotDriver([{ cell: 3 }, { cell: 5 }, { cell: 3 }, { cell: 5 }])}
+      />
+    );
+    await waitFor(() => expect(screen.getAllByRole("gridcell").length).toBe(9));
+
+    async function clickCell(index: number) {
+      const cell = screen.getAllByRole("gridcell")[index]!;
+      await act(async () => {
+        cell.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+        cell.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 0, clientY: 0 }));
+      });
+    }
+    async function winTopRow() {
+      await clickCell(0);
+      await waitFor(() => expect(screen.getAllByRole("gridcell")[3]?.textContent).toBe("O"));
+      await new Promise((resolve) => setTimeout(resolve, 260));
+      await clickCell(1);
+      await waitFor(() => expect(screen.getAllByRole("gridcell")[5]?.textContent).toBe("O"));
+      await new Promise((resolve) => setTimeout(resolve, 260));
+      await clickCell(2);
+    }
+
+    const user = userEvent.setup();
+    await winTopRow();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Rematch" })).toBeInTheDocument(), { timeout: 2000 });
+    await user.click(screen.getByRole("button", { name: "Rematch" })); // restartCount -> 1
+    await waitFor(() => expect(screen.getAllByRole("gridcell").every((c) => c.textContent === "")).toBe(true));
+
+    await winTopRow();
+    await waitFor(() => expect(screen.getByRole("button", { name: /share/i })).toBeInTheDocument(), { timeout: 2000 });
+    await user.click(screen.getByRole("button", { name: /share/i }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    expect(writeText.mock.calls[0]?.[0]).toMatch(/1 restart/i);
+  });
+});
