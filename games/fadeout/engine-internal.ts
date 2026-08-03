@@ -158,6 +158,29 @@ export interface TransitionResult {
   longestLife: [number, number];
 }
 
+/** Total placements made by both players so far — equivalently, the 0-indexed ply number of
+ *  the placement about to happen. Invariant across a single transition() call (see that
+ *  function's doc comment): every removal moves exactly one mark from "queued" to "faded", so
+ *  the sum never changes mid-transition even though individual removals mutate faded/queues.
+ *  Exported so F3's share-artifact layer can compute a still-on-the-board mark's CURRENT
+ *  lifespan (plan §8, orchestrator ruling R2 — "also count marks still alive at game end")
+ *  with the identical formula transition() uses for a removed one, instead of re-deriving it
+ *  and risking drift. */
+export function totalPliesPlayed(faded: readonly [number, number], queues: Queues): number {
+  return faded[0] + queues[0].length + faded[1] + queues[1].length;
+}
+
+/** The ply number (0-indexed; P0's placements are even, P1's odd, since placements strictly
+ *  alternate P0, P1, P0, P1, ...) at which the mark currently at queue index `i` (0 = oldest)
+ *  of player `p` was placed, given `p`'s faded count AT THE TIME (before any removal this call
+ *  might be counting). Derivation: that mark is `p`'s `(fadedForOwner + i + 1)`-th placement
+ *  ever, and player p's n-th placement (1-indexed) happens at overall ply `2*(n-1) + p`.
+ *  Shared by transition()'s own removal bookkeeping and (via export) F3's survivor lifespan
+ *  calculation. */
+export function birthPlyOfQueueIndex(index: number, fadedForOwner: number, owner: PlayerId): number {
+  return 2 * (fadedForOwner + index) + owner;
+}
+
 /**
  * The ONE place placement + decay-to-quiescence is computed. Used by BOTH apply() (the real
  * transition) and computeLegalCells()'s superko lookahead (the resulting-position check) —
@@ -178,15 +201,26 @@ export interface TransitionResult {
  *     doomed cell simply ends up with their new mark there); place-first pushes first and
  *     pops after. Note a mover targeting their OWN doomed cell is never treated as a
  *     "displacement" (displacement only ever removes an OPPONENT's mark) — it's ordinary
- *     overflow, full-cap lifespan, regardless of which cell the new mark lands on.
+ *     overflow regardless of which cell the new mark lands on. See RulesetConfig's
+ *     AXIS COLLAPSE note: under playThrough=true this self-target case is reachable via EITHER
+ *     decayTiming value, and both produce the identical resulting position.
  *
- * Lifespan bookkeeping (longestLife, "max own-placements a mark survived"): a mark evicted by
- * its OWN owner's overflow has always survived exactly `cap` of the owner's own placements
- * (FIFO of fixed size cap — provable, not measured: bornIndex = faded[owner] before removal,
- * see the derivation in the handoff report). A mark evicted early by an opponent's
- * displacement has survived exactly `cap - 1` (it dies one placement before its natural
- * cap-th). Both cases fall out of a plain queue.shift() with no per-mark birth-tick field
- * needed, matching the plan's queues: number[] shape exactly (no separate age array to drift).
+ * Lifespan bookkeeping (longestLife) — REDEFINED per orchestrator ruling R2 to "plies survived
+ * on the board", replacing the original "own placements survived" metric (provably confined to
+ * {0, cap, cap-1} under a fixed-cap FIFO — worthless variance-wise on a share artifact whose
+ * entire purpose is per-game variance). No per-mark birth-tick field is needed; under strict
+ * alternation a mark's birth ply is derivable from existing state via birthPlyOfQueueIndex()
+ * above (index is always 0 here — removeOldest only ever evicts the queue head):
+ *   lifespan = currentPly - birthPlyOfQueueIndex(0, faded-at-removal-time, owner)
+ * `currentPly` is computed ONCE, up front, from the transition's ORIGINAL inputs (never from
+ * the mutating nextQueues/nextFaded) via totalPliesPlayed() — see that function's doc comment
+ * for why it's safe to reuse for both the displacement removal and the mover's own-overflow
+ * removal within the same apply(), even though a removal in between mutates faded/queues.
+ *
+ * Marks still ON the board when the game ends are NOT reflected here (longestLife only updates
+ * on removal) — per ruling R2, F3's share-artifact layer computes a survivor's contribution
+ * itself from the final view using totalPliesPlayed()/birthPlyOfQueueIndex() rather than this
+ * module tracking it, since "still alive" isn't a removal event.
  */
 export function transition(
   queues: Queues,
@@ -201,12 +235,15 @@ export function transition(
   const nextFaded: [number, number] = [faded[0], faded[1]];
   const nextLongestLife: [number, number] = [longestLife[0], longestLife[1]];
   const effects: Effect[] = [];
+  const currentPly = totalPliesPlayed(faded, queues);
 
-  function removeOldest(owner: PlayerId, lifespan: number): void {
+  function removeOldest(owner: PlayerId): void {
     const removedCell = get2(nextQueues, owner).shift();
     if (removedCell === undefined) {
       throw new Error(`fadeout engine: transition() tried to evict from player ${owner}'s empty queue`);
     }
+    const birthPly = birthPlyOfQueueIndex(0, get2(nextFaded, owner), owner);
+    const lifespan = currentPly - birthPly;
     set2(nextFaded, owner, get2(nextFaded, owner) + 1);
     if (lifespan > get2(nextLongestLife, owner)) set2(nextLongestLife, owner, lifespan);
     effects.push({ type: "decayed", player: owner, cell: removedCell });
@@ -215,7 +252,7 @@ export function transition(
   if (config.playThrough) {
     const oppQ = get2(nextQueues, opponent);
     if (oppQ.length === config.cap && oppQ[0] === cell) {
-      removeOldest(opponent, config.cap - 1);
+      removeOldest(opponent);
     }
   }
 
@@ -225,7 +262,7 @@ export function transition(
     effects.push({ type: "placed", player: mover, cell });
   };
   const overflow = (): void => {
-    if (willOverflow) removeOldest(mover, config.cap);
+    if (willOverflow) removeOldest(mover);
   };
 
   if (config.decayTiming === "remove-first") {

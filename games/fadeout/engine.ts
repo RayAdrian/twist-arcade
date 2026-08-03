@@ -43,6 +43,12 @@ export interface FadeoutState extends WithEffects {
    *  of encode() (see the module-level comment on that split). */
   readonly history: readonly string[];
   readonly faded: readonly [number, number];
+  /** Per player, the longest a REMOVED mark has ever survived, measured in plies on the board
+   *  (orchestrator ruling R2 — NOT "own placements survived", which is provably confined to
+   *  {0, cap, cap-1} and worthless as a share-artifact variance stat). Only updates when a mark
+   *  is actually removed; see engine-internal.ts's transition() doc comment for the derivation,
+   *  and totalPliesPlayed()/birthPlyOfQueueIndex() (exported there) for computing a still-alive
+   *  mark's current lifespan, which this field does NOT include. */
   readonly longestLife: readonly [number, number];
   readonly lastEffects: WithEffects["lastEffects"];
 }

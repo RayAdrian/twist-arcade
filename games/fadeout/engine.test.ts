@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 import { engineContract } from "@twist-arcade/engine/testkit";
-import { rngFor, rngForSetup, type PlayerId } from "@twist-arcade/engine";
+import { rngFor, rngFromSeed, rngForSetup, type PlayerId } from "@twist-arcade/engine";
 import { allRulesetConfigs, createFadeoutEngine, positionKey, type FadeoutState, type RulesetConfig } from "./engine";
 
 const BASE_CONFIG: RulesetConfig = {
@@ -117,7 +117,11 @@ describe("fadeout engine — decay timing (A) x playable-through (B)", () => {
     ]);
     expect(next.queues[0]).toEqual([1, 3, 0]);
     expect(next.faded).toEqual([1, 0]);
-    expect(next.longestLife).toEqual([3, 0]); // full-cap lifespan for an own-overflow eviction
+    // longestLife redefined (orchestrator ruling R2) as plies survived on the board, not "own
+    // placements survived" — the old metric was provably confined to {0,2,3}. This mark (P0's
+    // 1st placement, cell 0, born at ply 0) is evicted at ply 6 (P0's queue+faded=3+0, P1's
+    // queue+faded=3+0 ⇒ currentPly=6): lifespan = 6 - 0 = 6.
+    expect(next.longestLife).toEqual([6, 0]);
   });
 
   it("A2 place-first + B1 solid: the mover's own doomed cell is occupied and NOT a legal target", () => {
@@ -139,10 +143,12 @@ describe("fadeout engine — decay timing (A) x playable-through (B)", () => {
     ]);
     expect(next.queues[0]).toEqual([1, 3, 4]);
     expect(next.faded).toEqual([1, 0]);
-    expect(next.longestLife).toEqual([3, 0]);
+    // Same currentPly=6/birthPly=0 derivation as the A1 case above — decayTiming only reorders
+    // the effects, not the resulting lifespan (see the R1 axis-collapse note either way).
+    expect(next.longestLife).toEqual([6, 0]);
   });
 
-  it("B2 playable-through: a NON-cap player may displace the opponent's doomed mark early (lifespan cap-1)", () => {
+  it("B2 playable-through: a NON-cap player may displace the opponent's doomed mark early (one ply short of a full-cap eviction)", () => {
     // After P0's 3rd placement, P0 is at cap (oldest = cell 0) while P1 has only 2 marks —
     // the one naturally-occurring window (strict alternation from an empty board means P0,
     // moving first, always reaches cap no later than P1) where the ABOUT-TO-MOVE player is
@@ -172,7 +178,10 @@ describe("fadeout engine — decay timing (A) x playable-through (B)", () => {
       { type: "placed", player: 1, cell: 0 },
     ]);
     expect(state.faded[0]).toBe(before.faded[0] + 1);
-    expect(state.longestLife[0]).toBe(2); // cap - 1: displaced one placement early
+    // Displaced mark: P0's 1st placement (cell 0), born at ply 0. currentPly at displacement =
+    // faded[0]+|q0|+faded[1]+|q1| = 0+3+0+2 = 5 (evaluated on the PRE-transition state, i.e.
+    // before this displacing move is counted). lifespan = 5 - 0 = 5.
+    expect(state.longestLife[0]).toBe(5);
     expect(state.queues).toEqual([[1, 3], [2, 5, 0]]);
   });
 
@@ -188,7 +197,12 @@ describe("fadeout engine — decay timing (A) x playable-through (B)", () => {
     ]);
     expect(next.queues).toEqual([[1, 3, 2], [5, 7]]);
     expect(next.faded).toEqual([1, 1]);
-    expect(next.longestLife).toEqual([3, 2]);
+    // currentPly = 0+3+0+3 = 6 (both at cap before this move). P1's displaced mark (cell 2) was
+    // its 1st placement, born at ply 1 (P1 moves 2nd ⇒ birthPly = 2*0+1 = 1): lifespan = 6-1 = 5.
+    // P0's own-overflow mark (cell 0) was its 1st placement, born at ply 0: lifespan = 6-0 = 6.
+    // Same values regardless of decayTiming ordering (see the identical A2 case below) — that's
+    // the R1 axis-collapse in miniature.
+    expect(next.longestLife).toEqual([6, 5]);
   });
 
   it("B2 playable-through + A2 place-first: same displacement, mover's own overflow ordered after placing", () => {
@@ -202,7 +216,46 @@ describe("fadeout engine — decay timing (A) x playable-through (B)", () => {
     ]);
     expect(next.queues).toEqual([[1, 3, 2], [5, 7]]);
     expect(next.faded).toEqual([1, 1]);
-    expect(next.longestLife).toEqual([3, 2]);
+    // Identical currentPly/birthPly derivation as the A1 case above — decayTiming only reorders
+    // the effects, never the lifespan, which is exactly the R1 axis-collapse claim.
+    expect(next.longestLife).toEqual([6, 5]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// longestLife — regression guard for the R2 redefinition (plies survived on the board, not
+// "own placements survived"). The old metric was provably confined to {0, cap, cap-1} = {0, 2,
+// 3}; this sweep proves the new one is NOT, so a future refactor that accidentally reverts to
+// the old formula gets caught here rather than silently shipping a near-constant share stat.
+// ---------------------------------------------------------------------------------------
+
+describe("fadeout engine — longestLife varies beyond the old {0,2,3}-confined range", () => {
+  it("a random-game sweep across all 8 variants produces longestLife values outside {0,2,3}", () => {
+    const observed = new Set<number>();
+    let maxObserved = 0;
+
+    for (const config of allRulesetConfigs()) {
+      const engine = createFadeoutEngine(config);
+      const label = `${config.decayTiming}|${config.playThrough}|${config.repetition}`;
+      for (let game = 0; game < 15; game++) {
+        const seed = `longestlife-sweep-${label}-${game}`;
+        const picker = rngFromSeed(`${seed}:picker`);
+        let state = engine.setup(2, rngForSetup(seed));
+        for (let ply = 0; ply < 200; ply++) {
+          if (engine.status(state).kind !== "ongoing") break;
+          const legal = engine.legalMoves(state, state.toMove);
+          if (legal.length === 0) break;
+          const move = legal[picker.int(legal.length)]!;
+          state = apply(engine, state, state.toMove, move.cell, seed, ply);
+          observed.add(state.longestLife[0]);
+          observed.add(state.longestLife[1]);
+          maxObserved = Math.max(maxObserved, state.longestLife[0], state.longestLife[1]);
+        }
+      }
+    }
+
+    expect(maxObserved).toBeGreaterThan(3);
+    expect([...observed].some((v) => v > 3)).toBe(true);
   });
 });
 
