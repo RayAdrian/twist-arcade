@@ -6,13 +6,18 @@
 // within ~10% of the Strong agent, one visible, unsophisticated policy is effectively the
 // whole game — search adds nothing, so there is no depth to speak of.
 //
-// Prefers score() over heuristic() when both exist (score() is the game's own notion of
-// "how well am I doing", the natural ranking for a solo score-chase; heuristic() is the
-// fallback for 2P games that have no score()). Requires at least one — there is nothing to
-// rank candidates by otherwise.
+// Candidate ranking is `../search-utils.ts`'s shared `rankingValueOf` (platform-corrections.md
+// C6): prefers heuristic() over score() when both exist — score() is contractually pinned to
+// "however much is already realized" (it must equal a scored terminal's `scores[0]`), so a
+// probe that preferred it would be blind to unrealized/potential progress (mine-run.md §4.4/
+// §4.5's press-your-luck streak being the motivating case). Requires at least one of
+// score()/heuristic() — there is nothing to rank candidates by otherwise. This used to be a
+// locally-duplicated `evaluate()` with the OPPOSITE (score-first) priority — the exact
+// blindness C6 found — folded into the shared helper instead of drifting a second copy.
 
-import type { GameEngine, Json, PlayerId, WithEffects } from "@twist-arcade/engine";
+import type { Json, PlayerId, WithEffects } from "@twist-arcade/engine";
 import type { Policy } from "../policy";
+import { rankingValueOf } from "../search-utils";
 
 export class GreedyOnlyUnsupportedGameError extends Error {
   constructor(gameId: string) {
@@ -21,38 +26,6 @@ export class GreedyOnlyUnsupportedGameError extends Error {
         "greedy-only has nothing to rank candidate moves by."
     );
     this.name = "GreedyOnlyUnsupportedGameError";
-  }
-}
-
-/** Value of `state` from `player`'s POV, for ranking ONE ply ahead: a `won` terminal ranks
- *  strictly ABOVE every ongoing value and a `lost` terminal ranks strictly BELOW every ongoing
- *  value (±Infinity, the same convention minimax.ts's terminalValue already uses correctly) —
- *  score()/heuristic() have no documented range (classic-ttt's heuristic alone spans roughly
- *  ±8), so a finite ±1 for won/lost would let an ongoing position's raw score/heuristic
- *  outrank an actual win, which is exactly backwards for a policy whose entire contract is
- *  "take the best immediate result". draw/scored stay on the same finite scale as
- *  score()/heuristic() since a still-`ongoing` state's score/heuristic is explicitly a stand-in
- *  for "how this game will eventually score", not a separate incomparable scale. */
-function evaluate<S extends WithEffects, M extends Json>(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  engine: GameEngine<S, M, any>,
-  state: S,
-  player: PlayerId
-): number {
-  const status = engine.status(state);
-  switch (status.kind) {
-    case "won":
-      return status.winner === player ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
-    case "lost":
-      return Number.NEGATIVE_INFINITY;
-    case "draw":
-      return 0;
-    case "scored":
-      return status.scores[player] ?? 0;
-    case "ongoing":
-      if (engine.score) return engine.score(state, player);
-      // engine.heuristic existence is checked once up-front in chooseMove; safe here.
-      return engine.heuristic!(state, player);
   }
 }
 
@@ -76,7 +49,7 @@ export function greedyOnlyPolicy<S extends WithEffects, M extends Json>(): Polic
       let bestValue = Number.NEGATIVE_INFINITY;
       for (const move of legal) {
         const next = engine.apply(state, new Map([[player, move]]), rng);
-        const value = evaluate(engine, next, player);
+        const value = rankingValueOf(engine, engine.status(next), next, player);
         if (value > bestValue) {
           bestValue = value;
           bestMove = move;

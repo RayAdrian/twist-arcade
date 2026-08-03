@@ -70,3 +70,32 @@ export function chooseSafeMove(view: MineRunView, analysis: FrontierAnalysis): M
 export function safeMove(view: MineRunView): MineRunMove {
   return chooseSafeMove(view, analyzeFrontier(view));
 }
+
+/** Thrown by `assertRevealBudgetScarcity` — see its doc comment. */
+export class RevealBudgetNotScarceError extends Error {
+  constructor(budget: number, totalCells: number) {
+    super(
+      `assertRevealBudgetScarcity: budget (${budget}) is not strictly less than totalCells ` +
+        `(${totalCells}) -- an Always-Safe-vs-Strong separation requires REAL reveal scarcity ` +
+        "(mine-run.md §4.2's tuning note, platform-corrections.md C6). With revealsLeft budget " +
+        "== totalCells there is no reveal scarcity at all: every policy simply clears the whole " +
+        "board regardless of strategy, and the gate shows ZERO separation at any mine density -- " +
+        "a passing OR failing ratio computed under this configuration is not evidence of anything."
+    );
+    this.name = "RevealBudgetNotScarceError";
+  }
+}
+
+/**
+ * Precondition check for any board configuration a caller intends to feed the Always-Safe
+ * gate (mine-run.md §4.2, platform-corrections.md C6's "also record" note): throws unless
+ * `budget < totalCells`. This is deliberately a HARD ERROR, not a silent pass — a gate that
+ * quietly means nothing under some configuration is this project's signature failure (the
+ * standing warning this milestone was given), and "budget == totalCells happens to show zero
+ * separation" is exactly that shape unless something makes it loud.
+ */
+export function assertRevealBudgetScarcity(budget: number, totalCells: number): void {
+  if (budget >= totalCells) {
+    throw new RevealBudgetNotScarceError(budget, totalCells);
+  }
+}

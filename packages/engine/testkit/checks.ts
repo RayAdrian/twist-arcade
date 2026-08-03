@@ -730,6 +730,27 @@ export interface CertificateReplayInput {
   engineVersion: string;
   seed: string;
   moveLog: Json[];
+  /**
+   * Optional (correction C10): when supplied, MUST equal `moveLog.length`. `par` is the
+   * published number a `DailyCertificate` exists to prove — fairness proof, difficulty
+   * calibration, and share hook, all at once — so a certificate that replays cleanly but
+   * carries a forged `par` is worse than an unverified one: it carries the authority of
+   * "verified" while lying about the one number every downstream consumer trusts. Optional
+   * only so `CertificateReplayInput` stays usable for replay-only callers that never had a
+   * `par` to check in the first place (e.g. this file's own pre-C10 test fixtures); any real
+   * `DailyCertificate` always has one.
+   */
+  par?: number;
+  /** Optional: when supplied, MUST be one of the two contractual values. A `DailyCertificate`
+   *  is read back from JSON (no compile-time type safety across that boundary), so a corrupt
+   *  or typo'd value is a real failure mode worth rejecting explicitly rather than silently
+   *  accepting an arbitrary string. */
+  parKind?: "optimal" | "best-in-budget";
+  /** Optional (fog games only): when supplied, MUST be a boolean, for the same JSON-boundary
+   *  reason as `parKind`. This is a shape check only — verifyCertificate replays a moveLog, it
+   *  does not re-solve, so it has no way to check whether the puzzle actually required a
+   *  guess; that is `certifyDay`'s job (correction C11) at generation time. */
+  guessFree?: boolean;
 }
 
 /**
@@ -751,6 +772,29 @@ export function verifyCertificate(engine: GameEngine<any, any, any>, cert: Certi
     throw new ContractViolation(
       "verifyCertificate",
       `certificate.gameVersion ${cert.gameVersion} does not match engine.meta.version ${engine.meta.version}`
+    );
+  }
+  // Correction C10: `par`/`parKind`/`guessFree` are checked BEFORE replaying — they are pure
+  // structural facts about the certificate itself (par vs. moveLog.length; parKind/guessFree
+  // shape), independent of whether the moveLog actually replays to `won`, so there is no
+  // reason to pay for a replay before rejecting an already-tampered certificate.
+  if (cert.par !== undefined && cert.par !== cert.moveLog.length) {
+    throw new ContractViolation(
+      "verifyCertificate",
+      `certificate.par ${cert.par} does not match moveLog.length ${cert.moveLog.length} — par must equal the ` +
+        "number of moves in the certified solution"
+    );
+  }
+  if (cert.parKind !== undefined && cert.parKind !== "optimal" && cert.parKind !== "best-in-budget") {
+    throw new ContractViolation(
+      "verifyCertificate",
+      `certificate.parKind ${stableStringify(cert.parKind as unknown as Json)} is not one of "optimal" | "best-in-budget"`
+    );
+  }
+  if (cert.guessFree !== undefined && typeof cert.guessFree !== "boolean") {
+    throw new ContractViolation(
+      "verifyCertificate",
+      `certificate.guessFree ${stableStringify(cert.guessFree as unknown as Json)} is not a boolean`
     );
   }
   const record: ReplayRecord = {

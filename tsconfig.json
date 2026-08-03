@@ -4,6 +4,7 @@
     { "path": "./packages/engine" },
     { "path": "./packages/game-spec" },
     { "path": "./packages/bots" },
+    { "path": "./packages/harness" },
     { "path": "./packages/shell" },
     { "path": "./packages/daily" },
     { "path": "./tsconfig.app.json" }

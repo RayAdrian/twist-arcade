@@ -306,6 +306,19 @@ lands at 95–100% of Strong because banking costs nothing or gambling is never 
 implementer should see this once on purpose: the tuning notebook (§9 MR3) runs the flat-scoring
 variant to watch the gate trip before trusting it.
 
+**Reveal-budget scarcity is a precondition, not a tuning detail (platform-corrections.md C6,
+found during the C6 close-out).** The Always-Safe↔Strong separation above assumes the reveal
+budget is a REAL constraint. Where `revealsLeft budget == totalCells`, every policy — Always-
+Safe, Greedy, Strong, a coin-flip — simply clears the whole board eventually regardless of
+strategy, and the gate shows ZERO separation at ANY mine density: raising or lowering density
+per the tuning levers above does nothing, because there was never a scarce resource to trade
+risk against. A ratio computed under this configuration is not weak evidence of a healthy or
+broken game; it is not evidence at all. `games/mine-run/probes.ts`'s
+`assertRevealBudgetScarcity(budget, totalCells)` throws `RevealBudgetNotScarceError` whenever
+`budget >= totalCells` — every board configuration fed to the Always-Safe gate (the harness's
+own Mine Run mutant fixtures included) calls it before trusting a ratio, so this is an enforced
+precondition, not merely a comment for the next implementer to remember.
+
 ### 4.3 Greedy-Only
 
 Greedy = 1-ply over the game heuristic (§4.5). It does local deduction and takes the best
