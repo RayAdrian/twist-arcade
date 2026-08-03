@@ -28,8 +28,16 @@ export interface ResultModalProps {
   artifactBody: string;
   /** Exactly one suggestion, or null when there is no other game in the registry (§8.4). */
   nextTwist: GameManifest | null;
+  /** Canonical path to `nextTwist` (e.g. `/play/{id}`) — rendered as a REAL `<a href>` (C4: this
+   *  entry previously had no navigation seam at all — GameShell built its own onClick handler
+   *  with a comment saying "the caller wires navigation," but exposed no prop for a caller to do
+   *  so). Ignored (any value is fine, including "") when `nextTwist` is null. */
+  nextTwistHref: string;
   onRematch(): void;
-  onNextTwist(): void;
+  /** Fires on click, purely for the caller's no-repeat bookkeeping (`recentlyShownId`) — never
+   *  the navigation itself; the `<a href>` above IS the navigation (C4). Optional since a caller
+   *  with no bookkeeping need (or a test) shouldn't be forced to pass a no-op. */
+  onNextTwistClick?(): void;
   onShare(): Promise<ShareOutcome>;
   /** Escape closes to the finished board — the board stays inspectable underneath. */
   onOpenChange(open: boolean): void;
@@ -48,8 +56,9 @@ export function ResultModal({
   textureLine,
   artifactBody,
   nextTwist,
+  nextTwistHref,
   onRematch,
-  onNextTwist,
+  onNextTwistClick,
   onShare,
   onOpenChange,
   streakLine,
@@ -101,15 +110,15 @@ export function ResultModal({
           </button>
 
           {nextTwist && (
-            <button
-              type="button"
-              onClick={onNextTwist}
+            <a
+              href={nextTwistHref}
+              onClick={onNextTwistClick}
               className="rounded border border-ink-muted px-4 py-2 text-left text-sm text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
             >
               <span className="font-medium">{`Next: ${nextTwist.title} →`}</span>
               <br />
               <span className="text-ink-muted">{nextTwist.ruleSentence}</span>
-            </button>
+            </a>
           )}
 
           <div>

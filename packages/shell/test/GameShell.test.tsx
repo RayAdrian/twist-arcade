@@ -197,6 +197,38 @@ describe("GameShell — result modal", () => {
       expect(cells.every((c) => c.textContent === "")).toBe(true);
     });
   });
+
+  it("renders 'Next twist' as a real navigable link to the suggested game's canonical route (C4)", async () => {
+    const registryEntry = makeRegistryEntry();
+    render(
+      <GameShell
+        gameId={tttManifest.id}
+        registryEntry={registryEntry}
+        manifests={[tttManifest, secretPickManifest]}
+        mode="solo-bot"
+        botDriver={scriptedBotDriver([{ cell: 3 }, { cell: 5 }])}
+      />
+    );
+    await waitFor(() => expect(screen.getAllByRole("gridcell").length).toBe(9));
+
+    async function clickCell(index: number) {
+      const cell = screen.getAllByRole("gridcell")[index]!;
+      await act(async () => {
+        cell.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+        cell.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 0, clientY: 0 }));
+      });
+    }
+    await clickCell(0);
+    await waitFor(() => expect(screen.getAllByRole("gridcell")[3]?.textContent).toBe("O"));
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    await clickCell(1);
+    await waitFor(() => expect(screen.getAllByRole("gridcell")[5]?.textContent).toBe("O"));
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    await clickCell(2);
+
+    const link = await screen.findByRole("link", { name: /Next:.*Fixture Secret Pick/ });
+    expect(link).toHaveAttribute("href", `/play/${secretPickManifest.id}`);
+  });
 });
 
 describe("GameShell — bot driver failure shows a retryable error, never a silent hang (C2)", () => {

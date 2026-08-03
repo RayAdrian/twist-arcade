@@ -236,10 +236,13 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
     return invokeShare(text);
   }
 
-  function handleNextTwist() {
+  // C4: GameShell previously built this onClick itself with no navigation prop at all, so no
+  // app page could ever wire real navigation to it — invisible only because the registry was
+  // still empty. `nextTwistHref` (below, passed to ResultModal) is the actual navigation now,
+  // via a real `<a href>`; this stays purely the no-repeat bookkeeping pickNextTwist needs.
+  const nextTwistHref = nextTwist ? `/play/${nextTwist.id}` : "";
+  function handleNextTwistClick() {
     if (nextTwist) setRecentlyShownId(nextTwist.id);
-    // Navigation itself is the app route's job (a Link/router.push) — GameShell only tracks
-    // the no-repeat state pickNextTwist needs; the caller wires this to real navigation.
   }
 
   // C3: useGame emits `handoff` with `pending: true` for the hidden-information (blocking)
@@ -357,8 +360,9 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
         resultText={resultText}
         artifactBody={presentation.shareArtifact(game.history, game.view)}
         nextTwist={nextTwist}
+        nextTwistHref={nextTwistHref}
         onRematch={game.rematch}
-        onNextTwist={handleNextTwist}
+        onNextTwistClick={handleNextTwistClick}
         onShare={handleShare}
         onOpenChange={setResultModalOpen}
       />

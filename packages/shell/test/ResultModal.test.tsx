@@ -28,8 +28,9 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof ResultModal>> 
     resultText: "You won",
     artifactBody: "❌⭕❌⭕❌💨⭕❌🎯",
     nextTwist,
+    nextTwistHref: "/play/gravity-ttt",
     onRematch: vi.fn(),
-    onNextTwist: vi.fn(),
+    onNextTwistClick: vi.fn(),
     onShare: vi.fn().mockResolvedValue("copied"),
     onOpenChange: vi.fn(),
     ...overrides,
@@ -58,14 +59,16 @@ describe("ResultModal", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Rematch" })).toHaveFocus());
   });
 
-  it("shows Next twist with its rule sentence when provided, and calls onNextTwist", async () => {
+  it("shows Next twist as a REAL link to nextTwistHref (C4: no external navigation seam otherwise) and fires the click bookkeeping hook", async () => {
     const user = userEvent.setup();
-    const onNextTwist = vi.fn();
-    render(<ResultModal {...baseProps({ onNextTwist })} />);
+    const onNextTwistClick = vi.fn();
+    render(<ResultModal {...baseProps({ nextTwistHref: "/play/gravity-ttt", onNextTwistClick })} />);
     expect(screen.getByText(/Next:.*Gravity Tic-Tac-Toe/)).toBeInTheDocument();
     expect(screen.getByText("Pieces fall to the bottom row.")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /Next:.*Gravity Tic-Tac-Toe/ }));
-    expect(onNextTwist).toHaveBeenCalled();
+    const link = screen.getByRole("link", { name: /Next:.*Gravity Tic-Tac-Toe/ });
+    expect(link).toHaveAttribute("href", "/play/gravity-ttt");
+    await user.click(link);
+    expect(onNextTwistClick).toHaveBeenCalled();
   });
 
   it("hides the Next-twist slot entirely when nextTwist is null (registry-size-1, §8.4)", () => {
