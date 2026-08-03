@@ -1,0 +1,18 @@
+{
+  "day": "2026-09-05",
+  "n": 5,
+  "gameId": "fadeout",
+  "kind": "vs-bot",
+  "seed": "fad91e91aaaed39c01378079de0847c0c92348edf7002c7faaa7ea638c61e7e4",
+  "engineVersion": "0.1.0",
+  "gameVersion": 1,
+  "bot": {
+    "era": 1,
+    "tier": "standard",
+    "policy": { "kind": "mcts" },
+    "budget": { "kind": "rollouts", "n": 1000 },
+    "blunder": null,
+    "botsVersion": "0.1.0",
+    "humanSeat": 0
+  }
+}

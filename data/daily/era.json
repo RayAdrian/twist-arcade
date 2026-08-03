@@ -1,0 +1,11 @@
+{
+  "fadeout": {
+    "era": 1,
+    "tier": "standard",
+    "policy": { "kind": "mcts" },
+    "budget": { "kind": "rollouts", "n": 1000 },
+    "blunder": null,
+    "botsVersion": "0.1.0",
+    "humanSeat": 0
+  }
+}

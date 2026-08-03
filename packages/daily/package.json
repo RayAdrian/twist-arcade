@@ -11,7 +11,10 @@
   "scripts": {
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
-    "daily:schedule": "tsx src/bin/schedule-cli.ts"
+    "daily:schedule": "tsx src/bin/schedule-cli.ts",
+    "guard:immutability": "tsx src/bin/check-daily-immutability.ts",
+    "guard:era-changelog": "tsx src/bin/check-era-changelog.ts",
+    "guard:manifests": "tsx src/bin/verify-manifests.ts"
   },
   "dependencies": {
     "@twist-arcade/engine": "workspace:*",
