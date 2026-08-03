@@ -11,9 +11,11 @@ directly, per platform-corrections.md C3 (encode() is not a valid position key u
 ## 0. How to read this report
 
 - **Pass 1 (raw graph)** ignores the repetition axis entirely and is the exact value under
-  **C2 (threefold)** by construction (see `raw-engine.ts`'s module doc for the residue-equals-C2
-  argument). It is built once per `(decayTiming, playThrough)` pair — 4 raw graphs cover all 8
-  configs, since each pair is shared by its threefold and superko siblings.
+  **C2 (threefold)** by construction (see `solve.ts`'s module doc for the full
+  residue-equals-C2 argument — a standard win/loss/draw-on-cycle backward-induction theorem,
+  written out there rather than only cited, per the F2 amendments). It is built once per
+  `(decayTiming, playThrough)` pair — 4 raw graphs cover all 8 configs, since each pair is shared
+  by its threefold and superko siblings.
 - **Pass 2 (history-aware search)** refines a raw config's value to the exact **C1 (superko)**
   value. Two provably sound shortcuts from pass 1 make this fast for six of the eight configs
   (see `pass2-superko.ts`'s module doc for the monotonicity/witness-disjointness arguments); the
@@ -35,25 +37,52 @@ The eight syntactic configs collapse to **six distinct games** once `playThrough
 
 ### 1.1 `remove-first` / solid (`playThrough: false`)
 
+**AMENDED 2026-08-03 (F2 amendments): the original C1 row below reported an IMPOSSIBLE value, not
+merely an unproven one.** A superko value can never be a draw: the engine has no draw terminal
+under superko at all — `engine.ts`'s `computeStatus` gates its draw branch on
+`resolved.repetition === "threefold"` specifically, and superko has no other path to a draw
+outcome (a mover stuck with zero legal targets simply LOSES; see `pass2-superko.ts`'s module
+doc). Positions never repeat under superko, so every superko game ends decisively — meaning the
+true C1 root value for THIS config is certainly a win for P0 or a win for P1, with no third
+option, even though the table below could previously only report a value that cannot occur. The
+gap is corrected below to **"decisive, winner unknown"** rather than "draw, unproven" — see §3.1
+for why this changes the recommendation's reasoning, not just its wording, and for the dead code
+this amendment is grounded in (the `sawDraw`-shaped accumulator `pass2-superko.ts`'s `value()`
+never needed in the first place, now removed and documented as structurally unreachable).
+
+**Ruling (§3.1, §1.5): this config ships under `threefold`, not `superko` — superko is eliminated
+for this variant.** The C1 row below remains factually "decisive, winner unknown" (that is simply
+what is true about superko here), but it is no longer the ruleset this game will ship with.
+
 | Repetition | Root value | Reachable states (raw) | Exact? |
 |---|---|---|---|
 | `threefold` (C2) | **draw** | 128,170 | yes (pass 1 IS exact here) |
-| `superko` (C1) | **draw (UNPROVEN — 8-min budget exhausted; this is the C2 fallback, see §1.5)** | ≤128,170 | **no** |
+| `superko` (C1) | **decisive, winner unknown — 8-min budget exhausted before either side's win could be proven; see §1.5** | ≤128,170 | **no** |
 
-Per-opening table (C2, all 9 openings — **every legal first move is a draw**):
+Per-opening table (C2, all 9 openings — **every legal first move is a draw under THREEFOLD**;
+this table says nothing about C1, which cannot be a draw at all — see the amendment above):
 
 | Cell | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
 |---|---|---|---|---|---|---|---|---|---|
 | Value | draw | draw | draw | draw | draw | draw | draw | draw | draw |
 
-**Strategy extraction:** none — there is no forced win to extract. This is itself the cleanest
-possible quotability answer: nobody can post a spoiler for a line that doesn't exist.
+**Strategy extraction:** none extracted, and none possible from this table — there is no C2
+forced win to extract here. This is NOT, however, "the cleanest possible quotability answer" for
+the config that would actually ship (superko): the C1 value is certain to be decisive, so a
+forced line for SOMEONE certainly exists once C1 is resolved; it just hasn't been extracted yet.
+Whether that eventual line is quotable is exactly the open question the escalation in §1.5 exists
+to resolve — this row cannot be read as "no spoiler risk" the way a genuinely-proven draw would
+be.
 
-**Draw rate under optimal play:** 100% (root value is draw; under exact optimal play both sides
-can always force at least a draw by definition, so the game-theoretic draw rate is exactly the
-indicator of whether the root value is decisive — see §1.6 for why this collapses to a single
-number rather than a distribution, and why the harness's statistical sweep is still the
-meaningful "draw rate" number for the design gate).
+**Draw rate under optimal play (C2/threefold only):** 100% (root value is draw under threefold;
+under exact optimal play both sides can always force at least a draw by definition, so the
+game-theoretic draw rate is exactly the indicator of whether the root value is decisive — see
+§1.6 for why this collapses to a single number rather than a distribution). This figure does
+**not** carry over to C1/superko: since superko can never produce a draw at all, its optimal-play
+"draw rate" is trivially 0% regardless of which side the eventual proof favors — the meaningful
+question for superko is which side wins and how quotably, not whether it draws. See §1.6 for why
+the harness's statistical sweep (F4, once bots exist) is still the meaningful "draw rate" number
+for the design gate on the ruleset that actually ships.
 
 ### 1.2 `place-first` / solid (`playThrough: false`)
 
@@ -129,6 +158,45 @@ flagged unproven for C1** — not a silent decisive claim: `remove-first/solid` 
 both cases the underlying node budget was exhausted, not a crash or a stall — search rate stayed
 steady the entire run (no evidence of a bug; this is a genuinely large search).
 
+**AMENDED 2026-08-03: "`remove-first/solid` reports `draw`" above is a FALLBACK label, not a
+value C1 could actually have** — see §1.1's amendment. Superko has no draw terminal at all, so
+whatever `remove-first/solid`'s real C1 value turns out to be, it is certainly a decisive win for
+one side; reporting "draw" here is `solveSuperko()`'s documented C2-fallback behavior on an
+exhausted budget (a legitimate threefold value, since the fallback IS the threefold/C2 result),
+not a claim about what superko itself could ever produce. `place-first/solid`'s "win" fallback
+does not have this problem — win is one of superko's two possible values — but is equally
+unproven for C1 specifically.
+
+**`run-solve.mts` could not, as originally written, reproduce the node counts above.** It passed
+only `wallClockMs` to `solveConfig`/`solveSuperko`, so `maxNodesVisited` silently defaulted to
+`pass2-superko.ts`'s `SuperkoBudget` default of 5,000,000 — a ceiling both configs blow past in
+well under a minute at the rates measured above, long before the 8-minute wall clock would ever
+matter. The 62.2M/116.2M figures came from throwaway scripts (never committed) that passed an
+explicit large node ceiling; the committed script could not follow its own "re-run to verify"
+instruction and reach them. Fixed: `run-solve.mts` now accepts `--max-nodes` (default
+`Number.POSITIVE_INFINITY`, so `--wall-clock-ms` is the only real ceiling unless a caller opts
+into a lower one). Re-run with the fix, using the exact invocation the module doc now records
+(`npx tsx games/fadeout/solver/run-solve.mts --wall-clock-ms=480000 --max-nodes=Infinity`):
+
+| Config | Nodes visited in 8 min (re-run, `--max-nodes=Infinity`) | Search rate | Original figure |
+|---|---|---|---|
+| `remove-first/solid` | **53,047,447** | ~110k/s | 62,206,722 (~130k/s) |
+| `place-first/solid` | **89,336,917** | ~186k/s | 116,188,211 (~240k/s) |
+
+**Neither converged in this re-run either** (both still `budgetExceeded: true`, same fallback
+values as before) — confirming this is a genuinely large search, not something the original
+committed script's 5M-node bug ever actually produced or could have papered over. The re-run's
+node counts are the same order of magnitude as, but somewhat lower than, the original figures;
+the most likely cause is mundane rather than a solver difference: this confirmation run executed
+**concurrently**, on the same machine, with the bounded research probe below (both are
+CPU-bound, single-threaded Node processes competing for the same cores over the same 8-10 minute
+window) — a smoke test of this same config run in isolation earlier in this session measured
+~140k/s, closer to the original figure. Re-running in isolation would likely reproduce the
+original numbers more closely; re-running was not repeated a third time purely to save wall
+clock, since the qualitative conclusion (a real, large, unconverged 8-minute search, not a 5M-node
+artifact) does not depend on the exact rate. See the bounded research probe immediately below for
+a qualitatively different attempt at convergence.
+
 **A structural finding worth recording on its own:** in `remove-first/solid`'s raw graph, **zero**
 reachable ongoing positions are labeled LOSS for their mover — every reachable position is at
 worst a draw for whoever is about to move there. That is a real property of this specific
@@ -141,12 +209,79 @@ is presumably why: the mover's own overflow always fires *before* placement unde
 `remove-first`, giving the mover comparatively more escape routes than `place-first`'s
 place-then-overflow ordering.
 
-**Escalation, per plan §2.3's standing instruction:** neither C1 value is proven. The
-recommended next step — explicitly named in the plan for exactly this outcome — is a
-statistical C1-vs-C2 draw-rate comparison from harness self-play (F4, once bots exist), which
-this exact solve cannot itself produce. **This is escalated to the orchestrator as an open item**
-rather than resolved here by assumption. §3.1 below gives a recommendation that is explicit
-about resting on the unproven C2-fallback value, not a proven C1 result.
+**Escalation, per plan §2.3's standing instruction — RESOLVED by the orchestrator, 2026-08-03.**
+Neither C1 value is proven by exact solve, and — per the bounded research probe immediately below,
+a qualitatively different attack aimed specifically at `remove-first/solid` — a smarter attempt
+didn't converge either. **Ruling: `remove-first` / solid ships under `threefold`, not `superko`.**
+Superko is **eliminated** for this variant, not deferred pending a future proof attempt. Reasoning:
+
+- The entire reason this config is the recommended one (§3.1) is that its value is a **proven,
+  fair draw** — under `threefold`. Superko can never reproduce that draw (§1.1's amendment: no
+  draw terminal exists under superko at all), so shipping superko here means shipping an unknown,
+  unquantifiable win-or-loss outcome for the one variant chosen specifically for its fairness.
+  That defeats the purpose of picking this config in the first place.
+- This isn't merely "not yet proven" — it's a genuine computational wall, confirmed twice: the
+  original 8-minute exact search (53-62M nodes, re-run above) and a principled, qualitatively
+  different reformulation targeted at exactly this bottleneck (10-minute bounded probe, 77.66M
+  nodes on a single representative branch) BOTH failed to converge. Nothing here suggests more of
+  the same kind of compute would resolve it soon.
+- The plan's own default — "ship = superko unless the solve surprises us" — has exactly this
+  escape valve built in. An unprovable-in-reasonable-time exact value on the config chosen for its
+  provable fairness under the other rule IS the surprise that valve exists for.
+
+`place-first/solid`'s superko value remains separately unproven and is moot: it already fails
+criterion 1 under `threefold` (a proven, quotable win), so its superko value was never going to
+change which config ships.
+
+### 1.5.1 Bounded research probe: reformulating the search as vertex geography — RESULT: no convergence within budget; freeze unaffected
+
+One additional, qualitatively different attack was tried against `remove-first/solid` specifically
+(not a bigger version of the same search — a different reduction), per the orchestrator's
+instruction to spend one bounded 10-minute window on it before treating the config as simply
+"stuck." Script: `games/fadeout/solver/research-vertex-geography.mts` (throwaway research tooling,
+not a change to the shipped solver).
+
+**The idea:** two optimizations, both sound by argument recorded in this codebase (`solve.ts`'s
+and `pass2-superko.ts`'s module docs), neither previously exploited together:
+
+1. **Unconditional raw-WIN transfer** — skip the witness/history-disjointness check entirely
+   (proven unnecessary: this search never recurses into a raw-LOSS position, so no witness entry
+   can ever collide with history). `remove-first/solid`'s raw graph has **zero** ongoing LOSS
+   positions (this section, above), so the *other* shortcut (an O(1) LOSS-child resolution) can
+   never fire here — every one of the 38,736 raw-WIN positions can ONLY be reached via the
+   witness-gated path the shipped search still gates. Removing the gate turns each one into an
+   instant, zero-recursion leaf, leaving only the 77,338-node draw residue to actually search —
+   reframing the remaining problem as **Generalized/Vertex Geography** (alternately move a token
+   along a graph's edges, never revisiting a vertex; loser is whoever can't move).
+2. **Root-level symmetry** (sound ONLY at the root — never mid-search, since superko compares
+   exact positions and two different histories are never interchangeable): the empty board's
+   dihedral symmetry (order 8) means corners `{0,2,6,8}` and edges `{1,3,5,7}` are each a single
+   orbit, so solving one representative per orbit (cells 0, 1, 4) and copying the value to the
+   other 6 openings is sound — a free ~3x reduction in how many first moves need a full search.
+
+**Result: no convergence, budget respected exactly.** The probe hit its own 10-minute (600s) wall
+clock and exited cleanly (self-enforced, no external kill needed) after **77,664,993 nodes**,
+still working the FIRST representative opening (`cell=0`, a corner) — it never even reached the
+edge (`cell=1`) or center (`cell=4`) representatives. Node rate (~129k/s) was in the same range as
+the original, non-reformulated search, meaning the reformulation's constant-factor savings (no
+witness computation/disjointness check, no wasted work on the 6 symmetric duplicate openings)
+did not translate into a qualitatively faster convergence within this budget — consistent with
+Generalized Geography being PSPACE-complete in general (Fadeout's transitions are directed, not
+symmetric, so the polynomial-time result for the *undirected* case, via maximum matching, does not
+apply here without further work to check whether it could).
+
+**Outcome per the standing instruction:** neither a P0 win, a P1 win, nor a quotable line was
+found — just non-convergence. **Threefold stands; this does not reopen the freeze.**
+
+**What a future attempt would need**, recorded so the next person inherits the idea rather than
+re-deriving it: (a) determine whether the draw-residue subgraph, or some transformation of it, is
+close enough to *undirected* vertex geography for the polynomial maximum-matching characterization
+to apply, rather than treating it as a black-box directed search; (b) if not, a real memoization
+scheme over `(currentKey, historyBefore)` pairs restricted to the residue (the residue is only
+77,338 nodes, but `historyBefore` can vary per path — the open question is whether enough distinct
+histories collapse onto equivalent future outcomes to make a bounded cache pay for itself); (c) a
+longer budget is very unlikely to help on its own, given this run's rate was comparable to the
+original unreformulated search's.
 
 ### 1.6 Why "draw rate under optimal play" is a single number, not a distribution, at this level
 
@@ -176,44 +311,78 @@ value, full per-opening table, and reachable-state count are byte-identical betw
 
 ### 3.1 Which ruleset ships
 
-**Recommend `remove-first` / solid (`playThrough: false`) / `superko`, with the C1 proof gap
-stated explicitly rather than papered over.** Reasoning:
+**AMENDED 2026-08-03 (F2 amendments), then RULED on the same day by the orchestrator once §1.5's
+escalation and its bounded research probe both came back.** The final decision:
 
-- It is the **only** one of the six distinct games whose value is a **draw** (C2, exactly
-  proven) — every other variant is a decisive win for P0 with a 5-ply, plainly quotable forced
-  line (criterion 1: "a quotable forced win = that variant is dead"). `remove-first/solid` is
-  the only candidate that survives criterion 1 on the evidence in hand; the other five games all
-  fail it outright.
-- Superko over threefold per the plan's stated default ("ship = superko unless the solve
-  surprises us") and per game-theory-lens' general argument (guaranteed termination by
-  construction). Nothing in the C2 value or the raw-graph composition (§1.5: zero LOSS positions
-  anywhere in the reachable graph) suggests superko would flip this to a decisive, quotable
-  result — if anything, a config with no forced-loss positions at all seems LESS likely to
-  harbor a hidden forced win once repetition is forbidden, not more — but this is a plausibility
-  argument, not proof, and is flagged as such.
-- **The C1 (superko) value for this exact config is UNPROVEN** (§1.5: 62.2M search nodes in 8
-  minutes, budget exhausted, C2 fallback reported). This recommendation is therefore
-  conditional on the escalation in §1.5 being resolved — via either a longer/smarter solve
-  attempt or F4's statistical C1-vs-C2 self-play comparison — before the ruleset freeze is
-  finalized. Shipping on the C2 value alone, without that resolution, would be exactly the kind
-  of unproven claim plan §2.3 says not to make.
+> **Ship `remove-first` / solid / `threefold`. Superko is eliminated for this variant — not
+> deferred, not "pending a future proof attempt."**
+
+**The error in the original recommendation**, corrected here rather than patched quietly, because
+it is what made the freeze necessary in the first place: the original version of this section
+leaned on `remove-first/solid`'s C2/threefold value being a proven **draw**, treated that as
+evidence the config "survives criterion 1," and then argued informally that superko was UNLIKELY
+to overturn that into a decisive, quotable result — while still recommending **superko** as the
+ruleset to ship. Both halves of that don't hold once §1.1's amendment is taken seriously:
+
+- **Superko can never produce a draw at all** — not "rarely," not "was unproven and might turn
+  out to be one," but structurally impossible (`engine.ts`'s `computeStatus` has no draw path
+  under superko; `pass2-superko.ts`'s `value()` correspondingly has no `sawDraw` accumulator at
+  all — every leaf of that recursion is win or loss, by construction, and a change that ever made
+  it produce "draw" would now throw loudly rather than silently reintroduce an impossible
+  outcome). So superko's value for this config was ALWAYS certainly a decisive win for one side or
+  the other — the C2 draw the original recommendation leaned on describes threefold, and only
+  threefold.
+- The plausibility argument — "a config with no forced-loss positions at all seems LESS likely to
+  harbor a hidden forced win once repetition is forbidden" — was **backwards**. A forced win for
+  someone under superko isn't a risk to be assessed as more or less likely: it is **certain**, full
+  stop, by the argument above. The zero-LOSS-position finding (§1.5) is a real, interesting
+  structural fact about the *threefold* raw graph, but it says nothing about which side superko's
+  guaranteed decisive winner would be, or how long/quotable that forced line is. Treating
+  "no evidence of a hidden win" as evidence of safety was the mistake — the win was never hidden,
+  it was guaranteed; only its identity and length were ever unknown. **The sharpest evidence for
+  this correction is in the code, not just the prose**: `pass2-superko.ts`'s `value()` was written
+  with a two-valued (win/loss-only) return type and an explicit note that a `sawDraw`-style
+  accumulator would be structurally wrong for this game — the implementation encoded the correct
+  fact (superko is always decisive) at the exact moment the report's prose was asserting something
+  that assumed the opposite might be true.
+
+**Why the ruling is "eliminate superko" rather than "wait for the proof":** the entire reason
+`remove-first/solid` was the standout recommendation is that its value is a **proven, fair draw**
+— under threefold. That is the property criterion 1 actually cares about here (no quotable forced
+win for anyone). Superko cannot reproduce that property even in principle (no draw terminal
+exists), so shipping superko on this config was never going to deliver what made the config
+attractive — it would ship an unknown, unquantifiable win-or-loss outcome instead, on the one
+variant chosen specifically for its fairness. And "unknown" here is not a gap that more of the
+same effort closes soon: the original 8-minute exact search (53-62M nodes depending on run, never
+converging) and a principled, qualitatively different reformulation of the SAME question (§1.5.1's
+10-minute bounded "vertex geography" probe, 77.66M nodes, also never converging) both hit the same
+wall. The plan's own stated default — "ship = superko unless the solve surprises us" — has exactly
+this escape valve, and this is what it's for.
+
+**What remains true and unaffected by the correction:**
+
+- Every OTHER of the six distinct games has a proven, quotable, 5-ply forced win under BOTH
+  repetition rules (§1.3/§1.4's playThrough:true pair prove this for C1 directly, in 5 search
+  nodes) or under C2 with no reason to expect C1 differs favorably (`place-first/solid`, §1.2) —
+  `remove-first/solid` remains the only config that survives criterion 1 **under the rule it now
+  actually ships with (threefold)** — a claim that is fully proven, not provisional.
 - `decayTiming` is irrelevant to §5's telegraph/legibility criterion here since `playThrough:
   false` (B1 solid) is the variant, which the plan's ranking already prefers over B2 at equal
-  value (criterion 4) — this pairing needs no B2 affordance cost at all.
+  value (criterion 4) — this pairing needs no B2 affordance cost at all. Unaffected by the
+  correction above.
+- `place-first/solid`'s superko value remains separately unproven and is moot to this decision: it
+  already fails criterion 1 under threefold (a proven, quotable win), so its superko value was
+  never going to change which config ships.
 
-**If the escalation in §1.5 later shows `remove-first/solid` is NOT a draw under superko** (a
-decisive win/loss once proven, or a longer non-quotable forced line): re-open this
-recommendation using whichever new evidence resolves it. A decisive-but-non-quotable long forced
-line would still be shippable per criterion 1's second clause; the escalation path itself
-(statistical C1-vs-C2 comparison via harness self-play, F4) is the one the plan already
-prescribes for exactly this situation.
+**If a future need arises to reconsider superko for this game** (e.g. a real memoization scheme
+over the residue, or F4's statistical C1-vs-C2 self-play comparison once bots exist, later
+resolves `remove-first/solid`'s actual C1 value): that would be new evidence for a NEW decision,
+not a re-opening of this one on the same evidence. §1.5.1 records what a future attempt would
+need.
 
-**If superko instead turns out to ALSO be decisive-and-quotable for `remove-first/solid`**
-(i.e., no variant among all eight survives criterion 1 once C1 is actually known): this is
-criterion 5's territory — declared manifest `exceptions[]` entry, mandatory pie rule, **and**
-the 4x4/cap-4 escalation at launch, all confirmed as within this team's own scope (plan §14 Q2).
-That would be a materially different launch than the one recommended above, so it is flagged
-here explicitly rather than silently assumed away.
+**If a future ruleset change ever makes threefold itself land on a decisive result for this
+config** (it does not today — §1.1, proven draw): revisit this section entirely, since the
+"proven fair draw" property this recommendation rests on would no longer hold.
 
 ### 3.2 Whether the pie rule ships
 
@@ -240,11 +409,13 @@ trap, not just the abstract warning.
 
 ### 3.3 Whether 4x4/cap-4 must ship at launch
 
-**Recommend: no**, conditional on §1.5 confirming `remove-first/solid`'s superko value is a draw
-(or a non-quotable decisive result). The quotability trigger (criterion in §1) is what forces
-the 4x4 escalation, and the recommended config has no forced win to quote at all. If §1.5
-instead lands in criterion 5's territory (see §3.1's second contingency), 4x4/cap-4 **would**
-be required at launch per that criterion, and this recommendation reverses.
+**Recommend: no — settled, not conditional**, now that §3.1's ruling ships
+`remove-first/solid/threefold`, a fully **proven** draw with no forced win to quote at all. The
+quotability trigger (criterion in §1) is what forces the 4x4 escalation, and there is nothing to
+quote here under the ruleset that actually ships. (This recommendation was conditional in the
+original version of this section, pending superko's then-unproven value on this same config —
+that condition is resolved by §3.1's ruling: superko is eliminated for this variant, so its
+unproven value can no longer trigger this escalation either.)
 
 ---
 
@@ -305,17 +476,33 @@ be required at launch per that criterion, and this recommendation reverses.
 
 - Identical-pair cross-check: **held**, for both repetition rules (§2).
 - Superko (C1) proof status: **proven** for both `playThrough: true` configs (5 search nodes,
-  agrees with C2 exactly); **unproven** for both `playThrough: false` configs (8-minute budget
-  exhausted at 62.2M / 116.2M nodes; C2 fallback reported, flagged, escalated per §1.5) — stated
-  honestly rather than rounded up to "solved."
+  agrees with C2 exactly); **decisive but unproven-which-side** for both `playThrough: false`
+  configs (8-minute budget exhausted at 62.2M / 116.2M nodes originally, re-confirmed under the
+  fixed `run-solve.mts`; C2 fallback reported, flagged, escalated per §1.5 — never itself a valid
+  C1 value, since superko has no draw terminal at all, see §1.1's amendment) — stated honestly
+  rather than rounded up to "solved."
 - Independent reachability oracle (own BFS, own transition logic, own key format): **agrees
   exactly** with the solver's pass-1 counts for all 4 raw configs (128,170 / 141,850 as
   applicable) — see `raw-engine.test.ts`.
+- **Independent VALUE cross-check (F2 amendments item 5), not just reachability**: a second,
+  from-scratch enumerator sweeps every reachable ongoing position to a win/loss/draw fixpoint by
+  repeated full re-scans (a different algorithm from `retrograde()`'s single work-queue pass) and
+  agrees with `solveRaw()`'s `valueAt()` on **every** reachable ongoing position, for all 4 raw
+  configs — not merely on the two headline splits (38,736/0/77,338 and 78,613/24,268/13,193,
+  both independently reproduced exactly) or the root/opening tables, which were the only
+  value-level checks this report previously cited. See `raw-engine.test.ts`'s
+  "VALUE cross-checked against an independent sweep-to-fixpoint solver" suite.
 - Hand-built cyclic mini-position: retrograde converges to a draw residue, with a directly
   confirmed cycle in the graph — plain minimax would not terminate on this fixture.
 - Hand-built forced win: solver and an independently-implemented oracle (real public engine,
   zero shared code with the solver) agree, for all 4 raw configs.
 - Extracted forced-win lines replay legally to a genuine win through the real public engine,
   under BOTH repetition rules, for every config whose root is a win.
-- `pnpm typecheck && pnpm lint` clean; solver test suite (34 tests across
-  `oracle`/`raw-engine`/`pass2-superko`/`solve`/`strategy`) green.
+- Plan §2.4's own pass-2 anchor now asserts VALUES, not legality: `solveSuperkoFromPosition()`
+  confirms C2=draw/C1=loss at the hand-built "only non-losing move recreates history" fixture,
+  plus two further deep-search-core cases beyond the O(1) shortcuts — a genuine no-legal-moves
+  superko-exhaustion loss, and a case where blocking the raw graph's own canonical witness forces
+  real recursion and flips a position's value from win to a searched loss (F2 amendments item 4).
+- `pnpm typecheck && pnpm lint` clean; solver test suite (43 tests across
+  `raw-engine`/`pass2-superko`/`solve`/`strategy` — `oracle.ts` is exercised via `raw-engine.test.ts`
+  rather than its own file) green.

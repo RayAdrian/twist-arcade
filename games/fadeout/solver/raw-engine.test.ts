@@ -133,6 +133,184 @@ describe("solveRaw() — reachability cross-checked against an independent brute
 });
 
 // ---------------------------------------------------------------------------------------
+// Independent VALUE cross-check (F2 amendments item 5): the reachability oracle above only
+// confirms the solver's raw graph has the same NUMBER of positions an independent enumerator
+// finds — it says nothing about whether the solver's WIN/LOSS/DRAW label at any of them is
+// correct (the enumerator above computes reachability only; it never evaluates a position). The
+// solve report's "oracle agrees exactly" claim about the per-config ongoing-position splits
+// (38,736/0/77,338 and 78,613/24,268/13,193) and every root/opening value was, until now,
+// produced by a from-scratch value solver that was never committed to this test suite — this is
+// that check, written down for real.
+//
+// Deliberately a DIFFERENT algorithm from @twist-arcade/harness's retrograde() (a single
+// work-queue pass in resolution order), over the SAME independently-built graph as the
+// reachability oracle above (own transition logic, own key format, reusing
+// bruteForceCellIsTargetable/bruteForceWinner but nothing else from raw-engine.ts or
+// pass2-superko.ts): a naive REPEATED FULL SWEEP over every still-unresolved ongoing node —
+// mark WIN if any child is a win-for-the-mover outcome (either a genuine terminal win or an
+// already-resolved LOSS-for-the-opponent child), mark LOSS if EVERY child is already resolved
+// win-for-the-opponent, and repeat until a full sweep marks nothing new. Whatever is left
+// unresolved is the draw residue — this IS the "raw graph residue = C2 value" argument from
+// solve.ts's module doc, executed as brute-force code rather than only argued in prose.
+// ---------------------------------------------------------------------------------------
+
+type BruteForceValue = "win" | "loss" | "draw";
+
+function bruteForceSolveValues(config: RawConfig): Map<string, BruteForceValue> {
+  type S = { queues: [number[], number[]]; toMove: 0 | 1 };
+  const keyOf = (s: S): string => `${JSON.stringify(s.queues[0])}|${JSON.stringify(s.queues[1])}|${s.toMove}`;
+  const start: S = { queues: [[], []], toMove: 0 };
+  const moverOf = new Map<string, 0 | 1>();
+  const winnerOf = new Map<string, 0 | 1 | null>(); // null = ongoing (has children below)
+  const childrenOf = new Map<string, string[]>(); // ongoing nodes only
+
+  const seen = new Map<string, S>();
+  seen.set(keyOf(start), start);
+  const queue: string[] = [keyOf(start)];
+  for (let i = 0; i < queue.length; i++) {
+    const key = queue[i]!;
+    const s = seen.get(key)!;
+    moverOf.set(key, s.toMove);
+    const winner = bruteForceWinner(s.queues);
+    winnerOf.set(key, winner);
+    if (winner !== null) continue;
+
+    const mover = s.toMove;
+    const kids: string[] = [];
+    for (let cell = 0; cell < 9; cell++) {
+      if (!bruteForceCellIsTargetable(s.queues, cell, mover, config.decayTiming, config.playThrough)) continue;
+      // Re-derive the transition independently, same as bruteForceReachableCount above.
+      const opponent: 0 | 1 = mover === 0 ? 1 : 0;
+      let q0 = s.queues[0].slice();
+      let q1 = s.queues[1].slice();
+      const qOf = (p: 0 | 1) => (p === 0 ? q0 : q1);
+      const setQ = (p: 0 | 1, v: number[]) => {
+        if (p === 0) q0 = v;
+        else q1 = v;
+      };
+      if (config.playThrough) {
+        const oppQ = qOf(opponent);
+        if (oppQ.length === 3 && oppQ[0] === cell) setQ(opponent, oppQ.slice(1));
+      }
+      const willOverflow = qOf(mover).length === 3;
+      const place = () => setQ(mover, [...qOf(mover), cell]);
+      const overflow = () => {
+        if (willOverflow) setQ(mover, qOf(mover).slice(1));
+      };
+      if (config.decayTiming === "remove-first") {
+        overflow();
+        place();
+      } else {
+        place();
+        overflow();
+      }
+      const next: S = { queues: [q0, q1], toMove: opponent };
+      const nextKey = keyOf(next);
+      kids.push(nextKey);
+      if (!seen.has(nextKey)) {
+        seen.set(nextKey, next);
+        queue.push(nextKey);
+      }
+    }
+    childrenOf.set(key, kids);
+  }
+
+  // `childKey`'s outcome AS SEEN BY `mover` (the parent's mover — children always belong to the
+  // opponent, by strict alternation): a terminal child is win/loss directly; an ongoing child's
+  // own mover-relative value gets flipped (except "draw", which is symmetric). `undefined` means
+  // not yet resolved this sweep.
+  function outcomeFor(mover: 0 | 1, childKey: string, value: ReadonlyMap<string, BruteForceValue>): BruteForceValue | undefined {
+    const w = winnerOf.get(childKey)!;
+    if (w !== null) return w === mover ? "win" : "loss";
+    const v = value.get(childKey);
+    if (v === undefined || v === "draw") return v;
+    return v === "win" ? "loss" : "win";
+  }
+
+  const value = new Map<string, BruteForceValue>();
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const [key, kids] of childrenOf) {
+      if (value.has(key)) continue;
+      const mover = moverOf.get(key)!;
+      let sawWin = false;
+      let allLoss = true;
+      for (const childKey of kids) {
+        const outcome = outcomeFor(mover, childKey, value);
+        if (outcome === "win") {
+          sawWin = true;
+          break;
+        }
+        if (outcome !== "loss") allLoss = false;
+      }
+      if (sawWin) {
+        value.set(key, "win");
+        changed = true;
+      } else if (allLoss) {
+        value.set(key, "loss");
+        changed = true;
+      }
+    }
+  }
+  // Anything never resolved WIN or LOSS after the sweep stalls is the draw residue.
+  for (const key of childrenOf.keys()) {
+    if (!value.has(key)) value.set(key, "draw");
+  }
+
+  // Re-key from this function's own internal format to the REAL positionKey() (imported from
+  // ../engine, the same key raw-engine.ts's solveRaw() uses) — the two formats are NOT
+  // byte-compatible (deliberately: this oracle's key format is independently invented, not
+  // copied from positionKeyOf), so a caller comparing against `solveRaw()`'s `valueAt()` needs
+  // the real key, not this function's own.
+  const rekeyed = new Map<string, BruteForceValue>();
+  for (const [key, v] of value) {
+    const s = seen.get(key)!;
+    rekeyed.set(positionKey({ queues: s.queues, toMove: s.toMove }), v);
+  }
+  return rekeyed;
+}
+
+describe("solveRaw() — VALUE cross-checked against an independent sweep-to-fixpoint solver (not just reachability)", () => {
+  it.each(ALL_RAW_CONFIGS)("every reachable ongoing position's value matches the independent solver for %o", (config) => {
+    const raw = solveRaw(config);
+    const independent = bruteForceSolveValues(config);
+
+    // Sanity check that this is really the same graph, not two disjoint enumerations that
+    // happen to agree vacuously: the independent solver's node count (ongoing positions only)
+    // must match the solver's own ongoing-position count.
+    const ownOngoingCount = [...raw.graph.nodes.values()].filter((n) => n.status.kind === "ongoing").length;
+    expect(independent.size).toBe(ownOngoingCount);
+
+    let checked = 0;
+    for (const [key, expectedValue] of independent) {
+      expect(raw.valueAt(key)).toBe(expectedValue);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it("reproduces the solve report's own ongoing-position win/loss/draw splits for the two hard (playThrough=false) configs", () => {
+    // Pinned exactly as recorded in docs/research/games/fadeout-solve-report.md §1.5 — this is
+    // the code-level reproduction of a claim that report previously made only in prose.
+    const removeFirstSolid = bruteForceSolveValues({ decayTiming: "remove-first", playThrough: false });
+    const placeFirstSolid = bruteForceSolveValues({ decayTiming: "place-first", playThrough: false });
+
+    function tally(values: Map<string, BruteForceValue>): { win: number; loss: number; draw: number } {
+      let win = 0, loss = 0, draw = 0;
+      for (const v of values.values()) {
+        if (v === "win") win++;
+        else if (v === "loss") loss++;
+        else draw++;
+      }
+      return { win, loss, draw };
+    }
+
+    expect(tally(removeFirstSolid)).toEqual({ win: 38736, loss: 0, draw: 77338 });
+    expect(tally(placeFirstSolid)).toEqual({ win: 78613, loss: 24268, draw: 13193 });
+  });
+});
+
+// ---------------------------------------------------------------------------------------
 // Anchor 2: hand-built cyclic mini-position — a full-cap rotation cycle. Plain minimax (no
 // cycle handling) would loop forever chasing it; retrograde must converge and label the
 // residue as "draw". Reuses the exact rotation mechanics engine.test.ts already hand-verified

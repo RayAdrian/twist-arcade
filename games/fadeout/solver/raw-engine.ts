@@ -193,8 +193,10 @@ function outcomeForMover(
  * at `startKey`. At each ONGOING node reached:
  *
  *   - if the node's OWN mover-relative value is "win" (i.e. this is the side who is actually
- *     winning here), follow "the move retrograde's own proof used" — the first outgoing edge
- *     whose child is a proven win for this mover;
+ *     winning here), follow the FIRST outgoing edge, IN MOVE-LIST ORDER, whose child is itself
+ *     LOSS-labeled for the child's own mover (equivalently: a proven win for this node's mover).
+ *     This is NOT necessarily "the" specific edge `retrograde()`'s own internal proof used to
+ *     first resolve this node as WIN — see the correction below, which used to claim it was;
  *   - otherwise (the node's mover is the LOSING side — always true immediately after the
  *     winner's move, per the module doc's flip argument: outcomeForMover(winner, child)==="win"
  *     forces child's OWN value to be exactly "loss", never "draw", so this branch is never
@@ -208,16 +210,25 @@ function outcomeForMover(
  * winning edge threw. Caught by actually running strategy extraction against a real solved
  * config, not by inspection.
  *
- * WHY THE WALK IS ALWAYS REPEAT-FREE (load-bearing for pass2-superko.ts's WIN shortcut — see
- * that module's doc): on the winner's own turns, `retrograde()` resolves each node's label
- * exactly once, the instant it is PROVEN, and a WIN proof at node N can only cite a child
- * already resolved STRICTLY earlier — a strictly decreasing potential, so the winner's own
- * steps can never revisit a position. On the loser's turns, the module doc above shows the
- * chosen reply can never itself be an immediate win for the loser (that would contradict the
- * node being LOSS-labeled) and always lands back on an ongoing, WIN-for-the-original-mover
- * node — so the walk as a whole terminates at the same terminal the winner's forcing line
- * always reaches. The `seen` check is a defensive assertion of this, not a correctness
- * dependency.
+ * WHY THE `seen` CHECK BELOW IS LOAD-BEARING, NOT MERELY DEFENSIVE (corrected — this comment
+ * used to claim the walk is PROVABLY repeat-free and the check was just a defensive assertion of
+ * that; that overstated what's actually guaranteed). solve.ts's module doc proves a strong,
+ * general invariant: from ANY resolved (WIN/LOSS) node, EVERY move strictly decreases retrograde
+ * resolution depth, for EVERY choice either side could make — that theorem is what guarantees
+ * threefold can never fire mid-line. But it is a statement about depth strictly decreasing along
+ * SOME/EVERY move satisfying the WIN/LOSS definitions; it does not by itself guarantee that THIS
+ * function's specific edge-selection rule — first match in raw move-list order — happens to be a
+ * child resolved strictly earlier than the current node. A WIN node can have more than one
+ * LOSS-labeled child, and only the minimizing one is guaranteed (by definition of WIN-depth) to
+ * be strictly earlier; a DIFFERENT LOSS-labeled child that `.find()` happens to hit first in move
+ * order is not proven to be. So this walk's own repeat-freedom, specifically, rests on an
+ * empirical property of this game's graph and move ordering (confirmed clean by the solve report:
+ * 317,677 raw-WIN nodes walked via `winWitnessPositionKeys`'s witness-disjointness check, zero
+ * `seen`-triggered throws) rather than a proof that covers this exact edge-selection heuristic.
+ * The `seen` check is therefore the thing actually preventing a silent infinite loop or a wrong
+ * witness if that empirical property were ever violated by a future change (different move
+ * ordering, a different game reusing this pattern, etc.) — a real safety net, not a redundant
+ * assertion of something already fully proven for this specific code path.
  */
 function stepWitness(
   raw: RawSolveResult,
