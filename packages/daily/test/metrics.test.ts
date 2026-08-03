@@ -137,7 +137,10 @@ describe("metrics.ts — shareOutcomeToPath() (the copied-vs-dismissed distincti
   it("maps a successful clipboard write to 'clipboard'", () => {
     expect(shareOutcomeToPath("copied")).toBe("clipboard");
   });
-  it("maps a failed/dismissed/cancelled share to null — the caller must NOT call share_done for this", () => {
+  it("maps a genuine clipboard/share failure to null — the caller must NOT call share_done for this", () => {
     expect(shareOutcomeToPath("failed")).toBeNull();
+  });
+  it("maps a user-dismissed share sheet to null — distinct from 'failed', both mean 'do not fire share_done' (stage-6 must-fix 1)", () => {
+    expect(shareOutcomeToPath("dismissed")).toBeNull();
   });
 });

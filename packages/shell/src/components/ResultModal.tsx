@@ -52,7 +52,11 @@ export interface ResultModalProps {
   primaryLabel?: string;
 }
 
-type ShareState = { kind: "idle" } | { kind: "copied" } | { kind: "shared" } | { kind: "failed" };
+// "dismissed" (stage-6 must-fix 1: the user backed out of the native share sheet) renders
+// identically to "idle" below — nothing happened, so there is nothing to confirm or apologize
+// for. It is its own ShareState member rather than reusing "idle" directly so `onShare`'s
+// return value maps 1:1 onto a state without a lossy translation step at the call site.
+type ShareState = { kind: "idle" } | { kind: "copied" } | { kind: "shared" } | { kind: "dismissed" } | { kind: "failed" };
 
 const COPIED_CONFIRMATION_MS = 2000;
 

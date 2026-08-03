@@ -113,17 +113,39 @@ export function trackOnceForDaily<E extends "daily_start" | "daily_complete" | "
 }
 
 /**
- * Maps a share attempt's outcome (shell's `ShareOutcome`: "shared" | "copied" | "failed" —
- * duplicated here as a literal union rather than importing the type, to keep this module's only
- * dependency the browser globals it already declares above) to the `share_done` path it should
- * fire under, or `null` when no `share_done` should fire at all. This is the mechanical form of
- * plan §12 Q1's binding rule: "a rejected share promise (user dismissed the sheet) is never
- * share_done." `"failed"` covers BOTH a user-dismissed native share sheet and a genuine clipboard
- * write failure — shell's `invokeShare` collapses those to the same outcome, and either way the
- * artifact did not actually reach anyone, so neither should count.
+ * Maps a share attempt's outcome (shell's `ShareOutcome`: "shared" | "copied" | "dismissed" |
+ * "failed" — duplicated here as a literal union rather than importing the type, to keep this
+ * module's only dependency the browser globals it already declares above) to the `share_done`
+ * path it should fire under, or `null` when no `share_done` should fire at all. This is the
+ * mechanical form of plan §12 Q1's binding rule: "a rejected share promise (user dismissed the
+ * sheet) is never share_done."
+ *
+ * Stage-6 must-fix 1 correction: "dismissed" (the user backing out of the native share sheet,
+ * shell's `invokeShare` AbortError case) and "failed" (a genuine clipboard write failure) are
+ * DIFFERENT producer signals, kept distinct so a future analytics need (e.g. "how often do
+ * people back out vs. hit a real error") isn't destroyed by collapsing them upstream — but both
+ * map to the same `null` here: either way the artifact never reached anyone, so neither should
+ * count toward share_done, the product's #1 metric.
+ *
+ * The switch has no `default` — an exhaustiveness check via `assertNever` in its place, so
+ * adding a new `ShareOutcome` member without updating this function is a COMPILE ERROR here,
+ * not a silent runtime fallthrough (which is exactly how the previous "failed covers both"
+ * comment above went stale: a member was added upstream and nothing forced this file to notice).
  */
-export function shareOutcomeToPath(outcome: "shared" | "copied" | "failed"): SharePath | null {
-  if (outcome === "shared") return "native";
-  if (outcome === "copied") return "clipboard";
-  return null;
+function assertNever(x: never): never {
+  throw new Error(`metrics.ts: shareOutcomeToPath — unhandled ShareOutcome: ${JSON.stringify(x)}`);
+}
+
+export function shareOutcomeToPath(outcome: "shared" | "copied" | "dismissed" | "failed"): SharePath | null {
+  switch (outcome) {
+    case "shared":
+      return "native";
+    case "copied":
+      return "clipboard";
+    case "dismissed":
+    case "failed":
+      return null;
+    default:
+      return assertNever(outcome);
+  }
 }
