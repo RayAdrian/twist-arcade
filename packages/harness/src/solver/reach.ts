@@ -1,8 +1,11 @@
 // packages/harness/src/solver/reach.ts — BFS reachability over the 2-player game graph,
-// deduplicated on `encode(S)` (plan §7.6, M3a). See types.ts's module doc for the C3 caveat:
-// this hashing is sound only when `encode` is a valid position key (no history-dependent
-// legality, e.g. superko) — callers on a history-dependent game must compose over their own
-// position key instead (see solve.ts).
+// deduplicated on `encode(S)` by DEFAULT (plan §7.6, M3a). See types.ts's module doc for the C3
+// caveat: `encode` is a valid position key only when two states with the same `encode()` output
+// are always legally interchangeable going forward, which is false under superko or any
+// history-dependent legality rule. `ReachOptions.keyOf` lets a caller override the position key
+// entirely — a history-dependent game composes `reach()` locally over its OWN sound key (see
+// solve.ts's doc and index.ts's barrel doc for why reach/retrograde are exported individually
+// for exactly this).
 
 import type { GameEngine, Json, PlayerId, Rng, Status, WithEffects } from "@twist-arcade/engine";
 import { rngFromSeed } from "@twist-arcade/engine";
@@ -28,9 +31,22 @@ export interface ReachGraph<S> {
   initialHash: string;
 }
 
-export interface ReachOptions {
+export interface ReachOptions<S = unknown> {
   /** Abort past this many discovered states (default 1e7, plan §7.6). */
   maxStates?: number;
+  /**
+   * The position key to dedupe on — defaults to `engine.encode`. Correction C3 (see types.ts's
+   * module doc): `encode` is a valid position key only when two states with the same `encode()`
+   * output are always legally interchangeable going forward, which is false under superko or
+   * any history-dependent legality rule. `index.ts`'s own barrel doc promises `reach`/
+   * `retrograde` are exported individually so a history-dependent game can "compose them locally
+   * over its own position key" — before this option existed, `reach()` hardwired `encode` with
+   * no way to honor that promise, so a caller needing a sound history-aware key had to
+   * reimplement this entire BFS from scratch to get it (review's "broken promise at the API
+   * level"). `retrograde()` never needed this itself — it operates purely on the graph
+   * `reach()` already built, keyed however `reach()` keyed it.
+   */
+  keyOf?: (state: S) => string;
 }
 
 /** A fixed, deterministic rng — the exact solver only ever runs on deterministic
@@ -50,14 +66,15 @@ function inertRng(): Rng {
  */
 export function reach<S extends WithEffects, M extends Json, V extends WithEffects>(
   engine: GameEngine<S, M, V>,
-  opts: ReachOptions = {}
+  opts: ReachOptions<S> = {}
 ): ReachGraph<S> {
   assertSolvablePreconditions(engine.meta);
   const maxStates = opts.maxStates ?? 1e7;
+  const keyOf = opts.keyOf ?? ((state: S) => engine.encode(state));
 
   const rng = inertRng();
   const initialState = engine.setup(2, rng);
-  const initialHash = engine.encode(initialState);
+  const initialHash = keyOf(initialState);
 
   const nodes = new Map<string, ReachNode<S>>();
   const queue: string[] = [];
@@ -85,8 +102,13 @@ export function reach<S extends WithEffects, M extends Json, V extends WithEffec
 
   visit(initialState, initialHash);
 
-  while (queue.length > 0) {
-    const hash = queue.shift()!;
+  // Index-cursor traversal, not `queue.shift()`: `shift()` is O(V) per call (it re-indexes every
+  // remaining element), making this loop O(V^2) overall — fine at classic-ttt's 5,478 states,
+  // unusable at Fadeout's ~142k (and outright wrong to rely on near the advertised 1e7 ceiling).
+  // `retrograde.ts` already uses this exact pattern for the identical reason; this brings
+  // `reach()` in line with its own sibling in the same solver.
+  for (let cursor = 0; cursor < queue.length; cursor++) {
+    const hash = queue[cursor]!;
     const node = nodes.get(hash)!;
     if (node.status.kind !== "ongoing" || node.mover === undefined) continue;
 
@@ -99,7 +121,7 @@ export function reach<S extends WithEffects, M extends Json, V extends WithEffec
     }
     for (const move of legal) {
       const child = engine.apply(node.state, new Map([[node.mover, move]]), inertRng());
-      const childHash = engine.encode(child);
+      const childHash = keyOf(child);
       node.moves.push({ move: move as unknown as Json, toHash: childHash });
       visit(child, childHash);
     }
