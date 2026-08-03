@@ -16,7 +16,7 @@
 // Animations API only, per platform-corrections.md C5).
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import type { PlayerId } from "@twist-arcade/engine";
 import type { BoardProps } from "@twist-arcade/game-spec";
 import { Cell, moveToCellId } from "@twist-arcade/shell";
@@ -44,19 +44,31 @@ function GlyphMark({ player, muted }: { player: PlayerId; muted?: boolean }) {
   );
 }
 
-/** Wraps a fresh-mounting `GlyphMark` in the one-shot pulse animation exactly when this cell
- *  has just entered its final turn (countdown === 1). Keyed by `${cell}-${countdown}` from the
- *  caller so React mounts a genuinely NEW node the instant countdown becomes 1 — a React
- *  re-render that leaves countdown unchanged never restarts the CSS animation, satisfying
- *  "once, then static" without any manual animation bookkeeping. */
+/** Wraps `GlyphMark` in the one-shot pulse animation exactly when this cell has just entered
+ *  its final turn (countdown === 1).
+ *
+ *  Minor (stage-6 F3 review): this doc previously claimed the caller keys the map on
+ *  `${cell}-${countdown}` to force a fresh mount — no such key exists anywhere in this file
+ *  (Board's map below keys on `c.cell` alone). What ACTUALLY makes the pulse play exactly once
+ *  is `occupant`'s conditional in `Board()`: the moment `c.countdown` becomes 1, that branch
+ *  swaps the rendered element from `<GlyphMark>` to `<PulsingGlyph>` — a change in component
+ *  TYPE at that position in the tree, which React always treats as unmount-old/mount-new
+ *  regardless of any key. The freshly-mounted node is what starts the CSS animation; a later
+ *  re-render that leaves countdown at 1 keeps rendering the SAME `<PulsingGlyph pulse>` (same
+ *  type, unchanged `style` string), which React does not remount and the browser does not
+ *  restart. Plan §5.1 says this class of animation should key off `view.lastEffects`, not a
+ *  state diff — this implementation satisfies "once, then static" via the element-type switch
+ *  instead, which is observably different from the plan's own rule in one case: resuming a
+ *  persisted game mid-final-turn (countdown already 1 on the very first render after reload)
+ *  mounts `<PulsingGlyph>` fresh and replays the pulse once, whereas a `lastEffects`-keyed
+ *  implementation would not (no effect happened on that render). Not fixed here — flagged so
+ *  the gap is documented rather than silently relied upon. */
 function PulsingGlyph({ player, pulse }: { player: PlayerId; pulse: boolean }) {
-  const styleRef = useRef<HTMLStyleElement | null>(null);
   useEffect(() => {
     if (!pulse || typeof document === "undefined") return;
     const style = document.createElement("style");
     style.textContent = PULSE_KEYFRAMES;
     document.head.appendChild(style);
-    styleRef.current = style;
     return () => {
       style.remove();
     };

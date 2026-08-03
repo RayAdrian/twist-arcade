@@ -66,14 +66,6 @@ export function ghostCellOf(view: FadeoutState): { cell: number; player: PlayerI
   return null;
 }
 
-/** True iff this ply's effects contain a `decayed` entry for `player` — the structurally
- *  guaranteed signal used by presentation.ts's `announce({kind:"imminent"})` (see that file's
- *  header comment for the derivation: popping the oldest of a full (cap=3) queue always leaves
- *  a NEW front-of-queue mark at exactly remaining=1, unconditionally). */
-export function decayedThisPly(view: FadeoutState, player: PlayerId): boolean {
-  return view.lastEffects.some((e) => e.type === "decayed" && e.player === player);
-}
-
 export interface CellPresentation {
   cell: number;
   row: number;

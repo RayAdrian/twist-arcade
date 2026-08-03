@@ -138,4 +138,30 @@ describe("Board — reduced motion drops the pulse but not the badge/opacity inf
     expect(cell).toHaveTextContent("X");
     expect(cell).toHaveTextContent("1"); // badge
   });
+
+  // MUST FIX 2 Part A (stage-6 F3 review): a planted mutant deleting `prefs.reducedMotion ||`
+  // from Board.tsx's occupant ternary — so the pulse plays for reduced-motion users too, C5's
+  // headline failure — passed all 10 pre-existing Board unit tests AND the reduced-motion e2e,
+  // because every prior assertion only checked the badge/glyph were PRESENT, never that the
+  // animation itself was absent. These two tests assert directly on the rendered
+  // `style.animation`, the actual mechanism the mutant breaks.
+  it("does NOT apply the final-turn pulse animation under reduced motion, even though the mark IS at countdown 1", () => {
+    const state = play([0, 1, 2, 3, 4, 5, 7]); // P0's 4th placement; cell 2 (X) is now countdown 1
+    renderBoard(state, { reducedMotion: true });
+    const cell = screen.getByRole("gridcell", { name: /Row 1, column 3\. X, fades in 1 turn\./ });
+    const pulseSpan = cell.querySelector("span.inline-block");
+    // Under reduced motion, Board renders a bare GlyphMark (no PulsingGlyph wrapper at all) —
+    // no span.inline-block, and definitely no inline animation style.
+    expect(pulseSpan).toBeNull();
+    expect(cell.querySelector('[style*="animation"]')).toBeNull();
+  });
+
+  it("DOES apply the final-turn pulse animation WITHOUT reduced motion — the same mark, motion allowed", () => {
+    const state = play([0, 1, 2, 3, 4, 5, 7]);
+    renderBoard(state, { reducedMotion: false });
+    const cell = screen.getByRole("gridcell", { name: /Row 1, column 3\. X, fades in 1 turn\./ });
+    const pulseSpan = cell.querySelector("span.inline-block") as HTMLElement | null;
+    expect(pulseSpan).not.toBeNull();
+    expect(pulseSpan!.style.animation).toContain("fadeout-final-pulse");
+  });
 });
