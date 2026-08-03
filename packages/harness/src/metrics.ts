@@ -4,7 +4,7 @@
 // numbers `suites.ts` gates on and `report.ts` prints. Keeping this pure (no I/O, no clock, no
 // rng) is what makes it trivially unit-testable against hand-computed expectations.
 
-import type { Json, PlayerId } from "@twist-arcade/engine";
+import type { PlayerId, StepRecord } from "@twist-arcade/engine";
 
 export interface GameOutcome {
   readonly matchSeed: string;
@@ -21,14 +21,21 @@ export interface GameOutcome {
    *  one sample per ply (or per simultaneous actor per ply). Flattened across all games and
    *  averaged for `meanBranchingFactor`. */
   readonly branchingSamples: readonly number[];
-  /** Every move actually played this game, in order — one `{ seat, move }` entry per (ply,
-   *  actor) pair (plural only for a simultaneous ply). Review Note 8: this was previously
-   *  discarded entirely, which structurally blocked opening-move concentration, a comeback
-   *  curve, and any sign-check that needs to know WHAT was played, not just who won — and
-   *  falsified runner.ts's own doc comment claiming an outcome "could in principle be
-   *  re-validated through replay()" (no steps were ever recorded to replay). Nearly free to
-   *  record now; expensive to retrofit once reports downstream have already been consumed. */
-  readonly moves: readonly Json[];
+  /** Every ply actually played this game, in order — one `StepRecord` per ply (its own
+   *  `moves: [PlayerId, Json][]` holds every actor's move for that ply together; 1 entry for a
+   *  sequential ply, n for a simultaneous one). Review Note 8: this was previously discarded
+   *  entirely, which structurally blocked opening-move concentration, a comeback curve, and any
+   *  sign-check that needs to know WHAT was played, not just who won. Stage-6 re-review (MUST
+   *  FIX): an earlier version of this field flattened every actor into one indistinguishable
+   *  `{ seat, move }[]` log with no ply boundary — lossless for the sequential games the test
+   *  suite happened to exercise, but NOT for a `simultaneous: true` engine (which `runMatchup`
+   *  accepts), where a flat log can't tell "same ply" from "next ply" without re-simulating
+   *  `active()` against the live engine. `StepRecord[]` fixes that: it IS `ReplayRecord.steps`,
+   *  for every game class this package's runner plays, not just the sequential ones. Nearly free
+   *  to record now; expensive to retrofit once reports downstream have already been consumed
+   *  (see runner.ts's own doc on Note 8's retrofit cost — the same reasoning applies to its own
+   *  shape). */
+  readonly moves: readonly StepRecord[];
 }
 
 export interface MatchupMetrics {

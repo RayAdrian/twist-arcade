@@ -4,12 +4,13 @@
 
 import { describe, expect, it } from "vitest";
 import { classicTicTacToe, type TTTMove, type TTTState } from "@twist-arcade/engine/testkit/fixtures/classic-ttt";
+import { replay, type ReplayRecord, type StepRecord } from "@twist-arcade/engine";
 import type { Clock } from "@twist-arcade/bots";
 import { corridor, type CorridorMove, type CorridorState } from "./fixtures/corridor";
 import { doors, type DoorsMove, type DoorsState } from "./fixtures/doors";
+import { simulDuel } from "./fixtures/simul-duel";
 import { resolveNamedAgent, mirrorAgent, type PolicyAgentSpec } from "../src/roster";
-import { runMatchup } from "../src/runner";
-import { UnsupportedGameError } from "../src/solver/types";
+import { HiddenInformationUnsupportedError, runMatchup } from "../src/runner";
 
 /** A deterministic, always-advancing fake clock — never zero elapsed (which would otherwise
  *  make throughputGamesPerSec divide-by-zero into Infinity, silently corrupting a JSON report;
@@ -41,10 +42,12 @@ describe("runMatchup() on classic-ttt", () => {
       expect(o.plies).toBeGreaterThanOrEqual(1);
       expect(o.plies).toBeLessThanOrEqual(9);
       expect(o.capHit).toBe(false);
-      // Review Note 8: every ply actually played must be recorded, not discarded — one
-      // `{ seat, move }` entry per ply (TTT is strictly sequential, one actor per ply).
+      // Review Note 8 + stage-6 MUST FIX: every ply actually played must be recorded, not
+      // discarded, as one StepRecord per ply (TTT is strictly sequential, so each StepRecord
+      // holds exactly one [seat, move] pair — see the simultaneous test below for the n-actor
+      // case a flat per-actor log couldn't express at all).
       expect(o.moves).toHaveLength(o.plies);
-      expect(o.moves[0]).toEqual({ seat: 0, move: { cell: expect.any(Number) } });
+      expect(o.moves[0]).toEqual({ moves: [[0, { cell: expect.any(Number) }]] });
     }
     expect(report.metrics.capHitRate).toBe(0);
     // Sanity bounds — random-vs-random TTT: draws and both-seat wins should all be possible,
@@ -138,6 +141,66 @@ describe("runMatchup() on the cyclic corridor fixture (no engine-specific assump
   });
 });
 
+describe("runMatchup() on a simultaneous engine — GameOutcome.moves round-trips through replay() " +
+  "(stage-6 MUST FIX: a flat per-actor log couldn't express this; StepRecord[] can)", () => {
+  it("every ply's StepRecord carries BOTH seats' moves together (the boundary a flat log had no way to mark)", () => {
+    const report = runMatchup(simulDuel, resolveNamedAgent("random"), resolveNamedAgent("random"), {
+      games: 8,
+      seed: "runner-test:simultaneous-moves-shape",
+      maxPlies: 20,
+      mirrorSeats: false,
+      clock: fakeClock(),
+    });
+    expect(report.outcomes).toHaveLength(8);
+    for (const o of report.outcomes) {
+      // simulDuel's active() is ALWAYS simultaneous (both seats act every ply) — one
+      // StepRecord per ply, exactly `o.plies` of them, each with exactly 2 [seat, move] pairs.
+      expect(o.moves).toHaveLength(o.plies);
+      for (const step of o.moves) {
+        expect(step.moves).toHaveLength(2);
+        const seatsSeen = step.moves.map(([seat]) => seat).sort();
+        expect(seatsSeen).toEqual([0, 1]);
+      }
+    }
+  });
+
+  it("a recorded log replays to the SAME terminal status through replay() — the case a flat log couldn't express at all", () => {
+    const report = runMatchup(simulDuel, resolveNamedAgent("random"), resolveNamedAgent("random"), {
+      games: 8,
+      seed: "runner-test:simultaneous-replay",
+      maxPlies: 20,
+      mirrorSeats: false,
+      clock: fakeClock(),
+    });
+    expect(report.outcomes.length).toBeGreaterThan(0);
+
+    for (const outcome of report.outcomes) {
+      const record: ReplayRecord = {
+        gameId: simulDuel.meta.id,
+        gameVersion: simulDuel.meta.version,
+        engineVersion: "test",
+        numPlayers: 2,
+        seed: outcome.matchSeed,
+        steps: [...outcome.moves] as StepRecord[],
+      };
+
+      // Must not throw IllegalReplayMoveError — every recorded move must still be legal when
+      // replayed from setup() through the SAME rngFor(seed, stepIndex) derivation runner.ts
+      // documents as identical to replay.ts's own (this module's doc comment on RNG CONVENTIONS).
+      const { states, status } = replay(simulDuel, record);
+      expect(states).toHaveLength(outcome.plies + 1); // setup state + one state per ply
+
+      if (outcome.capHit) {
+        expect(status.kind).toBe("ongoing"); // adjudicated draw: cap hit before rules resolved it
+      } else if (outcome.winnerSeat !== null) {
+        expect(status).toEqual({ kind: "won", winner: outcome.winnerSeat });
+      } else {
+        expect(status.kind).toBe("draw"); // a genuine rules-drawn terminal, never "scored" here
+      }
+    }
+  });
+});
+
 describe("runMatchup() refuses hiddenInformation:true games (MUST FIX — correction C1, reproduced live)", () => {
   // The stage-6 review demonstrated this live: a policy that simply reads `state.secret` off
   // the canonical state (never the view) wins the "doors" fixture 10/10, because nothing in
@@ -158,7 +221,10 @@ describe("runMatchup() refuses hiddenInformation:true games (MUST FIX — correc
     },
   };
 
-  it("throws UnsupportedGameError BEFORE playing a single game against a planted cheater policy", () => {
+  it("throws HiddenInformationUnsupportedError BEFORE playing a single game against a planted cheater policy", () => {
+    // Minor finding 2: this used to be solver/types.ts's UnsupportedGameError, whose message
+    // hardwires a "reach/retrograde:" prefix — misleading for a runner-side refusal that has
+    // nothing to do with the exact solver. The runner now throws its own error class.
     const random = resolveNamedAgent<DoorsState, DoorsMove>("random");
     expect(() =>
       runMatchup(doors, cheatPolicy, random, {
@@ -166,7 +232,7 @@ describe("runMatchup() refuses hiddenInformation:true games (MUST FIX — correc
         seed: "runner-test:c1-cheater",
         clock: fakeClock(),
       })
-    ).toThrow(UnsupportedGameError);
+    ).toThrow(HiddenInformationUnsupportedError);
   });
 
   it("refuses regardless of which side of the matchup the hidden-info engine's agents occupy " +
@@ -178,7 +244,7 @@ describe("runMatchup() refuses hiddenInformation:true games (MUST FIX — correc
         seed: "runner-test:c1-mirror",
         clock: fakeClock(),
       })
-    ).toThrow(UnsupportedGameError);
+    ).toThrow(HiddenInformationUnsupportedError);
   });
 });
 

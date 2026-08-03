@@ -32,7 +32,7 @@ export type { GameOutcome, MatchupMetrics } from "./metrics";
 export { agentWinRate, computeMatchupMetrics, percentile } from "./metrics";
 
 export type { MatchupReport, RunMatchupOptions } from "./runner";
-export { runMatchup } from "./runner";
+export { HiddenInformationUnsupportedError, runMatchup } from "./runner";
 
 export type { CiSuiteReport, GateInputs, GateResult, GateStatus, RunCiSuiteOptions } from "./suites";
 export {

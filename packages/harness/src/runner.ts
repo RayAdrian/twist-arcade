@@ -15,6 +15,18 @@
 // replayable game-state draw must never share a stream with a bot's internal search
 // randomness).
 //
+// GameOutcome.moves IS `readonly StepRecord[]` — ONE ENTRY PER PLY, not a flat per-actor log
+// (stage-6 re-review, MUST FIX): `runMatchup` accepts `simultaneous: true` engines
+// (`playOneGame` explicitly branches on `active.mode`), and for those a ply has `n` actors
+// sharing one `active()` call with no boundary marker of its own. A flat `{ seat, move }[]` log
+// can't tell "these two entries were the same ply" from "these two entries were consecutive
+// sequential plies" — reconstructing the trajectory would require re-simulating `active()`
+// against the live engine, which is not what `replay()`'s wire format is. Recording one
+// `StepRecord` per ply (its own `moves: [PlayerId, Json][]` already carries every actor of that
+// ply together) makes `outcome.moves` a `ReplayRecord.steps` array directly, for every game class
+// this runner accepts — sequential or simultaneous — not just the sequential class the tests
+// happen to exercise most.
+//
 // SEAT MIRRORING (plan §7.1: "2P uses seat-mirrored pairs"): consecutive games sharing one
 // `matchSeed` but swapping which agent sits in which seat are the standard self-play variance-
 // reduction technique — both games see IDENTICAL environment randomness (setup + any stochastic
@@ -28,12 +40,11 @@
 // the default is a real one, appropriate for actual CLI/CI use where only the elapsed-time
 // FIELD (throughputGamesPerSec), not any decision, is expected to vary run to run.
 
-import type { GameEngine, Json, PlayerId, WithEffects } from "@twist-arcade/engine";
+import type { GameEngine, Json, PlayerId, StepRecord, WithEffects } from "@twist-arcade/engine";
 import { rngFor, rngForSetup } from "@twist-arcade/engine";
 import type { Clock } from "@twist-arcade/bots";
 import type { AgentSpec } from "./roster";
 import { computeMatchupMetrics, type GameOutcome, type MatchupMetrics } from "./metrics";
-import { UnsupportedGameError } from "./solver/types";
 
 export interface RunMatchupOptions {
   /** Total games to play. Must be >= 1. */
@@ -61,6 +72,25 @@ export interface MatchupReport {
 
 const realClock: Clock = { now: () => Date.now() };
 
+/**
+ * The runner's own C1 refusal (correction C1: no policy/mirror agent may ever see a
+ * `hiddenInformation: true` engine's canonical state — see `runMatchup`'s guard doc below).
+ * Deliberately its own class, NOT a reuse of `solver/types.ts`'s `UnsupportedGameError` — that
+ * class hardwires a `reach/retrograde:` message prefix (it exists for the exact-solver's own,
+ * unrelated preconditions), which pointed a reader debugging THIS refusal at the wrong module.
+ * Mirrors `packages/bots/src/worker/host.ts`'s own `HiddenInformationUnsupportedError` at the
+ * analogous seam — same reasoning, same shape, this package's own name.
+ */
+export class HiddenInformationUnsupportedError extends Error {
+  constructor(gameId: string) {
+    super(
+      `runMatchup: engine "${gameId}" has hiddenInformation===true — this runner hands ` +
+        "policies the canonical state (C1); use a determinized ViewPolicy runner arm (M3c) instead."
+    );
+    this.name = "HiddenInformationUnsupportedError";
+  }
+}
+
 function playOneGame<S extends WithEffects, M extends Json, V extends WithEffects>(
   engine: GameEngine<S, M, V>,
   matchSeed: string,
@@ -73,9 +103,11 @@ function playOneGame<S extends WithEffects, M extends Json, V extends WithEffect
   let status = engine.status(state);
   let plies = 0;
   const branchingSamples: number[] = [];
-  // Review Note 8: every move actually played, in order — one `{ seat, move }` entry per (ply,
-  // actor). Previously discarded entirely; see GameOutcome.moves's own doc in metrics.ts.
-  const moves: Json[] = [];
+  // Review Note 8 + stage-6 MUST FIX: every ply actually played, in order — one `StepRecord`
+  // per ply, carrying every actor's move for that ply together (1 for a sequential ply, n for a
+  // simultaneous one). Previously discarded entirely, then flattened per-actor with no ply
+  // boundary; see GameOutcome.moves's own doc in metrics.ts and this module's own doc above.
+  const moves: StepRecord[] = [];
   // Tracks the most recent move made BY each seat — the "lastOppMove" a mirror agent (roster.ts)
   // needs, from the perspective of whichever seat is asking. null until that seat has moved.
   const lastMoveBySeat: [M | null, M | null] = [null, null];
@@ -108,10 +140,13 @@ function playOneGame<S extends WithEffects, M extends Json, V extends WithEffect
 
       jointMoves.set(seat, move);
       lastMoveBySeat[seat] = move;
-      moves.push({ seat, move });
     }
 
     state = engine.apply(state, jointMoves, applyRng);
+    // One StepRecord per ply, built from the SAME jointMoves just handed to apply() — every
+    // actor of this ply travels together, which is exactly what makes `moves` a lossless
+    // `ReplayRecord.steps` for a simultaneous ply too (see this module's doc comment).
+    moves.push({ moves: [...jointMoves.entries()] });
     status = engine.status(state);
     plies += 1;
   }
@@ -153,10 +188,7 @@ export function runMatchup<S extends WithEffects, M extends Json, V extends With
   // the analogous seam) rather than silently ship a superhuman-looking, unplayable game — a
   // determinized ViewPolicy runner arm (M3c) is the real fix and has no consumer yet.
   if (engine.meta.hiddenInformation) {
-    throw new UnsupportedGameError(
-      `engine "${engine.meta.id}" has hiddenInformation===true — this runner hands policies ` +
-        "the canonical state (C1); use a determinized ViewPolicy runner arm (M3c) instead."
-    );
+    throw new HiddenInformationUnsupportedError(engine.meta.id);
   }
   const maxPlies = opts.maxPlies ?? 200;
   const mirrorSeats = opts.mirrorSeats ?? true;
