@@ -7,6 +7,10 @@
 // board's top edge rather than throwing. `useGame` owns triggering/dismissing (auto-dismiss on
 // the next committed move, once-per-device via callouts.ts) — this component only renders
 // whatever it's handed and never manages its own open/closed lifecycle beyond that prop.
+//
+// "use client" — hooks (see board-context.tsx's comment for why this is per-file, not inherited
+// from GameShell alone).
+"use client";
 
 import type { Json } from "@twist-arcade/engine";
 import { useLayoutEffect, useState } from "react";

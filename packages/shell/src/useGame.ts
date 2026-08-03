@@ -10,6 +10,12 @@
 // `engine.active(state).mode === "sequential"`. Simultaneous-move engines are out of scope
 // here; no game currently planned needs them, and adding that branch is a seam change that
 // should go through the orchestrator per §5.3/§13's own "grows game-specific branches" risk.
+//
+// "use client" — a hook, not a component, but still needed: it's exported from the package's
+// shared barrel (index.ts) alongside GameCard, and Next traces that whole module when building
+// any Server Component that imports anything from it (board-context.tsx's component comment
+// has the full story for why this is per-file, not inherited from GameShell alone).
+"use client";
 
 import { useEffect, useRef, useState } from "react";
 import type {

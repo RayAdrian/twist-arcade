@@ -1,6 +1,10 @@
 // packages/shell/src/components/BoardShell.tsx — plan §4.4: the machinery box around a
 // game's Board. Owns sizing, the >=48px floor (via Cell), the roving-tabindex APG grid,
 // pointer-commit + lockout, all so no game reimplements them.
+//
+// "use client" — hooks + a keydown handler (see board-context.tsx's comment for why every
+// hook-using shell component needs this individually, not just GameShell).
+"use client";
 
 import { type ReactNode, useMemo, useRef, useState } from "react";
 import { BoardContext, type CellRegistration } from "./board-context";

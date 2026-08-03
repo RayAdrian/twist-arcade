@@ -4,6 +4,9 @@
 // visible. Restart confirms inline (AlertDialog) only when the caller says to
 // (`confirmRestart` — solo, >=3 moves on the board; never at a terminal state, since that
 // restart is really "rematch" and must stay fast).
+//
+// "use client" — hooks + click handlers (see board-context.tsx's comment).
+"use client";
 
 import { type ReactNode, useEffect } from "react";
 import {

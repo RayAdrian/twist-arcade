@@ -2,6 +2,10 @@
 // game owns the sentence. Single line, always visible above the board, the only paragraph on
 // the screen. Dev-mode assertion: sentence <=90 chars (manifest contract) — warns loudly via
 // console.error, never throws (a bad manifest string should never crash the page).
+//
+// "use client" — the "How?" trigger's onClick handler (see board-context.tsx's comment for why
+// this is needed per-file even though RuleCard itself has no hooks).
+"use client";
 
 export interface RuleCardProps {
   sentence: string;

@@ -2,6 +2,11 @@
 // the game's 3-frame illustrated strip, nothing else. Built on the Dialog primitive (focus
 // trap, Esc-to-close, scrim-tap-to-close, and focus-return-to-trigger all come from Radix's
 // Dialog for free); positioned as a bottom sheet rather than a centered modal.
+//
+// "use client" — an interactive dialog (open/onOpenChange), and needed regardless so this
+// file never breaks a Server Component's build via the shared barrel (board-context.tsx's
+// comment has the full story).
+"use client";
 
 import type { Frame } from "@twist-arcade/game-spec";
 import { Dialog, DialogContent, DialogTitle } from "./ui/dialog";

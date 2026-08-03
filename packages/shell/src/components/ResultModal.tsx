@@ -11,6 +11,9 @@
 // priority order, focus management, the share outcome state machine (idle/pending/copied/
 // failed) — generically: the caller (GameShell, and later the S3 solo wiring) passes an
 // already-composed `resultText` rather than this component deriving copy from `Status` itself.
+//
+// "use client" — hooks (see board-context.tsx's comment).
+"use client";
 
 import { useEffect, useRef, useState } from "react";
 import type { GameManifest } from "@twist-arcade/game-spec";

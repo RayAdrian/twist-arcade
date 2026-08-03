@@ -3,6 +3,9 @@
 // full-screen BLOCKING interstitial (board hidden, focus on the confirm button); `false`
 // (open-info, e.g. Fadeout) -> a non-blocking turn BANNER — board stays visible, input is
 // already enabled for the next player, so there is nothing to confirm and no button at all.
+//
+// "use client" — hooks (see board-context.tsx's comment).
+"use client";
 
 import { useEffect, useRef } from "react";
 

@@ -2,6 +2,7 @@
 // @radix-ui/react-alert-dialog. Used by ControlsRow's restart confirm ("Restart? This game
 // will be lost", plan §4.9) — an alert dialog (not a plain Dialog) because it demands an
 // explicit choice rather than being dismissible by an outside click alone.
+"use client";
 
 import * as React from "react";
 import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog";

@@ -1,6 +1,7 @@
 // packages/shell/src/components/ui/popover.tsx — minimal shadcn-style wrapper over
 // @radix-ui/react-popover. Used by CalloutLayer (plan §4.15): anchored, non-modal,
 // no focus trap, no scrim, role="status".
+"use client";
 
 import * as React from "react";
 import * as PopoverPrimitive from "@radix-ui/react-popover";

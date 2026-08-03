@@ -8,15 +8,26 @@
 // handed down as a plain prop to the client `GameShell` island, which is what actually calls
 // them (plan §3.2's dynamic-import boundary; this file never calls loadEngine/loadPresentation
 // itself, so it never pulls a game's engine/presentation bundle into the server render).
+//
+// Deliberately does NOT read `searchParams` (e.g. for a "?mode=hotseat" override, which an
+// earlier revision had): combining `generateStaticParams` with `searchParams` access in the
+// same page is a genuine Next.js conflict, not a style choice — `searchParams` is a per-request-
+// only API, so a page that reads it cannot ALSO be statically prerendered, and mixing them
+// produced a real `DYNAMIC_SERVER_USAGE` digest error at runtime for exactly this route
+// (caught by this pass's own Playwright a11y spec, not a hypothetical). Mode selection is
+// derived purely from the manifest for now; a hotseat entry point belongs in GameShell's own
+// settings/mode picker (not built this pass — see the final report's gap list), not a URL param
+// on a route this plan wants pre-rendered.
 
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { GameShell, type Mode } from "@twist-arcade/shell";
-import { registry } from "@/games/registry";
+// Relative, not the "@/*" alias — see app/page.tsx's comment: next build doesn't resolve it
+// from this monorepo's root tsconfig.json (the alias lives in tsconfig.app.json instead).
+import { registry } from "../../../games/registry";
 
 interface PlayPageProps {
   params: Promise<{ gameId: string }>;
-  searchParams: Promise<{ mode?: string }>;
 }
 
 export function generateStaticParams(): { gameId: string }[] {
@@ -35,23 +46,18 @@ export async function generateMetadata({ params }: PlayPageProps): Promise<Metad
   };
 }
 
-function resolveMode(requested: string | undefined, entry: (typeof registry)[string]): Mode {
-  const { modes, players } = entry.manifest;
-  if (players.max === 1) return "solo-single";
-  if (requested === "hotseat" && modes.hotseat) return "hotseat";
-  return "solo-bot";
+function resolveMode(entry: (typeof registry)[string]): Mode {
+  return entry.manifest.players.max === 1 ? "solo-single" : "solo-bot";
 }
 
-export default async function PlayPage({ params, searchParams }: PlayPageProps) {
+export default async function PlayPage({ params }: PlayPageProps) {
   const { gameId } = await params;
-  const { mode: requestedMode } = await searchParams;
   const entry = registry[gameId];
   if (!entry) notFound();
 
   const manifests = Object.values(registry).map((e) => e.manifest);
-  const mode = resolveMode(requestedMode, entry);
 
   return (
-    <GameShell gameId={gameId} registryEntry={entry} manifests={manifests} mode={mode} />
+    <GameShell gameId={gameId} registryEntry={entry} manifests={manifests} mode={resolveMode(entry)} />
   );
 }

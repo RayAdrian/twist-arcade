@@ -111,6 +111,9 @@ export default tseslint.config(
       "**/node_modules/**",
       "**/coverage/**",
       "**/*.config.*",
+      // Next-generated, gitignored (.gitignore's own entry) — its triple-slash reference to
+      // .next/types/routes.d.ts is Next's own required convention, not something to lint.
+      "next-env.d.ts",
     ],
   },
   js.configs.recommended,

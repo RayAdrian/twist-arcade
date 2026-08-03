@@ -1,6 +1,14 @@
 // packages/shell/src/components/board-context.tsx — BoardContext (plan §4.4): the machinery
 // shared between BoardShell (the provider) and every Cell (the consumer). Games never read
 // this directly — it's internal shell wiring.
+//
+// "use client" — useContext is a hook; without this, any Server Component reachable through
+// the package's barrel (packages/shell/src/index.ts) that imports something re-exported
+// alongside this file fails the Next.js build ("You're importing a component that needs
+// useContext... mark the file with the 'use client' directive") — discovered when app/page.tsx
+// (a Server Component importing only GameCard from the same barrel) broke `next build` because
+// every hook-using shell component lacked its own directive and only GameShell had one.
+"use client";
 
 import { createContext, useContext } from "react";
 

@@ -1,5 +1,8 @@
 // packages/shell/src/components/Cell.tsx — plan §4.5. Shell owns target/focus/badge-slot/
 // ghost-rendering/the >=48px floor; the game owns `occupant` content only.
+//
+// "use client" — hooks + pointer/keyboard handlers (see board-context.tsx's comment).
+"use client";
 
 import { type ReactNode, useEffect, useRef } from "react";
 import { AGE_OPACITY } from "../design-tokens";

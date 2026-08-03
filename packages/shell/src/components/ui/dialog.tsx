@@ -2,6 +2,7 @@
 // @radix-ui/react-dialog. Used by ResultModal (full-screen takeover) and HowSheet (bottom
 // sheet — same primitive, different position/sizing per plan §4.3/§4.10: focus-trapped,
 // Escape + scrim-tap close, focus returns to the trigger).
+"use client";
 
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";

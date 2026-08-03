@@ -5,7 +5,12 @@
 // Server Component: no interactivity here, so no "use client" (plan §3.3).
 
 import { GameCard } from "@twist-arcade/shell";
-import { registry } from "@/games/registry";
+// Relative, not the "@/*" alias: that alias is declared in tsconfig.app.json, but Next's build
+// resolves path aliases from the tsconfig it reads by default (this monorepo's root
+// tsconfig.json, a references-only file with no `paths` of its own) — `next build` failed to
+// resolve "@/games/registry" even though `tsc` was happy with it (tsc was invoked against
+// tsconfig.app.json directly, which does have the alias).
+import { registry } from "../games/registry";
 
 export default function HomePage() {
   const manifests = Object.values(registry).map((entry) => entry.manifest);
