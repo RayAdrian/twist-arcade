@@ -66,6 +66,43 @@ const boardPathAnimationBoundary = {
   ],
 };
 
+// Registry-driven code splitting (plan §3.2.3): "App code may statically import only
+// games/registry.ts re-exported manifests... Engines and presentations load exclusively
+// through registry[id].loadEngine()/loadPresentation()." Manifests are eager (the catalog
+// payload games/registry.ts re-exports); a game's engine, UI, or its package-root `index`
+// (which typically re-exports both) must load ONLY through the registry entry's own dynamic
+// `import()` — a static import of any of those from `app/**` or `packages/shell/**` would pull
+// that game's whole engine+presentation bundle into every route that imports it, defeating the
+// "game 40 adds zero bytes to game 1's route" budget entirely.
+const registrySplittingBoundary = {
+  "no-restricted-imports": [
+    "error",
+    {
+      patterns: [
+        {
+          group: ["games/*/engine", "games/*/engine/*", "*/games/*/engine", "*/games/*/engine/*"],
+          message:
+            "A game's engine must load only via registry[id].loadEngine() (plan §3.2) — a static import here defeats per-game code splitting.",
+        },
+        {
+          group: ["games/*/ui", "games/*/ui/*", "*/games/*/ui", "*/games/*/ui/*"],
+          message:
+            "A game's presentation/UI must load only via registry[id].loadPresentation() (plan §3.2) — a static import here defeats per-game code splitting.",
+        },
+        {
+          // Deliberately NOT a bare "games/*" — that would also match "games/registry" itself,
+          // the ONE games/* import app code is required to make (the eager manifest catalog).
+          // Only a game's own package-root index (an additional path segment past the game
+          // folder) is banned here.
+          group: ["games/*/index", "*/games/*/index"],
+          message:
+            "A game's package root (typically re-exporting engine + presentation together) must never be statically imported outside games/registry.ts — go through the registry's loadEngine()/loadPresentation() instead (plan §3.2).",
+        },
+      ],
+    },
+  ],
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -101,6 +138,10 @@ export default tseslint.config(
     // Purity boundary: the engine package and every game package.
     files: ["packages/engine/**/*.ts", "games/**/*.ts", "games/**/*.tsx"],
     rules: purityRules,
+  },
+  {
+    files: ["app/**/*.ts", "app/**/*.tsx", "packages/shell/src/**/*.ts", "packages/shell/src/**/*.tsx"],
+    rules: registrySplittingBoundary,
   },
   {
     // Test files get a relaxed no-explicit-any (vitest/fast-check plumbing sometimes needs it).
