@@ -4,7 +4,7 @@
 // numbers `suites.ts` gates on and `report.ts` prints. Keeping this pure (no I/O, no clock, no
 // rng) is what makes it trivially unit-testable against hand-computed expectations.
 
-import type { PlayerId } from "@twist-arcade/engine";
+import type { Json, PlayerId } from "@twist-arcade/engine";
 
 export interface GameOutcome {
   readonly matchSeed: string;
@@ -21,6 +21,14 @@ export interface GameOutcome {
    *  one sample per ply (or per simultaneous actor per ply). Flattened across all games and
    *  averaged for `meanBranchingFactor`. */
   readonly branchingSamples: readonly number[];
+  /** Every move actually played this game, in order — one `{ seat, move }` entry per (ply,
+   *  actor) pair (plural only for a simultaneous ply). Review Note 8: this was previously
+   *  discarded entirely, which structurally blocked opening-move concentration, a comeback
+   *  curve, and any sign-check that needs to know WHAT was played, not just who won — and
+   *  falsified runner.ts's own doc comment claiming an outcome "could in principle be
+   *  re-validated through replay()" (no steps were ever recorded to replay). Nearly free to
+   *  record now; expensive to retrofit once reports downstream have already been consumed. */
+  readonly moves: readonly Json[];
 }
 
 export interface MatchupMetrics {

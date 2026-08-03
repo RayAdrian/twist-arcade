@@ -6,8 +6,10 @@ import { describe, expect, it } from "vitest";
 import { classicTicTacToe, type TTTMove, type TTTState } from "@twist-arcade/engine/testkit/fixtures/classic-ttt";
 import type { Clock } from "@twist-arcade/bots";
 import { corridor, type CorridorMove, type CorridorState } from "./fixtures/corridor";
-import { resolveNamedAgent, mirrorAgent } from "../src/roster";
+import { doors, type DoorsMove, type DoorsState } from "./fixtures/doors";
+import { resolveNamedAgent, mirrorAgent, type PolicyAgentSpec } from "../src/roster";
 import { runMatchup } from "../src/runner";
+import { UnsupportedGameError } from "../src/solver/types";
 
 /** A deterministic, always-advancing fake clock — never zero elapsed (which would otherwise
  *  make throughputGamesPerSec divide-by-zero into Infinity, silently corrupting a JSON report;
@@ -39,6 +41,10 @@ describe("runMatchup() on classic-ttt", () => {
       expect(o.plies).toBeGreaterThanOrEqual(1);
       expect(o.plies).toBeLessThanOrEqual(9);
       expect(o.capHit).toBe(false);
+      // Review Note 8: every ply actually played must be recorded, not discarded — one
+      // `{ seat, move }` entry per ply (TTT is strictly sequential, one actor per ply).
+      expect(o.moves).toHaveLength(o.plies);
+      expect(o.moves[0]).toEqual({ seat: 0, move: { cell: expect.any(Number) } });
     }
     expect(report.metrics.capHitRate).toBe(0);
     // Sanity bounds — random-vs-random TTT: draws and both-seat wins should all be possible,
@@ -129,6 +135,50 @@ describe("runMatchup() on the cyclic corridor fixture (no engine-specific assump
       expect(o.capHit).toBe(false);
       expect(o.winnerSeat).not.toBeNull(); // corridor always ends in a win, never a rules-draw
     }
+  });
+});
+
+describe("runMatchup() refuses hiddenInformation:true games (MUST FIX — correction C1, reproduced live)", () => {
+  // The stage-6 review demonstrated this live: a policy that simply reads `state.secret` off
+  // the canonical state (never the view) wins the "doors" fixture 10/10, because nothing in
+  // runMatchup()/playOneGame() ever refused to hand it that state. On a real hidden-info game
+  // this is exactly correction C1's "passing gate on a game unplayable blind" — the number is
+  // real, it just means something other than what a reviewer of a green CI gate believes.
+  const cheatPolicy: PolicyAgentSpec<DoorsState, DoorsMove> = {
+    kind: "policy",
+    name: "cheater",
+    budget: { kind: "rollouts", n: 1 },
+    policy: {
+      chooseMove({ state }) {
+        // A genuine C1 violation: reads the CANONICAL state's hidden secret directly, never
+        // `engine.playerView(state, player)`. If runMatchup ever hands this the real state,
+        // seat 0 wins every single game.
+        return { move: { open: state.secret }, stats: { elapsedMs: 0 } };
+      },
+    },
+  };
+
+  it("throws UnsupportedGameError BEFORE playing a single game against a planted cheater policy", () => {
+    const random = resolveNamedAgent<DoorsState, DoorsMove>("random");
+    expect(() =>
+      runMatchup(doors, cheatPolicy, random, {
+        games: 10,
+        seed: "runner-test:c1-cheater",
+        clock: fakeClock(),
+      })
+    ).toThrow(UnsupportedGameError);
+  });
+
+  it("refuses regardless of which side of the matchup the hidden-info engine's agents occupy " +
+    "(mirror agents get canonical state too — runner.ts's guard must sit before EITHER kind runs)", () => {
+    const mirror = mirrorAgent<DoorsState, DoorsMove>((_state, _lastOppMove, legal) => legal[0]!);
+    expect(() =>
+      runMatchup(doors, mirror, resolveNamedAgent<DoorsState, DoorsMove>("random"), {
+        games: 2,
+        seed: "runner-test:c1-mirror",
+        clock: fakeClock(),
+      })
+    ).toThrow(UnsupportedGameError);
   });
 });
 

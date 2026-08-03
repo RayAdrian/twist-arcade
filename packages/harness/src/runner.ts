@@ -7,10 +7,13 @@
 // a parallel one): `rngForSetup(matchSeed)` seeds `engine.setup()`, `rngFor(matchSeed, ply)`
 // seeds that ply's `engine.apply()` — EXACTLY replay.ts's own step-rng rule, so any game this
 // runner plays could in principle be re-validated through `replay()` later using
-// `{ seed: matchSeed, steps: [...] }`. The policy/bot's OWN randomness is a separate,
-// domain-separated stream, `rngFor(\`${matchSeed}:bot\`, ply)` — the identical convention
-// packages/bots/src/worker/host.ts already uses for the exact same reason (a public, replayable
-// game-state draw must never share a stream with a bot's internal search randomness).
+// `{ seed: matchSeed, steps: [...] }` — `GameOutcome.moves` (review Note 8) is what actually
+// makes that true now: without it recorded, there were no steps to hand `replay()` at all, and
+// this comment's claim was aspirational, not real. The policy/bot's OWN randomness is a
+// separate, domain-separated stream, `rngFor(\`${matchSeed}:bot\`, ply)` — the identical
+// convention packages/bots/src/worker/host.ts already uses for the exact same reason (a public,
+// replayable game-state draw must never share a stream with a bot's internal search
+// randomness).
 //
 // SEAT MIRRORING (plan §7.1: "2P uses seat-mirrored pairs"): consecutive games sharing one
 // `matchSeed` but swapping which agent sits in which seat are the standard self-play variance-
@@ -30,6 +33,7 @@ import { rngFor, rngForSetup } from "@twist-arcade/engine";
 import type { Clock } from "@twist-arcade/bots";
 import type { AgentSpec } from "./roster";
 import { computeMatchupMetrics, type GameOutcome, type MatchupMetrics } from "./metrics";
+import { UnsupportedGameError } from "./solver/types";
 
 export interface RunMatchupOptions {
   /** Total games to play. Must be >= 1. */
@@ -69,6 +73,9 @@ function playOneGame<S extends WithEffects, M extends Json, V extends WithEffect
   let status = engine.status(state);
   let plies = 0;
   const branchingSamples: number[] = [];
+  // Review Note 8: every move actually played, in order — one `{ seat, move }` entry per (ply,
+  // actor). Previously discarded entirely; see GameOutcome.moves's own doc in metrics.ts.
+  const moves: Json[] = [];
   // Tracks the most recent move made BY each seat — the "lastOppMove" a mirror agent (roster.ts)
   // needs, from the perspective of whichever seat is asking. null until that seat has moved.
   const lastMoveBySeat: [M | null, M | null] = [null, null];
@@ -101,6 +108,7 @@ function playOneGame<S extends WithEffects, M extends Json, V extends WithEffect
 
       jointMoves.set(seat, move);
       lastMoveBySeat[seat] = move;
+      moves.push({ seat, move });
     }
 
     state = engine.apply(state, jointMoves, applyRng);
@@ -121,6 +129,7 @@ function playOneGame<S extends WithEffects, M extends Json, V extends WithEffect
     plies,
     capHit,
     branchingSamples,
+    moves,
   };
 }
 
@@ -132,6 +141,22 @@ export function runMatchup<S extends WithEffects, M extends Json, V extends With
 ): MatchupReport {
   if (!Number.isInteger(opts.games) || opts.games < 1) {
     throw new RangeError(`runMatchup: games must be a positive integer, got ${opts.games}`);
+  }
+  // Correction C1's seam, guarded BEFORE a single game is played — every agent this runner
+  // hands a move-request to (both PolicyAgentSpec, via `state`, AND MirrorAgentSpec, via
+  // playOneGame's own `state` parameter to `mirrorMove`) receives the CANONICAL state, never
+  // `engine.playerView(state, seat)`. That is lossless for a perfect-information game (view IS
+  // the state there), but for a `hiddenInformation: true` game it is exactly the silent failure
+  // C1 describes: a policy that can read unrevealed secrets posts a passing Strong/Random ratio
+  // on a game no human could play blind, and nothing about that failure is loud. Refuse loudly
+  // now (mirroring packages/bots/src/worker/host.ts's own HiddenInformationUnsupportedError at
+  // the analogous seam) rather than silently ship a superhuman-looking, unplayable game — a
+  // determinized ViewPolicy runner arm (M3c) is the real fix and has no consumer yet.
+  if (engine.meta.hiddenInformation) {
+    throw new UnsupportedGameError(
+      `engine "${engine.meta.id}" has hiddenInformation===true — this runner hands policies ` +
+        "the canonical state (C1); use a determinized ViewPolicy runner arm (M3c) instead."
+    );
   }
   const maxPlies = opts.maxPlies ?? 200;
   const mirrorSeats = opts.mirrorSeats ?? true;

@@ -39,6 +39,7 @@ function outcome(partial: Partial<GameOutcome> & Pick<GameOutcome, "winnerSeat" 
     seatAgent: ["A", "B"],
     capHit: false,
     branchingSamples: [],
+    moves: [],
     ...partial,
   };
 }
