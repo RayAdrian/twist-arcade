@@ -26,3 +26,4 @@ test-results/
 .vscode/
 .idea/
 *.timestamp-*.mjs
+data/daily/schedule-proposal.json
