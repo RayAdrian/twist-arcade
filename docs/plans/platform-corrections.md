@@ -184,3 +184,61 @@ encoding named — not adopted quietly.
 - **A documented exception to the 48 px cell floor** exists for Mine Run (10×10 cannot fit
   at a 320 px viewport), conditional on mandatory two-tap commit on every platform. The
   shell team owns the floor and must know it has exactly one sanctioned violation.
+
+---
+
+## C6 — A validation yardstick must be strong enough to measure with
+
+**Milestone: M2 bots + Mine Run. Severity: high — produces both false passes and false
+failures, silently.**
+
+*Found by: the M3c solo-harness implementer, 2026-08-03. Ruled by the orchestrator.*
+
+The shipped solo `Strong` agent — `determinize(flatMonteCarloPolicy())`, one sample, a
+**uniform-random** rollout — could not reliably clear the Always-Safe gate even against a
+*healthy* Mine Run. Validating the gate's mechanism required a test-local K-sample,
+greedy-rollout Strong.
+
+**Why this is C1's problem one level deeper.** C1 guards against a policy that *peeks* —
+an omniscient bot posts a passing skill ratio on an unplayable game. C6 is a policy that is
+honest but **too weak to be a yardstick**. Every solo gate is defined relative to Strong:
+"Strong/Random median ratio < 1.5", "Always-Safe ≥ 95% of Strong". If Strong is weak, the
+ratio collapses toward 1 on a *good* game (false fail), and any threshold loosened to
+accommodate it stops catching a genuinely degenerate one (false pass). Both directions are
+silent.
+
+**Root causes, both already specified and both unbuilt:**
+
+1. `flatMonteCarloPolicy`'s rollout is uniform-random; `mine-run.md` §4.4 specifies a
+   **greedy** rollout. This is the game's own open question O1, unresolved.
+2. `games/mine-run/heuristic.ts` is specced in `mine-run.md` §4.5 and **does not exist**, so
+   `greedyOnlyPolicy` and beam's `evaluate()` fall back to bare `engine.score()` — which
+   equals `banked` and is therefore **blind to unbanked streak value**, the entire quantity
+   the press-your-luck decision turns on.
+
+**Ruling:** build both before any solo gate result is trusted. Implement the greedy rollout
+in `packages/bots` (parameterised, so a game supplies its rollout policy) and
+`games/mine-run/heuristic.ts` scoring banked **plus** unbanked-streak expectation. Then
+re-run the Always-Safe validation with the shipped Strong and confirm the separation the
+test-local Strong demonstrated. Until that holds, **no solo gate number is evidence**.
+
+**The general rule, worth applying beyond this game:** a gate defined relative to a
+reference agent is only as trustworthy as that agent. Before believing a threshold, verify
+the reference clears it on a known-good input — otherwise the gate measures the yardstick,
+not the game.
+
+**Also record:** an Always-Safe separation requires the reveal budget to be tighter than the
+cell count. Where `revealsLeft budget == totalCells` there is no reveal scarcity and the
+gate shows zero separation at any mine density. Belongs in the plan's tuning notes.
+
+---
+
+## C7 — `manifest.solo.format` literals: the code is right, the docs are wrong
+
+**Severity: documentation.**
+
+C2 and `roadmap.md` §6 say `"puzzle" | "chase"`. The shipped
+`packages/game-spec/src/manifest.ts` uses **`"daily-puzzle" | "score-chase"`**. The M3c
+implementer built against the real code, which is correct. The docs are the error and are
+corrected here; C2's *substance* (select the gate table by format, never by player count)
+is unchanged.
