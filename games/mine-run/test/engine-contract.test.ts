@@ -12,7 +12,7 @@ import { makeMineRunSecretExtractor } from "../secret";
 const TOTAL_CELLS = 10 * 10;
 
 engineContract(mineRun, {
-  runs: 25,
+  runs: 150,
   maxPlies: 200, // R12: a real run is structurally <= 121 moves; 200 is generous headroom
   secretExtractor: makeMineRunSecretExtractor(TOTAL_CELLS),
   scoreMonotone: true,

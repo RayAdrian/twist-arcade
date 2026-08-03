@@ -23,7 +23,41 @@
 import { describe, expect, it } from "vitest";
 import { rngFromSeed, rngFor, rngForSetup } from "@twist-arcade/engine";
 import { createMineRun } from "../engine";
+import type { MineRunView } from "../engine";
 import { safeMove } from "../probes";
+
+/**
+ * `lastEffects` is excluded from the round-trip comparison below, deliberately. It is
+ * transient per-transition presentation echo, not part of a state's canonical identity —
+ * the SAME convention `encode()` already enforces platform-wide (types.ts: "EXCLUDES
+ * lastEffects [...] effects are recomputable by re-applying") and that `decode()` enforces
+ * literally (`decode(x).lastEffects === []`, asserted by checkEncodeDecodeAndEffects).
+ * `sampleConsistentState` is, in effect, reconstructing a state the way `decode()` would —
+ * from a snapshot of visible information, not from a specific preceding apply() call — so it
+ * has no "last move" to echo and correctly returns `lastEffects: []` (see csp.ts, which
+ * builds every sampled MineRunState with `lastEffects: []` explicitly, matching decode()'s
+ * documented contract exactly). Demanding byte-identical `lastEffects` here would be
+ * demanding the sampler reconstruct which SPECIFIC move produced the original state's last
+ * transition in this hypothetical alternate world — a different and unnecessary problem, not
+ * what "consistent with the view" means. Every OTHER field (cells, counts, streak, banked,
+ * budget) still must match byte-for-byte, which is what actually proves the sample is
+ * indistinguishable from the real game state for decision-making purposes.
+ */
+function withoutEffects(view: MineRunView): Omit<MineRunView, "lastEffects"> {
+  const {
+    width,
+    height,
+    cells,
+    minesTotal,
+    minesExploded,
+    streakLen,
+    streakValue,
+    nextGain,
+    banked,
+    revealsLeft,
+  } = view;
+  return { width, height, cells, minesTotal, minesExploded, streakLen, streakValue, nextGain, banked, revealsLeft };
+}
 
 describe("view-honesty: safeMove agrees across independently-resampled hidden worlds", () => {
   it("resampled worlds are genuinely distinct, round-trip to the identical view, and safeMove agrees on all of them", () => {
@@ -55,12 +89,17 @@ describe("view-honesty: safeMove agrees across independently-resampled hidden wo
     for (const s of worldRngSeeds) {
       const sampled = engine.sampleConsistentState!(view, rngFromSeed(s));
 
-      // (a)/(b): the sample must be a FULL valid state whose own view is byte-identical to
-      // the original (proving it is a genuinely indistinguishable alternate world, not just
-      // "close enough").
+      // (a)/(b): the sample must be a FULL valid state whose own view is identical to the
+      // original MODULO lastEffects (proving it is a genuinely indistinguishable alternate
+      // world, not just "close enough") — see withoutEffects()'s doc comment for why
+      // lastEffects itself is excluded from this comparison.
       const reView = engine.playerView(sampled, 0);
       expect(engine.encode(sampled) === engine.encode(sampled)).toBe(true); // sanity: encode is total
-      expect(JSON.stringify(reView)).toBe(JSON.stringify(view));
+      expect(JSON.stringify(withoutEffects(reView))).toBe(JSON.stringify(withoutEffects(view)));
+      // sampleConsistentState has no preceding move of its own to echo — it always reports
+      // lastEffects: [], the same convention decode() uses (types.ts: "decode(x).lastEffects
+      // === []"). Pinned here so a future change to that convention is a deliberate decision.
+      expect(reView.lastEffects).toEqual([]);
 
       sampledMineSets.push(JSON.stringify(sampled.mines));
 
