@@ -283,3 +283,83 @@ line ≤14 glyphs) contradict its own §4.4 literal fixtures (42 and 41 chars; 1
 Definition of Done requires byte-for-byte fixture reproduction, so **the fixtures win** —
 enforced caps are 42 and 15. The prose is the error. The implementer chose this and
 documented it rather than silently satisfying one and failing the other; that was right.
+
+---
+
+## C9 — `grindProbe` is structurally blind to the farming loop it exists to catch
+
+**Milestone: M3c. Severity: high — the probe cannot detect its own headline case.**
+
+*Found by: the M3c stage-6 review, 2026-08-03, with an executed counterexample.*
+
+Spine §7.4 specifies Grind as "cycle detection on `encode(S)` … score delta ≥ 0". Those two
+clauses **contradict each other**, and the implementation inherits the contradiction
+faithfully.
+
+`probes-solo.ts:94` requires `encode(next) === startEncoded`. But score (`banked`) lives
+**inside canonical state**, so encode-equality forces `delta === 0` exactly — the `>= 0`
+clause is dead code. The probe can only ever see zero-delta self-loops.
+
+**Executed proof:** a Mine Run mutant whose `bank` credits `streakValue` but never resets
+the streak is a genuine infinite zero-risk farm — banked strictly increases by `v` per bank
+across five iterations, every other field byte-identical, status ongoing. `grindProbe`
+returned `found: false`.
+
+The one shape the probe *can* see is the bank-at-`streakLen 0` delta-0 self-loop, which is
+exactly the case the M3c tests plant. So the probe passes its own test while being blind to
+the class the solo lens describes as "score grows linearly with moves".
+
+**This is a plan defect, not an implementation slip** — hence a recorded correction rather
+than a patch. Spine §7.4's mechanism must change to one of:
+
+- cycle-detect on a **score-projected key** (score fields normalised out before encoding), or
+- detect a **move sequence repeatable k times with identical positive per-iteration delta**.
+
+The second is closer to what the gate means and is harder to fool.
+
+*Verified clean in the over-fire direction:* a near-miss mutant (a legal no-op that costs a
+reveal — bounded, not a loop) correctly stays quiet, as does the healthy engine.
+
+---
+
+## C10 — `verifyCertificate` never checks the one number the certificate exists to publish
+
+**Milestone: M3d + engine testkit. Severity: high — a forged par validates.**
+
+*Found by: the M3c stage-6 review, 2026-08-03, by tampering a real certificate.*
+
+`verifyCertificate` (`packages/engine/testkit/checks.ts:743-771`) checks `gameId` and
+`gameVersion`, and replays `moveLog` to a `won` terminal. It **never compares `par` to
+`moveLog.length`**.
+
+**Executed:** tampering a freshly certified hole-walk certificate to `par: 999` passes
+verification, and the gate's par-range row passes for any in-band forged value.
+
+`par` is *the* published number — it is simultaneously the fairness proof, the difficulty
+calibration, and the share hook. A certificate whose replay is valid but whose par is wrong
+is worse than no certificate: it carries the full authority of having been verified.
+
+**Fix** (route through the orchestrator, since `checks.ts` belongs to the engine lane):
+extend `CertificateReplayInput` with an optional `par`, throwing when supplied and
+`≠ moveLog.length`; or add a harness-side verification wrapper that certify and the CI job
+both call. The same gap covers `parKind` and `guessFree` tampering.
+
+---
+
+## C11 — Fog dailies must be rejected unless deduction-only
+
+**Milestone: M3d. Severity: medium — silently omitted rather than explicitly N/A.**
+
+Spine §7.7 and solo-lens §3.3 both list "fog games — if not deduction-only" as an explicit
+rejection clause, and lens §3.8 carries a CI row for it. `certifyDay` records
+`guessFree: solveResult.guessFree ?? false` for hidden-info engines but **never rejects on
+it** — a fog daily requiring a guess gets certified with `guessFree: false` and ships.
+
+`SoloGatePuzzleInputs` has no `guessFree` field and neither gate table carries the row, so
+by C2's own standard the concern is *silently omitted* rather than reported N/A. No shipped
+game hits it today (Crackstep is perfect-information; Mine Run publishes no certificates),
+but this is the platform-wide pipeline and the next fog game inherits it.
+
+**Fix:** a rejection clause in `certifyDay` when
+`engine.meta.hiddenInformation && !solveResult.guessFree`, plus a `fogDeductionOnly` row in
+both gate tables (N/A with a reason for non-fog and for chase formats).
