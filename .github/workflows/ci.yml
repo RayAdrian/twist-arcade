@@ -40,8 +40,23 @@ jobs:
         # to depend on React for real; only packages/engine is constrained. See
         # scripts/check-engine-purity.mjs.
 
+      - name: Per-game harness CI gates (M4)
+        run: pnpm harness:ci-gates -- --suite ci
+        # Wires the ALREADY-BUILT harness suites (packages/harness/src/ci-gates.ts composes
+        # suites.ts for two-player games and solo-gates.ts/probes-solo.ts/solo-runner.ts for
+        # solo games) over every entry in games/registry.ts, keyed by manifest.solo.format —
+        # never by player count (platform-corrections.md C2). Exits non-zero the moment any
+        # registered game fails its gate table (plan §7.5, roadmap §6). A no-op ("nothing to
+        # gate yet") until the first game registers — see scripts/ci-gates.ts's own doc.
+
       - name: Build (production)
         run: pnpm build
+
+      - name: Bundle size budget (size-limit, plan §7.5/roadmap §6)
+        run: pnpm size-limit
+        # .size-limit.json: 75 kB gz per game route (app/play/[gameId]) and the catalog route
+        # (app/page.tsx) must not grow past its own budget. Runs against the `next build`
+        # output from the previous step — must stay AFTER Build in this job's ordering.
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
@@ -53,6 +68,3 @@ jobs:
         # playwright.config.ts and e2e/a11y.spec.ts for what's deferred until a real game
         # lands (cold-load timing, keyboard-only play, the 320px cell floor, reduced-motion
         # parity, the input lockout, persistence resume).
-
-      # Harness CI suites (packages/harness) and the size-limit budget check land in M3/M4;
-      # this workflow is otherwise the M0 skeleton — typecheck -> lint -> test -> engine purity.

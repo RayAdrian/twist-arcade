@@ -13,6 +13,8 @@
     "check:engine-purity": "node scripts/check-engine-purity.mjs",
     "harness": "tsx packages/harness/src/cli.ts",
     "harness:ci-gates": "tsx scripts/ci-gates.ts",
+    "harness:verify-certificates": "tsx scripts/verify-certificates.ts",
+    "harness:calibration-drift": "tsx scripts/calibration-drift.ts",
     "size-limit": "size-limit",
     "dev": "next dev",
     "build": "next build",

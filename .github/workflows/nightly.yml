@@ -1,0 +1,58 @@
+name: Nightly
+
+# The wider sweep (plan §7.5/§7.7, roadmap §6): every registered game's gate table re-run at
+# the nightly (larger) sample budget, EVERY committed certificate re-verified (not just the
+# day under review), and each puzzle game's difficulty calibration checked for drift. None of
+# this blocks a PR — it runs on its own schedule so a slow, expensive sweep never sits on the
+# critical path of shipping a change, but it still fails the run (and should page/notify,
+# per the repo's on-call wiring once that lands) the moment any of the three checks trips.
+
+on:
+  schedule:
+    # 03:00 UTC daily — after the daily team's own rotation logic (out of this workflow's
+    # scope) has had time to pick the day's certified seed from the buffer this sweep protects.
+    - cron: "0 3 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  nightly-sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Per-game harness gates — nightly budget (20k+ games/seeds across the roster)
+        run: pnpm harness:ci-gates -- --suite nightly
+        # Same dispatcher as the PR job's step (packages/harness/src/ci-gates.ts, keyed by
+        # manifest.solo.format — C2), run at NIGHTLY_GAMES/NIGHTLY_SEED_COUNT instead of the
+        # PR budget (scripts/ci-gates.ts) — the "ruthless-vs-standard" gate additionally goes
+        # from a warn to a hard fail at this tier (roadmap §6).
+
+      - name: Certificate re-verification sweep (every stored day, every puzzle game)
+        run: pnpm harness:verify-certificates
+        # scripts/verify-certificates.ts: re-verifies EVERY committed
+        # data/certificates/<gameId>/<day>.json through verifyCertificate — catches corruption,
+        # hand-edits, or an engine-version bump silently invalidating a day that already
+        # verified once at certify time. Alerts below a 30-day buffer, hard-fails below 7
+        # (plan §7.7) — the one failure mode with site-wide blast radius, so it is a build-time
+        # (well, nightly-time) problem here rather than a live-daily incident.
+
+      - name: Calibration drift check (per puzzle game with a solver)
+        run: pnpm harness:calibration-drift
+        # scripts/calibration-drift.ts: re-runs `harness calibrate` fresh per registered
+        # daily-puzzle game and compares the new difficulty distribution against the last
+        # committed snapshot (data/calibration/<gameId>.json) — a generator/solver regression
+        # that shifts the WHOLE distribution shows up here, distinct from
+        # runSoloPuzzleCiGate's much narrower single-day-over-day check in the PR/nightly gate
+        # step above.
