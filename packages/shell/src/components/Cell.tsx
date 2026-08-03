@@ -9,8 +9,6 @@ import { AGE_OPACITY } from "../design-tokens";
 import { useBoardContext } from "./board-context";
 import { CountdownBadge } from "./CountdownBadge";
 
-const MIN_CELL_PX = 48;
-
 export interface CellProps {
   id: string;
   row: number;
@@ -22,9 +20,29 @@ export interface CellProps {
   staged?: boolean;
   accessibleName: string;
   disabled?: boolean;
+  /** Default 48 (plan §7's floor). The ONE sanctioned seam for a game to legally use a smaller
+   *  tappable target — e.g. Mine Run's 32px cells, paired with its own two-tap confirm flow so
+   *  a smaller, denser board still can't be mis-tapped into an irreversible move. Before this,
+   *  MIN_CELL_PX and the `min-w-[48px]`/`min-h-[48px]` classes were hardcoded here with no way
+   *  for any game to opt into a different floor at all. */
+  minCellPx?: number;
 }
 
-export function Cell({ id, row, col, occupant, ageStep = 0, countdown, ghost, staged, accessibleName, disabled }: CellProps) {
+const DEFAULT_MIN_CELL_PX = 48;
+
+export function Cell({
+  id,
+  row,
+  col,
+  occupant,
+  ageStep = 0,
+  countdown,
+  ghost,
+  staged,
+  accessibleName,
+  disabled,
+  minCellPx = DEFAULT_MIN_CELL_PX,
+}: CellProps) {
   const board = useBoardContext();
   const ref = useRef<HTMLDivElement>(null);
   const pointerDownAt = useRef<number | null>(null);
@@ -49,21 +67,21 @@ export function Cell({ id, row, col, occupant, ageStep = 0, countdown, ghost, st
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
-        if (width > 0 && width < MIN_CELL_PX) {
+        if (width > 0 && width < minCellPx) {
           console.error(
-            `Cell "${id}": width ${width}px is below the 48px minimum tappable-target floor (plan §7). Redesign the board — do not shrink the target.`
+            `Cell "${id}": width ${width}px is below the ${minCellPx}px minimum tappable-target floor (plan §7). Redesign the board — do not shrink the target.`
           );
         }
-        if (height > 0 && height < MIN_CELL_PX) {
+        if (height > 0 && height < minCellPx) {
           console.error(
-            `Cell "${id}": height ${height}px is below the 48px minimum tappable-target floor (plan §7). Redesign the board — do not shrink the target.`
+            `Cell "${id}": height ${height}px is below the ${minCellPx}px minimum tappable-target floor (plan §7). Redesign the board — do not shrink the target.`
           );
         }
       }
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [id]);
+  }, [id, minCellPx]);
 
   const isCursor = board.cursor.row === row && board.cursor.col === col;
 
@@ -132,8 +150,12 @@ export function Cell({ id, row, col, occupant, ageStep = 0, countdown, ghost, st
       onPointerCancel={onPointerCancel}
       onClick={onClick}
       onKeyDown={onKeyDown}
-      style={{ opacity, aspectRatio: "1 / 1" }}
-      className={`relative flex min-h-[48px] min-w-[48px] items-center justify-center border border-ink-muted ${transitionClass} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring`}
+      // `minWidth`/`minHeight` are inline (not a `min-w-[${minCellPx}px]` Tailwind class) because
+      // Tailwind's JIT scanner only ever sees LITERAL source text — a runtime-interpolated class
+      // string never generates real CSS for it. Inline style has no such limitation and is
+      // exactly how `opacity`/`aspectRatio` already work on this same element.
+      style={{ opacity, aspectRatio: "1 / 1", minWidth: minCellPx, minHeight: minCellPx }}
+      className={`relative flex items-center justify-center border border-ink-muted ${transitionClass} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring`}
     >
       {ghost && (
         <span aria-hidden="true" className="absolute inset-2 border border-dashed border-ink-muted">

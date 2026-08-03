@@ -15,6 +15,7 @@ function DummyBoard({
   cellDisabled,
   stagedCell,
   ageStep,
+  minCellPx,
 }: {
   onCellAction(cellId: string): void;
   disabled?: boolean;
@@ -22,6 +23,7 @@ function DummyBoard({
   cellDisabled?: string;
   stagedCell?: string;
   ageStep?: 0 | 1 | 2;
+  minCellPx?: number;
 }) {
   return (
     <BoardShell rows={3} cols={3} disabled={disabled} onCellAction={onCellAction} boardLabel="Dummy board" lockedUntil={lockedUntil}>
@@ -38,6 +40,7 @@ function DummyBoard({
               disabled={cellDisabled === id}
               staged={stagedCell === id}
               {...(ageStep !== undefined ? { ageStep } : {})}
+              {...(minCellPx !== undefined ? { minCellPx } : {})}
             />
           );
         })
@@ -327,5 +330,44 @@ describe("BoardShell — cursor clamps against current bounds on render (orchest
     tabbable = cells.filter((c) => c.getAttribute("tabindex") === "0");
     expect(tabbable).toHaveLength(1);
     expect(tabbable[0]).toBe(cells[0]);
+  });
+});
+
+describe("Cell — minCellPx seam (minor: Mine Run's sanctioned 32px exception had no legal API)", () => {
+  it("defaults to the 48px floor when minCellPx is omitted", () => {
+    render(<DummyBoard onCellAction={() => {}} />);
+    const cell = screen.getAllByRole("gridcell")[0]!;
+    expect(cell.style.minWidth).toBe("48px");
+    expect(cell.style.minHeight).toBe("48px");
+  });
+
+  it("honors a smaller minCellPx (e.g. Mine Run's sanctioned 32px + two-tap exception)", () => {
+    render(<DummyBoard onCellAction={() => {}} minCellPx={32} />);
+    const cell = screen.getAllByRole("gridcell")[0]!;
+    expect(cell.style.minWidth).toBe("32px");
+    expect(cell.style.minHeight).toBe("32px");
+  });
+
+  it("the dev-mode size-floor warning uses minCellPx as the floor, not a hardcoded 48px", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let observedCallback: ResizeObserverCallback | undefined;
+    class FakeResizeObserver {
+      constructor(cb: ResizeObserverCallback) {
+        observedCallback = cb;
+      }
+      observe() {
+        // 32px wide/tall — below the DEFAULT 48px floor, but exactly at a 32px minCellPx floor.
+        observedCallback?.([{ contentRect: { width: 32, height: 32 } } as ResizeObserverEntry], this as unknown as ResizeObserver);
+      }
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+
+    render(<DummyBoard onCellAction={() => {}} minCellPx={32} />);
+
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+    vi.unstubAllGlobals();
   });
 });
