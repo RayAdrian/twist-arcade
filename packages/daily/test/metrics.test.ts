@@ -113,6 +113,33 @@ describe("metrics.ts — trackOnceForDaily() (plan §10.1's 'Once per: device x 
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
+  it("does NOT latch the dedup key while the noop provider is active — a later configureMetricsProvider() call must still be able to fire this event (should-fix 6)", () => {
+    // Deliberately no configureMetricsProvider() call before this — activeProvider is whatever
+    // the afterEach hooks above reset it to: noopProvider, the documented state before the app
+    // root has configured anything (SSR, or the earliest hydration tick). Before the fix, the
+    // dedup key latched on this very call even though the event went nowhere, permanently
+    // losing it for this device x daily N — the metric would UNDER-count forever, not just once.
+    const fired = trackOnceForDaily("daily_start", 99, { gameId: "fadeout", kind: "vs-bot", n: 99 });
+    expect(fired).toBe(true); // the call went through (not blocked by an existing dedup latch)...
+    expect(window.localStorage.getItem("ta:metric:daily_start:99")).toBeNull(); // ...but nothing was persisted
+
+    const spy = vi.fn();
+    configureMetricsProvider({ track: spy });
+    const firedAgain = trackOnceForDaily("daily_start", 99, { gameId: "fadeout", kind: "vs-bot", n: 99 });
+    expect(firedAgain).toBe(true);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("DOES latch once a real (non-noop) provider is active, same as before — the fix only relaxes the noop-provider case", () => {
+    const spy = vi.fn();
+    configureMetricsProvider({ track: spy });
+    trackOnceForDaily("daily_start", 55, { gameId: "fadeout", kind: "vs-bot", n: 55 });
+    expect(window.localStorage.getItem("ta:metric:daily_start:55")).not.toBeNull();
+    const firedAgain = trackOnceForDaily("daily_start", 55, { gameId: "fadeout", kind: "vs-bot", n: 55 });
+    expect(firedAgain).toBe(false);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
   it("degrades to 'fire anyway' if localStorage itself throws, rather than silently dropping the metric forever", () => {
     const spy = vi.fn();
     configureMetricsProvider({ track: spy });

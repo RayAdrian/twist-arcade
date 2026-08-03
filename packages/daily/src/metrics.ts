@@ -95,6 +95,18 @@ function dedupKey(name: TrackEventName, n: number): string {
  * would inflate the growth metric threefold). A localStorage failure (private mode, quota) is
  * treated as "fire anyway" — silently under-counting share rate forever is worse than
  * over-counting once in a degraded environment.
+ *
+ * Should-fix 6 (stage-6 review): the dedup key used to latch UNCONDITIONALLY, before delivery
+ * was even possible. With the noop provider active (its documented state before the app root
+ * ever calls `configureMetricsProvider` — SSR, or the earliest hydration tick) the event goes
+ * nowhere AND the key latched anyway, permanently losing it for this device x daily N — a
+ * genuine under-count, not a one-time miss, since every later retry (including one after a real
+ * provider is finally configured) would see the stale latch and skip. The key is now only
+ * persisted once a non-noop provider is active. This does NOT (and, without a delivery-
+ * confirmation return value `MetricsProvider.track` deliberately doesn't have, structurally
+ * cannot) cover the narrower race of a REAL provider being configured but its script not yet
+ * loaded (e.g. Umami before `window.umami` exists, which `umamiProvider.track` already degrades
+ * to a silent no-op for its own good reasons) — that sub-case is a known remaining gap.
  */
 export function trackOnceForDaily<E extends "daily_start" | "daily_complete" | "share_done">(
   name: E,
@@ -104,11 +116,22 @@ export function trackOnceForDaily<E extends "daily_start" | "daily_complete" | "
   const key = dedupKey(name, n);
   try {
     if (window.localStorage.getItem(key) !== null) return false;
+  } catch {
+    // Storage read unavailable — fall through and fire anyway (existing "degrade to fire" rule).
+  }
+
+  track(name, props);
+
+  if (activeProvider === noopProvider) {
+    // Nothing was actually delivered — do not latch, so a later real provider gets a fair retry.
+    return true;
+  }
+
+  try {
     window.localStorage.setItem(key, "1");
   } catch {
-    // Storage unavailable — fall through and fire anyway.
+    // Storage write unavailable — same posture as before: fire anyway, never crash.
   }
-  track(name, props);
   return true;
 }
 
