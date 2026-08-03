@@ -1,0 +1,37 @@
+// games/__GAME_ID__/ui/Board.tsx — typed against BoardProps<V, M> (plan §5.3). Renders the
+// placeholder score-chase mechanic; replace with your real board once engine.ts's TODO is
+// done.
+//
+// Uses `@twist-arcade/shell`'s `Cell` (the >=48px floor, focus/keyboard-nav registration) and
+// `moveToCellId` (the cellId <-> move convention `GameShell` relies on) rather than a bare
+// <button> — see packages/shell/src/cell-id.ts.
+//
+// C5 (platform-corrections.md): no animation library here, ever — this directory (games/*/ui)
+// is board state, not chrome. Any state change must be visible from a static render; motion
+// may only RESTATE something the static encoding already shows, never carry information alone.
+
+import type { BoardProps } from "@twist-arcade/game-spec";
+import { Cell, moveToCellId } from "@twist-arcade/shell";
+import type { __PASCAL_ID__Move, __PASCAL_ID__State } from "../engine";
+
+// `onMove` is deliberately NOT destructured: a board built entirely from `Cell` components
+// never calls it directly — Cell commits through BoardContext, which BoardShell forwards to
+// `onCellAction`, which GameShell wires straight to the same handler `onMove` would otherwise
+// reach via `moveToCellId`. See CHECKLIST.md.
+export function Board({ view, legal }: BoardProps<__PASCAL_ID__State, __PASCAL_ID__Move>) {
+  const canIncrement = legal.some((m) => m.kind === "increment");
+  const move: __PASCAL_ID__Move = { kind: "increment" };
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(1, 1fr)", gap: 8 }}>
+      <Cell
+        id={moveToCellId(move)}
+        row={0}
+        col={0}
+        occupant={<span>{view.score}</span>}
+        accessibleName={`score is ${view.score}${canIncrement ? ", tap to increment" : ""}`}
+        disabled={!canIncrement}
+      />
+    </div>
+  );
+}

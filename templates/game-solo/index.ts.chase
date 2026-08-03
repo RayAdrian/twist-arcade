@@ -1,0 +1,56 @@
+// games/__GAME_ID__/index.ts — GameDefinition assembly (plan §5.1), this game's package root.
+// Registered dynamically from games/registry.ts (`loadEngine`/`loadPresentation`/
+// `loadSolver` — score chases have no solver) — never import this file directly from app/**
+// or packages/shell/** (lint-enforced; eslint.config.mjs's registrySplittingBoundary).
+
+import type { GameDefinition, GameEvent, GamePresentation } from "@twist-arcade/game-spec";
+import { __CAMEL_ID__, type __PASCAL_ID__Move, type __PASCAL_ID__State } from "./engine";
+import { manifest } from "./manifest";
+import { Board } from "./ui/Board";
+
+// TODO(you): every string/number below is a placeholder. See CHECKLIST.md for what "done"
+// looks like for each of these.
+export const presentation: GamePresentation<__PASCAL_ID__State, __PASCAL_ID__Move, __PASCAL_ID__State> = {
+  Board,
+
+  boardDimensions(_view: __PASCAL_ID__State) {
+    // TODO(you): return your board's real (rows, cols) once it has real geometry.
+    return { rows: 1, cols: 1 };
+  },
+
+  announce(ev: GameEvent<__PASCAL_ID__State>): string {
+    // TODO(you): a real per-event sentence fragment for the shell's live region (ux-lens §9).
+    switch (ev.kind) {
+      case "moved":
+        return "Score incremented.";
+      case "imminent":
+        return "";
+      case "boardSummary":
+        return `Score is ${ev.view.score}.`;
+      case "status":
+        return "";
+    }
+  },
+
+  shareArtifact(_record, finalView): string {
+    // TODO(you): an emoji move-timeline BODY only (<=7 lines) — the shell owns the frame. Solo
+    // games get the certificate handed alongside by the shell (par lives in the header); the
+    // artifact body may diff the player's log against solver values offline.
+    return `TODO: share artifact body (final score ${finalView.score})`;
+  },
+
+  howSheetFrames: [
+    { title: "TODO", body: "TODO: how-to-play frame 1" },
+    { title: "TODO", body: "TODO: how-to-play frame 2" },
+    { title: "TODO", body: "TODO: how-to-play frame 3" },
+  ],
+};
+
+export const definition: GameDefinition<__PASCAL_ID__State, __PASCAL_ID__Move, __PASCAL_ID__State> = {
+  manifest,
+  engine: __CAMEL_ID__,
+  presentation,
+};
+
+export { __CAMEL_ID__, manifest };
+export { safeMove } from "./probes";

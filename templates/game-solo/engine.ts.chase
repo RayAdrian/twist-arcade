@@ -1,0 +1,120 @@
+// games/__GAME_ID__/engine.ts — TODO-marked SOLO SCORE-CHASE engine skeleton, stamped by
+// `pnpm new-game <id> --solo chase`.
+//
+// This file COMPILES and is a real, honest implementation of a trivial placeholder chase (a
+// single player repeatedly increments a running score) — every property except ONE is
+// genuinely satisfied: purity, determinism, encode/decode round-tripping, legality coherence,
+// the perfect-information playerView identity, and `score()` coherence-when-checked all hold
+// for real, right now.
+//
+// THE ONE THING LEFT FOR YOU: `status()` always returns `{ kind: "ongoing" }` — there is no
+// real terminal condition yet. This is deliberate: it is what makes
+// `engineContract(__PASCAL_ID__)` in engine.test.ts fail RED (a random legal playout never
+// terminates, so it hits the move cap — the "termination" property) without any other
+// property failing alongside it. Replace `status()` with your real rules (a `scored` terminal
+// once your run ends), and that failure — and only that failure — should turn green.
+//
+// See CHECKLIST.md for the traps every new engine hits (index signatures, encode/lastEffects,
+// history-dependent legality, decode's throw-not-partial contract) plus the score-chase-only
+// requirement: `probes.ts`'s `safeMove` is MANDATORY — the harness hard-errors without it.
+
+import type { ActiveSpec, Effect, GameEngine, Json, PlayerId, Rng, Status, WithEffects } from "@twist-arcade/engine";
+import { stableStringify } from "@twist-arcade/engine";
+
+export interface __PASCAL_ID__State extends WithEffects {
+  readonly score: number;
+  readonly moves: number;
+}
+
+// The explicit `[key: string]: Json` index signature is NOT optional boilerplate — TypeScript
+// will not synthesize one for a plain interface/type-literal used as the engine's `M` generic,
+// and without it `__PASCAL_ID__Move` fails to satisfy `Json` (see CHECKLIST.md's first trap).
+export interface __PASCAL_ID__Move {
+  readonly kind: "increment";
+  readonly [key: string]: Json;
+}
+
+// A standalone function, not `engine.status(state)` called via `this` — every method below is
+// called as a bare reference in places (bots, the harness, the shell), never guaranteed to be
+// invoked with `engine` as its receiver. Matches every shipped fixture/game's convention.
+function computeStatus(_state: __PASCAL_ID__State): Status {
+  // TODO(you): implement your real terminal condition — typically `{ kind: "scored", scores:
+  // [state.score] }` once some structural limit is reached (a move cap, a resource running
+  // out, ...). Structural termination is MANDATORY for a score chase (platform §7.4/§7.5) —
+  // the manifest's `solo.moveCap` is a tripwire, not a substitute for a real ending.
+  return { kind: "ongoing" };
+}
+
+export const __CAMEL_ID__: GameEngine<__PASCAL_ID__State, __PASCAL_ID__Move, __PASCAL_ID__State> = {
+  meta: {
+    id: "__GAME_ID__",
+    name: "__TITLE__",
+    minPlayers: 1,
+    maxPlayers: 1,
+    hiddenInformation: false,
+    simultaneous: false,
+    stochastic: false,
+    version: 1,
+  },
+
+  setup(_numPlayers: number, _rng: Rng): __PASCAL_ID__State {
+    return { score: 0, moves: 0, lastEffects: [] };
+  },
+
+  legalMoves(state: __PASCAL_ID__State, player: PlayerId): __PASCAL_ID__Move[] {
+    if (player !== 0) return [];
+    if (computeStatus(state).kind !== "ongoing") return [];
+    return [{ kind: "increment" }];
+  },
+
+  isLegal(state: __PASCAL_ID__State, player: PlayerId, move: __PASCAL_ID__Move): boolean {
+    return player === 0 && computeStatus(state).kind === "ongoing" && move.kind === "increment";
+  },
+
+  active(_state: __PASCAL_ID__State): ActiveSpec {
+    // Solo engines KEEP active() (plan §3): one line here buys no forks in any consumer.
+    return { mode: "sequential", player: 0 };
+  },
+
+  apply(
+    state: __PASCAL_ID__State,
+    moves: ReadonlyMap<PlayerId, __PASCAL_ID__Move>,
+    _rng: Rng
+  ): __PASCAL_ID__State {
+    const move = moves.get(0);
+    if (!move) {
+      throw new Error("__GAME_ID__: apply() called without a move for player 0");
+    }
+    const effects: Effect[] = [{ type: "banked", amount: 1 }];
+    return { score: state.score + 1, moves: state.moves + 1, lastEffects: effects };
+  },
+
+  status: computeStatus,
+
+  playerView(state: __PASCAL_ID__State, _player: PlayerId | null): __PASCAL_ID__State {
+    // Perfect-information game: playerView is the identity. If your real game hides
+    // information (fog), this must change to a real redaction — see CHECKLIST.md.
+    return state;
+  },
+
+  encode(state: __PASCAL_ID__State): string {
+    // EXCLUDES lastEffects — see CHECKLIST.md's second trap.
+    return stableStringify({ score: state.score, moves: state.moves });
+  },
+
+  decode(encoded: string): __PASCAL_ID__State {
+    // Throws on malformed input rather than ever returning a partial/defaulted state — see
+    // CHECKLIST.md's fourth trap (C4).
+    const parsed = JSON.parse(encoded) as { score?: unknown; moves?: unknown };
+    if (typeof parsed.score !== "number" || typeof parsed.moves !== "number") {
+      throw new Error(`__GAME_ID__: decode() received a malformed encoding: ${encoded}`);
+    }
+    return { score: parsed.score, moves: parsed.moves, lastEffects: [] };
+  },
+
+  score(state: __PASCAL_ID__State, _player: PlayerId): number {
+    // MUST equal status().scores[0] at a scored terminal (testkit-asserted once your terminal
+    // is real) — kept in exact lockstep with `apply`'s score bookkeeping above.
+    return state.score;
+  },
+};
