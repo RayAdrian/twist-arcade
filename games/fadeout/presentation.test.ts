@@ -50,7 +50,7 @@ describe("announce() — moved", () => {
   it("describes a plain placement with no decay", () => {
     const state = engine.setup(2, rngForSetup("s"));
     const next = applyOne(state, 4, 0);
-    const ev: GameEvent<FadeoutState> = { kind: "moved", player: 0, move: { cell: 4 }, effects: next.lastEffects };
+    const ev: GameEvent<FadeoutState> = { kind: "moved", player: 0, move: { cell: 4 }, effects: next.lastEffects, view: next };
     expect(fadeoutPresentation.announce(ev)).toBe("X placed, middle center.");
   });
 
@@ -59,7 +59,7 @@ describe("announce() — moved", () => {
     const cells = [0, 1, 2, 3, 4, 5];
     for (let i = 0; i < cells.length; i++) state = applyOne(state, cells[i]!, i);
     const next = applyOne(state, 7, cells.length); // P0's 4th placement, pops cell 0
-    const ev: GameEvent<FadeoutState> = { kind: "moved", player: 0, move: { cell: 7 }, effects: next.lastEffects };
+    const ev: GameEvent<FadeoutState> = { kind: "moved", player: 0, move: { cell: 7 }, effects: next.lastEffects, view: next };
     expect(fadeoutPresentation.announce(ev)).toBe("X placed, bottom center. X faded at top left.");
   });
 });
@@ -153,7 +153,7 @@ describe("firstOccurrence — the Aha-callout (ux-lens §1), fires once on the f
     const cells = [0, 1, 2, 3, 4, 5];
     for (let i = 0; i < cells.length; i++) state = applyOne(state, cells[i]!, i);
     const next = applyOne(state, 7, cells.length);
-    const ev: GameEvent<FadeoutState> = { kind: "moved", player: 0, move: { cell: 7 }, effects: next.lastEffects };
+    const ev: GameEvent<FadeoutState> = { kind: "moved", player: 0, move: { cell: 7 }, effects: next.lastEffects, view: next };
     expect(entry().trigger(ev)).toBe(true);
     expect(entry().text).toBe("Your X faded — pieces last 3 turns.");
   });
@@ -161,7 +161,7 @@ describe("firstOccurrence — the Aha-callout (ux-lens §1), fires once on the f
   it("does not trigger on a plain placement", () => {
     const state = engine.setup(2, rngForSetup("s"));
     const next = applyOne(state, 4, 0);
-    const ev: GameEvent<FadeoutState> = { kind: "moved", player: 0, move: { cell: 4 }, effects: next.lastEffects };
+    const ev: GameEvent<FadeoutState> = { kind: "moved", player: 0, move: { cell: 4 }, effects: next.lastEffects, view: next };
     expect(entry().trigger(ev)).toBe(false);
   });
 
@@ -170,7 +170,7 @@ describe("firstOccurrence — the Aha-callout (ux-lens §1), fires once on the f
     const cells = [0, 1, 2, 3, 4, 5];
     for (let i = 0; i < cells.length; i++) state = applyOne(state, cells[i]!, i);
     const next = applyOne(state, 7, cells.length);
-    const ev: GameEvent<FadeoutState> = { kind: "moved", player: 0, move: { cell: 7 }, effects: next.lastEffects };
+    const ev: GameEvent<FadeoutState> = { kind: "moved", player: 0, move: { cell: 7 }, effects: next.lastEffects, view: next };
     expect(entry().anchor(ev)).toBe(JSON.stringify({ cell: 0 }));
   });
 });

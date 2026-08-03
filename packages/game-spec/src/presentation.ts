@@ -33,7 +33,12 @@ export interface BoardProps<V extends WithEffects, M extends Json> {
  *
  *  - `moved`     — a move was just applied; carries the effects it produced (same Effect
  *                  vocabulary as WithEffects.lastEffects) so the announcer and any
- *                  first-occurrence callout share one mapping.
+ *                  first-occurrence callout share one mapping. ADDITIVE WIDENING (Mine Run,
+ *                  mine-run.md §8.4): also carries `view`, mirroring `imminent`/`boardSummary`
+ *                  below — some announce sentences need a POST-move fact `effects` alone can
+ *                  never carry (e.g. "Streak 7, worth 28" needs the view's running streakValue,
+ *                  not just which cells were revealed this ply). Existing consumers (Fadeout)
+ *                  simply don't read the extra field, exactly like the `imminent` widening.
  *  - `imminent`  — a preview of what WILL happen if nothing intervenes (e.g. a tile is 1
  *                  turn from crumbling) — this is what makes decay/expiry legible to a
  *                  screen reader, not just sighted players watching a CountdownBadge.
@@ -52,7 +57,7 @@ export interface BoardProps<V extends WithEffects, M extends Json> {
  * supplies the per-event fragment via announce().
  */
 export type GameEvent<V extends WithEffects = WithEffects> =
-  | { kind: "moved"; player: PlayerId; move: Json; effects: readonly Effect[] }
+  | { kind: "moved"; player: PlayerId; move: Json; effects: readonly Effect[]; view: V }
   | { kind: "imminent"; effects: readonly Effect[]; view: V }
   | { kind: "boardSummary"; view: V }
   | { kind: "status"; status: Status };
