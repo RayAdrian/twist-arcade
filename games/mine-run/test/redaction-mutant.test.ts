@@ -18,15 +18,17 @@ import { makeMineRunSecretExtractor } from "../secret";
 
 /**
  * A SECOND, test-local secretExtractor tuned differently from secret.ts's production
- * `makeMineRunSecretExtractor`. That one uses tagged strings (`"__MINE_SECRET_n__"`)
- * specifically so it never false-positives against ordinary view content (cell counts,
- * budgets, etc.) — but a tagged string can, by construction, only ever match a leak that
- * reproduces that exact tag, which no real bug would do. The plan's own worked example bug
- * (`{ type: "nearMiss", mineAt: <bare cell index> }`) leaks the RAW number under a DIFFERENT,
- * predictable key — so proving the harness catches *that* shape needs an extractor anchored
- * to the `"mineAt":` key context specifically (the same targeted-to-the-planted-bug approach
- * packages/engine's own mutants.ts uses for its fog/effects-leak mutants: `String(s.secret)`
- * is tailored to THAT fixture's one field name, not a generic-purpose detector either).
+ * `makeMineRunSecretExtractor`. That one is anchored to the exact structural JSON shape a
+ * leaked mine produces (`"<cell>":{"mine":true}`) plus the literal `"mines":[` field-name
+ * fragment (see secret.ts's module doc comment for why it moved away from an earlier,
+ * artificially-tagged-string design) — but that structural anchor is specific to how
+ * `{mine:true}` cells serialize, so it can only ever catch a leak of THAT shape. The plan's
+ * own worked example bug (`{ type: "nearMiss", mineAt: <bare cell index> }`) leaks the RAW
+ * number under a DIFFERENT, predictable key — so proving the harness catches *that* shape
+ * needs an extractor anchored to the `"mineAt":` key context specifically (the same
+ * targeted-to-the-planted-bug approach packages/engine's own mutants.ts uses for its
+ * fog/effects-leak mutants: `String(s.secret)` is tailored to THAT fixture's one field name,
+ * not a generic-purpose detector either).
  *
  * A first attempt at this extractor used a bare, un-anchored numeric substring search
  * (`:${m},` / `:${m}}` / ...) and it genuinely false-positived: on this 5x5/8-mine board, a
@@ -188,7 +190,7 @@ describe("Mine Run redaction — planted nearMiss mutant", () => {
     ).not.toThrow();
   });
 
-  it("the SHIPPING engine also passes under the production (tagged) secretExtractor", () => {
+  it("the SHIPPING engine also passes under the production (structural) secretExtractor", () => {
     const shipping = createMineRun({ width: WIDTH, height: HEIGHT, mines: MINES, budget: BUDGET });
     expect(() =>
       checkRedaction(shipping, {
