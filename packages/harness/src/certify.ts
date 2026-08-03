@@ -65,6 +65,27 @@ export interface CertifyDayResult {
   rejections: CertifyRejection[];
 }
 
+/** SHOULD FIX item 6 (stage-5 fix): `certifyDay`'s stored certificate is later re-verified by
+ *  `verifyCertificate`, which replays via `rngFor(seed, k)` — a reconstruction of every
+ *  `apply()` call's randomness that is sound ONLY when `apply()` draws nothing beyond
+ *  `setup()` (`meta.stochastic: false`). This was asserted in comments but never checked; a
+ *  stochastic engine's certified moveLog might replay to a different outcome on CI
+ *  re-verification, silently invalidating the "certified" claim. Thrown eagerly, before the
+ *  attempt loop touches `seedFor` or `solver.solve` at all, matching `MissingSafeMoveError`'s
+ *  posture (probes-solo.ts) — a missing precondition is a hard error, never a silently-unsound
+ *  certificate. */
+export class StochasticEngineCertifyUnsupportedError extends Error {
+  constructor(gameId: string) {
+    super(
+      `certifyDay: engine "${gameId}" has meta.stochastic===true. The certificate pipeline's ` +
+        "replay convention (rngFor(seed, k), reconstructing apply()'s randomness at " +
+        "verification time) is sound only when apply() draws no randomness beyond setup() — " +
+        "a stochastic engine cannot be certified this way."
+    );
+    this.name = "StochasticEngineCertifyUnsupportedError";
+  }
+}
+
 interface CertifyFeatures {
   forcedMoveFraction: number;
   branchingMean: number;
@@ -142,6 +163,9 @@ export function randomPlayoutStats<S extends WithEffects, M extends Json, V exte
 export function certifyDay<S extends WithEffects, M extends Json, V extends WithEffects>(
   opts: CertifyDayOptions<S, M, V>
 ): CertifyDayResult {
+  if (opts.engine.meta.stochastic) {
+    throw new StochasticEngineCertifyUnsupportedError(opts.engine.meta.id);
+  }
   const solveBudget = opts.solveBudget ?? DEFAULT_SOLVE_BUDGET;
   const maxNonceAttempts = opts.maxNonceAttempts ?? DEFAULT_MAX_NONCE_ATTEMPTS;
   const minPar = opts.minPar ?? DEFAULT_MIN_PAR;

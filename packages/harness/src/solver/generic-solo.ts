@@ -30,6 +30,28 @@ import type { SoloSolveBudget, SoloSolveResult, SoloSolver } from "@twist-arcade
 const DEFAULT_MAX_NODES = 1e7;
 const DEFAULT_MAX_MS = 10_000;
 
+/** SHOULD FIX item 6 (stage-5 fix): both solvers below apply moves with private,
+ *  internally-generated `rngFor("solver-generic:<n>", ...)` / `rngFor("solver-ida:<n>", ...)`
+ *  streams that have NOTHING to do with a real replay's `rngFor(seed, k)` convention —
+ *  soundness of the returned `moveLog` as something replay()/verifyCertificate can
+ *  reconstruct depends entirely on `apply()` drawing no randomness beyond `setup()`
+ *  (`meta.stochastic: false`), a requirement this file's own doc comments assert but never
+ *  checked. Thrown eagerly, before any search, matching `MissingSafeMoveError`'s posture
+ *  (probes-solo.ts) — a missing precondition is a hard error, never a silently-unsound
+ *  search. */
+export class StochasticEngineUnsupportedError extends Error {
+  constructor(gameId: string, solverName: string) {
+    super(
+      `${solverName}: engine "${gameId}" has meta.stochastic===true. Both dfsSolver and ` +
+        "idaStarSolver apply moves with their own internal rng streams, unrelated to a real " +
+        "replay's rngFor(seed, k) convention — the returned moveLog is only a reproducible, " +
+        "replayable solution when apply() draws no randomness beyond setup(). A stochastic " +
+        "engine needs a bespoke solver (or a probabilistic treatment), not this generic one."
+    );
+    this.name = "StochasticEngineUnsupportedError";
+  }
+}
+
 function resolveBudget(budget: SoloSolveBudget): Required<SoloSolveBudget> {
   return {
     maxNodes: budget.maxNodes ?? DEFAULT_MAX_NODES,
@@ -60,6 +82,7 @@ export function dfsSolver<S extends WithEffects, M extends Json>(): SoloSolver<S
   return {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     solve(engine: GameEngine<S, M, any>, initial: S, budget: SoloSolveBudget): SoloSolveResult {
+      if (engine.meta.stochastic) throw new StochasticEngineUnsupportedError(engine.meta.id, "dfsSolver");
       const { maxNodes, maxMs } = resolveBudget(budget);
       const start = now();
       const visited = new Set<string>([engine.encode(initial)]);
@@ -132,6 +155,7 @@ export function idaStarSolver<S extends WithEffects, M extends Json>(h: SoloHeur
   return {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     solve(engine: GameEngine<S, M, any>, initial: S, budget: SoloSolveBudget): SoloSolveResult {
+      if (engine.meta.stochastic) throw new StochasticEngineUnsupportedError(engine.meta.id, "idaStarSolver");
       const { maxNodes, maxMs } = resolveBudget(budget);
       const start = now();
       let nodesExpanded = 0;

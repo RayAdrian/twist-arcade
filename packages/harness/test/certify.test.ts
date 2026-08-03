@@ -21,6 +21,7 @@ import {
   readAllCertificates,
   readCertificate,
   rejectionRate,
+  StochasticEngineCertifyUnsupportedError,
   writeCertificate,
 } from "../src/certify";
 import { dfsSolver } from "../src/solver/generic-solo";
@@ -141,6 +142,46 @@ describe("certifyDay — the reject-and-redraw loop, against a real generated pu
     });
     expect(result.outcome).toBe("rejected-all-attempts");
     expect(result.rejections[0]?.reason).toMatch(/randomPlayoutSolveRate/);
+  });
+
+  it("(SHOULD FIX item 6) refuses a stochastic engine BEFORE calling seedFor or the solver at all", () => {
+    // certify.ts's own replay convention (rngFor(seed, k) reconstructing every apply() call)
+    // is sound only when apply() draws no randomness beyond setup() — a requirement asserted
+    // in this file's comments but never checked. A stochastic holeWalk's certified moveLog
+    // could draw different outcomes on CI re-verification than it did here. Both seedFor and
+    // the solver are throwing stubs, proving the guard fires eagerly, before either is ever
+    // invoked (same posture as MissingSafeMoveError in probes-solo.ts).
+    const stochasticHoleWalk: typeof holeWalk = {
+      ...holeWalk,
+      meta: { ...holeWalk.meta, stochastic: true },
+    };
+    const neverCalledSeedFor = () => {
+      throw new Error("seedFor should never be called");
+    };
+    const neverCalledSolver = {
+      solve: () => {
+        throw new Error("solver.solve should never be called");
+      },
+    };
+    expect(() =>
+      certifyDay({
+        ...baseOptions,
+        engine: stochasticHoleWalk,
+        solver: neverCalledSolver,
+        seedFor: neverCalledSeedFor,
+      })
+    ).toThrow(/stochastic/);
+    try {
+      certifyDay({
+        ...baseOptions,
+        engine: stochasticHoleWalk,
+        solver: neverCalledSolver,
+        seedFor: neverCalledSeedFor,
+      });
+      expect.unreachable("certifyDay should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(StochasticEngineCertifyUnsupportedError);
+    }
   });
 
   it("treats a budget-exhausted solve exactly like unsolvable — never an uncertified ship", () => {

@@ -9,7 +9,7 @@ import { stableStringify } from "@twist-arcade/engine";
 import { miniCrackstep, MINI_CRACKSTEP_KNOWN_SOLUTION } from "@twist-arcade/engine/testkit/fixtures/mini-crackstep";
 import type { CrackstepMove, CrackstepState } from "@twist-arcade/engine/testkit/fixtures/mini-crackstep";
 import { verifyCertificate } from "@twist-arcade/engine/testkit/checks";
-import { dfsSolver, idaStarSolver } from "../../src/solver/generic-solo";
+import { dfsSolver, idaStarSolver, StochasticEngineUnsupportedError } from "../../src/solver/generic-solo";
 
 const GRID_SIZE = 3;
 const GOAL = GRID_SIZE * GRID_SIZE - 1;
@@ -382,5 +382,45 @@ describe("idaStarSolver — a genuinely INADMISSIBLE heuristic (SHOULD FIX item 
     expect(result.optimal).toBe(true);
     expect(result.length).toBe(3); // the true optimum (dfsSolver, and the fixed test above) is 2
     expect(result.moveLog).toEqual([{ to: "A" }, { to: "A2" }, { to: "W1" }]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// SHOULD FIX item 6: both solvers apply moves with private, internally-generated rng streams
+// while replay()/verifyCertificate use rngFor(seed, k) to RECONSTRUCT those same draws —
+// sound only when apply() draws no randomness beyond setup() (meta.stochastic: false), a
+// requirement this file's own doc comments assert but neither solver actually checks. A
+// stochastic engine's solved moveLog is not reproducible: replaying it may draw different
+// random outcomes than the solver's own search did, silently invalidating the "certificate"
+// the solver's result feeds into. One-line throws, matching MissingSafeMoveError's posture
+// (probes-solo.ts) — a missing precondition is a hard error, never a silently-degraded search.
+// ---------------------------------------------------------------------------------------
+
+describe("dfsSolver / idaStarSolver — refuse a stochastic engine (SHOULD FIX item 6)", () => {
+  const stochasticMiniCrackstep: GameEngine<CrackstepState, CrackstepMove, CrackstepState> = {
+    ...miniCrackstep,
+    meta: { ...miniCrackstep.meta, stochastic: true },
+  };
+
+  it("dfsSolver throws StochasticEngineUnsupportedError before doing any search", () => {
+    const solver = dfsSolver<CrackstepState, CrackstepMove>();
+    const initial = stochasticMiniCrackstep.setup(1, {} as Rng);
+    expect(() => solver.solve(stochasticMiniCrackstep, initial, { maxNodes: 1e6, maxMs: 5_000 })).toThrow(
+      StochasticEngineUnsupportedError
+    );
+  });
+
+  it("idaStarSolver throws StochasticEngineUnsupportedError before doing any search", () => {
+    const solver = idaStarSolver<CrackstepState, CrackstepMove>(manhattanToGoal);
+    const initial = stochasticMiniCrackstep.setup(1, {} as Rng);
+    expect(() => solver.solve(stochasticMiniCrackstep, initial, { maxNodes: 1e6, maxMs: 5_000 })).toThrow(
+      StochasticEngineUnsupportedError
+    );
+  });
+
+  it("does NOT throw for the real, non-stochastic miniCrackstep (the check is gated on meta.stochastic, not a blanket refusal)", () => {
+    const solver = dfsSolver<CrackstepState, CrackstepMove>();
+    const initial = miniCrackstep.setup(1, {} as Rng);
+    expect(() => solver.solve(miniCrackstep, initial, { maxNodes: 1e6, maxMs: 5_000 })).not.toThrow();
   });
 });
