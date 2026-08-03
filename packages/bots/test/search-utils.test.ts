@@ -135,29 +135,80 @@ describe("uniformRandomMoveSelector / rolloutToHorizon(moveSelector)", () => {
     expect(withDefault.state).toEqual(withExplicit.state);
   });
 
-  it("greedyMoveSelector drives the rollout to a DIFFERENT, reproducibly better outcome than uniform-random on bank-run (plan §4.4's 'roll out with the greedy policy to terminal')", () => {
-    // plantFarmingLoop: true removes bust risk entirely, so a greedy rollout (which always
-    // prefers the candidate with the higher immediate score()) always pushes and never banks
-    // until forced — while a uniform-random rollout banks roughly half the time, forfeiting
-    // upside for no reason under this risk-free setup. This proves greedyMoveSelector actually
-    // changes rollout behavior, not just that it type-checks.
+  it("greedyMoveSelector, ranked on score() alone (bank-run has no heuristic), ALWAYS BANKS the instant a streak exists — it never lets the streak grow, which is precisely why Mine Run's heuristic.ts (Greedy's brain) had to exist (C6)", () => {
+    // ORCHESTRATOR CORRECTION (stage-5 fix, replacing a wrong assertion): bank-run's score()
+    // deliberately EXCLUDES the at-risk streak (bank-run.ts's own comment: "score() must equal
+    // the scored terminal's scores[0] ... unbanked streak forfeited, so it reports only
+    // realized value"). bank-run has no heuristic(), so rankingValueOf (which prefers
+    // heuristic() but falls back to score()) ranks every 1-ply candidate on score() ALONE.
+    // Pushing never changes score() (the streak it grows isn't counted); banking immediately
+    // RAISES score() by the whole streak. So the instant streak > 0, bank's 1-ply score()
+    // strictly beats push's, and greedyMoveSelector takes it — even under plantFarmingLoop's
+    // zero bust risk, where there is no downside to waiting.
+    //
+    // This is the mirror image of this test's previous (wrong) claim that greedy "always
+    // pushes and never banks until forced": that claim describes the STRATEGICALLY best policy
+    // under zero risk, not what a myopic, score()-ranked greedy selector actually does. The two
+    // differ, and the difference is the whole point — a greedy rollout driven by score() alone
+    // is a USELESS press-your-luck policy (it cashes out at streak==1 every time, forfeiting
+    // all compounding), which is exactly why mine-run's heuristic.ts exists: to give Greedy a
+    // ranking signal that can see unbanked streak value, because score() structurally cannot
+    // (mine-run.md §4.4/§4.5).
+    //
+    // It is even worse than "different": it is worse BY score()'s own yardstick. The
+    // genuinely-best policy under this risk-free setup is to push for 5 of the 6 rounds and
+    // bank once at the very end (banked==5, streak forfeited at the round cap otherwise) —
+    // strictly more than greedy's bank-every-opportunity cadence achieves below.
     const engine = createBankRun({ plantFarmingLoop: true });
     const start = engine.setup(1, rngFromSeed("rollout-greedy-a"));
-    const { state: greedyEnd } = rolloutToHorizon(engine, start, rngFromSeed("rollout-greedy-decision"), 6, greedyMoveSelector);
-    const { state: randomEnd } = rolloutToHorizon(
+    const { state: greedyEnd } = rolloutToHorizon(
       engine,
       start,
-      rngFromSeed("rollout-random-decision"),
+      rngFromSeed("rollout-greedy-decision"),
       6,
-      uniformRandomMoveSelector
+      greedyMoveSelector
     );
-    expect(greedyEnd.banked).toBeGreaterThanOrEqual(randomEnd.banked);
-    // Under plantFarmingLoop, greedy's score()-ranked immediate-best is ALWAYS "push" (banking
-    // strictly forfeits future upside at zero risk), so a full 6-round rollout ends with
-    // everything still on the streak, never banked, until the round cap forces the final
-    // auto-something — bank-run has no auto-bank, so banked stays 0 and streak==6 at the cap.
-    expect(greedyEnd.banked).toBe(0);
-    expect(greedyEnd.streak).toBe(6);
+    expect(greedyEnd.streak).toBe(0); // never left standing on the streak — cashed out every time
+    expect(greedyEnd.banked).toBeGreaterThan(0); // did bank, repeatedly
+    // Pinned trace over 6 rounds: push, bank, push, bank, push, bank (tie at streak==0 breaks
+    // toward the first-listed legal move, "push"; every subsequent decision has streak>0 and
+    // bank wins). Three pushes of value 1 each land in banked = 3 — strictly less than the 5
+    // reachable by NOT banking early (the comment above).
+    expect(greedyEnd.banked).toBe(3);
+  });
+
+  it("...but give the SAME greedy selector a heuristic that values the live streak (banked + streak, mirroring Mine Run's heuristic.ts) and it flips to never banking — proving the difference above is the RANKING SIGNAL, not the engine or the selector", () => {
+    // Contrasting case: identical engine and rollout shape, except heuristic() now exists, so
+    // rankingValueOf prefers it over score() (search-utils.ts's own documented priority) for
+    // every ONGOING comparison. Ranking candidates by (banked + streak): pushing raises it by
+    // exactly 1 (streak grows, banked untouched); banking leaves it unchanged (the streak just
+    // moves from "streak" to "banked", net zero) — so for the first 5 rounds push strictly
+    // beats bank, and streak climbs to 5 unbanked.
+    //
+    // The 6th and final decision is different: BOTH candidates end the round cap and reach a
+    // `status.kind === "scored"` terminal, and rankingValueOf's "scored" branch returns
+    // `status.scores[player]` directly — it does NOT consult heuristic() at a terminal. Banking
+    // there locks in scores=[5]; pushing locks in scores=[0] (the grown streak is forfeited at
+    // the cap, per bank-run's own contract). So greedy banks exactly once, on exactly the right
+    // move — the heuristic makes it wait the whole run, and the terminal scoring rule (not the
+    // heuristic) makes it cash out before the streak is forfeited. banked==5 is in fact the
+    // genuinely-best achievable total under this risk-free setup (see the comment on the
+    // previous test) — giving Greedy a heuristic does not merely change its behavior, it makes
+    // the behavior optimal.
+    const engine = {
+      ...createBankRun({ plantFarmingLoop: true }),
+      heuristic: (state: BankRunState, _player: 0) => state.banked + state.streak,
+    };
+    const start = engine.setup(1, rngFromSeed("rollout-greedy-heuristic-a"));
+    const { state: greedyEnd } = rolloutToHorizon(
+      engine,
+      start,
+      rngFromSeed("rollout-greedy-heuristic-decision"),
+      6,
+      greedyMoveSelector
+    );
+    expect(greedyEnd.banked).toBe(5);
+    expect(greedyEnd.streak).toBe(0);
   });
 
   it("greedyMoveSelector throws a typed error when the engine has neither score() nor heuristic()", () => {
