@@ -24,7 +24,7 @@ export {
 export { randomPolicy } from "./random";
 
 export type { MinimaxOptions } from "./minimax";
-export { MinimaxUnsupportedGameError, minimaxPolicy } from "./minimax";
+export { MinimaxHeuristicRequiredError, MinimaxUnsupportedGameError, minimaxPolicy } from "./minimax";
 
 export type { MctsOptions } from "./mcts";
 export { MctsTerminalStateError, mctsPolicy } from "./mcts";

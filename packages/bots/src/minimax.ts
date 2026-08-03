@@ -15,6 +15,29 @@ export class MinimaxUnsupportedGameError extends Error {
   }
 }
 
+/**
+ * The ONE genuinely skippable case: the search ran out of depth/budget at some root move
+ * without ever reaching a terminal, and the engine has no `heuristic()` to fall back on for
+ * THIS move. The root iterative-deepening loop treats only this subclass as "try a shallower
+ * depth / a different move instead" — every other `MinimaxUnsupportedGameError` (became
+ * simultaneous mid-search, no legal moves while ongoing, etc.) is a genuine contract violation
+ * and must propagate, never be silently absorbed as though it were the same kind of gap (review
+ * finding, post-M2: the root catch used to treat ANY MinimaxUnsupportedGameError the same way,
+ * which meant a real contract violation deep in the search silently excluded that root move
+ * from consideration instead of surfacing — exactly the "silent wrong answer" this module's own
+ * header promises to refuse).
+ */
+export class MinimaxHeuristicRequiredError extends MinimaxUnsupportedGameError {
+  constructor(gameId: string) {
+    super(
+      `search reached depth/budget limit without a terminal state, and engine "${gameId}" has ` +
+        "no heuristic() to fall back on — minimax requires one for any game whose full tree " +
+        "cannot be searched to completion."
+    );
+    this.name = "MinimaxHeuristicRequiredError";
+  }
+}
+
 export interface MinimaxOptions {
   /** Hard depth ceiling for iterative deepening. Default 9 (enough to fully solve
    *  tic-tac-toe-sized games; larger games should pass an explicit, budget-appropriate cap —
@@ -71,11 +94,7 @@ function negamax<S extends WithEffects, M extends Json>(
   if (terminal !== undefined) return terminal;
   if (depth === 0 || (nodeBudget !== undefined && nodeCounter.count >= nodeBudget)) {
     if (!engine.heuristic) {
-      throw new MinimaxUnsupportedGameError(
-        `search reached depth/budget limit without a terminal state, and engine ` +
-          `"${engine.meta.id}" has no heuristic() to fall back on — minimax requires one for ` +
-          "any game whose full tree cannot be searched to completion."
-      );
+      throw new MinimaxHeuristicRequiredError(engine.meta.id);
     }
     return engine.heuristic(state, mover);
   }
@@ -92,23 +111,36 @@ function negamax<S extends WithEffects, M extends Json>(
   let a = alpha;
   for (const move of legal) {
     const next = engine.apply(state, new Map([[mover, move]]), rng);
-    const nextActive = engine.active(next);
-    if (nextActive.mode !== "sequential") {
-      throw new MinimaxUnsupportedGameError(
-        `engine "${engine.meta.id}" became simultaneous mid-search — minimax fits sequential ` +
-          "games only."
-      );
+    // Check status(next) BEFORE ever calling engine.active(next): active()'s own contract
+    // (packages/engine/src/types.ts) documents its return value only "while ongoing" and is
+    // silent on a terminal state. A terminal `next` needs no active()/nextMover at all —
+    // terminalValue() is already absolute (a `won` status carries its own winner), so no
+    // mover-perspective negation applies to it either.
+    const nextStatus = engine.status(next);
+    const nextTerminal = terminalValue(nextStatus, mover);
+    let candidate: number;
+    if (nextTerminal !== undefined) {
+      nodeCounter.count += 1; // count this expansion the same as any other visited child
+      candidate = nextTerminal;
+    } else {
+      const nextActive = engine.active(next);
+      if (nextActive.mode !== "sequential") {
+        throw new MinimaxUnsupportedGameError(
+          `engine "${engine.meta.id}" became simultaneous mid-search — minimax fits sequential ` +
+            "games only."
+        );
+      }
+      const nextMover = nextActive.player;
+      const sameMover = nextMover === mover;
+      // Only negate (and swap/negate the alpha-beta window) across an ACTUAL change of
+      // perspective. When the same player moves again (an extra turn), the child's value is
+      // already in `mover`'s own perspective — negating it would flip the sign of a value this
+      // player is still trying to MAXIMIZE, corrupting every ancestor's evaluation.
+      const childValue = sameMover
+        ? negamax(engine, next, depth - 1, a, beta, nextMover, rng, nodeCounter, nodeBudget)
+        : negamax(engine, next, depth - 1, -beta, -a, nextMover, rng, nodeCounter, nodeBudget);
+      candidate = sameMover ? childValue : -childValue;
     }
-    const nextMover = nextActive.player;
-    const sameMover = nextMover === mover;
-    // Only negate (and swap/negate the alpha-beta window) across an ACTUAL change of
-    // perspective. When the same player moves again (an extra turn), the child's value is
-    // already in `mover`'s own perspective — negating it would flip the sign of a value this
-    // player is still trying to MAXIMIZE, corrupting every ancestor's evaluation.
-    const childValue = sameMover
-      ? negamax(engine, next, depth - 1, a, beta, nextMover, rng, nodeCounter, nodeBudget)
-      : negamax(engine, next, depth - 1, -beta, -a, nextMover, rng, nodeCounter, nodeBudget);
-    const candidate = sameMover ? childValue : -childValue;
     if (candidate > value) value = candidate;
     a = Math.max(a, value);
     if (a >= beta) break; // alpha-beta cutoff
@@ -171,39 +203,53 @@ export function minimaxPolicy<S extends WithEffects, M extends Json>(
         if (deadline !== undefined && clock.now() >= deadline) break;
         let iterationBestMove: M = bestMove;
         let iterationBestValue = Number.NEGATIVE_INFINITY;
-        let sawUnsupported: MinimaxUnsupportedGameError | undefined;
+        let sawUnsupported: MinimaxHeuristicRequiredError | undefined;
         for (const move of legal) {
           if (deadline !== undefined && clock.now() >= deadline) break;
           const next = engine.apply(state, new Map([[player, move]]), rng);
           let value: number;
           try {
-            const nextActive = engine.active(next);
-            if (nextActive.mode !== "sequential") {
-              throw new MinimaxUnsupportedGameError(
-                `engine "${engine.meta.id}" became simultaneous mid-search — minimax fits ` +
-                  "sequential games only."
+            // Check status(next) BEFORE ever calling engine.active(next) — see negamax's own
+            // identical guard above for why: active()'s contract is documented only "while
+            // ongoing", and a terminal `next` needs no nextMover/negation at all.
+            const nextStatus = engine.status(next);
+            const nextTerminal = terminalValue(nextStatus, player);
+            if (nextTerminal !== undefined) {
+              nodeCounter.count += 1;
+              value = nextTerminal;
+            } else {
+              const nextActive = engine.active(next);
+              if (nextActive.mode !== "sequential") {
+                throw new MinimaxUnsupportedGameError(
+                  `engine "${engine.meta.id}" became simultaneous mid-search — minimax fits ` +
+                    "sequential games only."
+                );
+              }
+              const nextMover = nextActive.player;
+              const sameMover = nextMover === player;
+              const childValue = negamax(
+                engine,
+                next,
+                depth - 1,
+                Number.NEGATIVE_INFINITY,
+                Number.POSITIVE_INFINITY,
+                nextMover,
+                rng,
+                nodeCounter,
+                nodeBudget
               );
+              // Only negate across an ACTUAL change of perspective — see negamax's module doc
+              // for why an extra-turn (same mover again) must not flip sign.
+              value = sameMover ? childValue : -childValue;
             }
-            const nextMover = nextActive.player;
-            const sameMover = nextMover === player;
-            const childValue = negamax(
-              engine,
-              next,
-              depth - 1,
-              Number.NEGATIVE_INFINITY,
-              Number.POSITIVE_INFINITY,
-              nextMover,
-              rng,
-              nodeCounter,
-              nodeBudget
-            );
-            // Only negate across an ACTUAL change of perspective — see negamax's module doc
-            // for why an extra-turn (same mover again) must not flip sign.
-            value = sameMover ? childValue : -childValue;
           } catch (err) {
-            if (err instanceof MinimaxUnsupportedGameError) {
+            if (err instanceof MinimaxHeuristicRequiredError) {
               // Ran out of depth/budget without a heuristic at THIS depth — remember it, but
-              // still let a shallower completed depth stand if we have one.
+              // still let a shallower completed depth stand if we have one. Anything else
+              // (became simultaneous mid-search, no legal moves while ongoing, etc.) is a
+              // genuine contract violation, NOT a "this move merely lacks a heuristic here"
+              // gap — it must propagate, never be silently treated as if it were the same kind
+              // of thing (review finding, post-M2).
               sawUnsupported = err;
               continue;
             }

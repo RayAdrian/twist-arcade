@@ -130,6 +130,66 @@ describe("minimaxPolicy", () => {
     expect(move.to).toBe(2);
   });
 
+  it("rethrows a genuine contract violation (became simultaneous mid-search) instead of silently excluding that root move from consideration", () => {
+    // X (player 0) to move; legal moves are cells 2,5,6,7,8 (cell 2 is the immediate win).
+    // The wrapped engine falsely reports the state reached by playing cell 5 (a perfectly
+    // ordinary, ONGOING, non-winning move) as having become simultaneous — a contract
+    // violation this test manufactures deliberately. Before this fix, minimax's root catch
+    // treated ANY MinimaxUnsupportedGameError the same as "ran out of heuristic depth for this
+    // move, skip it and move on": since the OTHER root moves (including the actual win at cell
+    // 2) complete fine, `depthReached` never stays 0, so the violation was silently swallowed
+    // and chooseMove returned normally — contradicting this module's own header promise
+    // ("refuses with a typed error, not a silent wrong answer").
+    const state: TTTState = { board: [0, 0, null, 1, 1, null, null, null, null], turn: 0, lastEffects: [] };
+    const engine: typeof classicTicTacToe = {
+      ...classicTicTacToe,
+      active(s: TTTState) {
+        if (s.board[5] === 0) {
+          return { mode: "simultaneous", players: [0, 1] };
+        }
+        return classicTicTacToe.active(s);
+      },
+    };
+    const policy = minimaxPolicy<TTTState, TTTMove>({ maxDepth: 1 });
+    expect(() =>
+      policy.chooseMove({
+        engine,
+        state,
+        player: 0,
+        rng: rngFromSeed("root-contract-violation"),
+        budget: BUDGET,
+        clock: fakeClock(),
+      })
+    ).toThrow(/became simultaneous mid-search/);
+  });
+
+  it("never calls engine.active() on an already-terminal next state — active()'s own contract (packages/engine/src/types.ts) documents its return value only 'while ongoing' and is silent on terminal", () => {
+    // Cell 2 is the immediate winning move from this position — playing it makes `next`
+    // terminal (status 'won'). The wrapped active() throws if ever called with a state that
+    // isn't ongoing, so this test fails loudly (for the right reason) if minimax calls
+    // active(next) before checking whether `next` is already terminal.
+    const state: TTTState = { board: [0, 0, null, 1, 1, null, null, null, null], turn: 0, lastEffects: [] };
+    const engine: typeof classicTicTacToe = {
+      ...classicTicTacToe,
+      active(s: TTTState) {
+        if (classicTicTacToe.status(s).kind !== "ongoing") {
+          throw new Error("active() must not be called on a terminal state");
+        }
+        return classicTicTacToe.active(s);
+      },
+    };
+    const policy = minimaxPolicy<TTTState, TTTMove>({ maxDepth: 9 });
+    const { move } = policy.chooseMove({
+      engine,
+      state,
+      player: 0,
+      rng: rngFromSeed("no-active-on-terminal"),
+      budget: BUDGET,
+      clock: fakeClock(),
+    });
+    expect(move.cell).toBe(2);
+  });
+
   it("throws a typed error when the engine has no heuristic and no maxDepth reaches every terminal", () => {
     // bank-run has no heuristic and is stochastic/1-player — minimax's precondition
     // (sequential perfect-info, deterministic) is violated by stochasticity; must refuse.
