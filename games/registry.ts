@@ -11,8 +11,15 @@
 
 import type { Registry } from "@twist-arcade/game-spec";
 import { FADEOUT_RULESET_CONFIG, fadeoutManifest } from "./fadeout/manifest";
+import { manifest as crackstepManifest } from "./crackstep/manifest";
 
 export const registry: Registry = {
+  "crackstep": {
+    manifest: crackstepManifest,
+    loadEngine: () => import("@twist-arcade/crackstep").then((m) => m.crackstep),
+    loadPresentation: () => import("@twist-arcade/crackstep").then((m) => m.presentation),
+    loadSolver: () => import("@twist-arcade/crackstep").then((m) => m.solver),
+  },
   // <new-game:insert>
   fadeout: {
     manifest: fadeoutManifest,
