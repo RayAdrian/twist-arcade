@@ -1,0 +1,61 @@
+/* packages/shell/src/tokens.css — "ink on paper, arcade tempo" design tokens (plan §9.1).
+ *
+ * Values here MUST byte-match packages/shell/src/design-tokens.ts (the TS source of truth
+ * used by contrast tests) — test/tokens.contrast.test.ts parses this file and cross-checks
+ * it against that module so the two can never silently drift.
+ *
+ * Theming: `:root` carries light values; `:root.dark` overrides for dark. The `.dark` class
+ * is applied by the theme bootstrap inline script in app/layout.tsx (default: system
+ * `prefers-color-scheme`, overridable via `ta:settings.theme` in localStorage) — never a
+ * bare `prefers-color-scheme` media query alone, so a user's explicit in-app theme choice
+ * always wins over the OS setting.
+ */
+
+:root {
+  --paper: #faf6ef;
+  --ink: #262019;
+  --ink-muted: #5b5347;
+  --accent-p1: #0b3d91;
+  --accent-p2: #7a3200;
+  --focus-ring: #262019;
+
+  /* Discrete opacity steps (never a continuous fade — ux-lens §2). ageStep 0 = full (no
+   * token needed); 1 and 2 below.
+   *
+   * NOTE (deviation, see design-tokens.ts's AGE_OPACITY doc comment for the full math): the
+   * research doc's cosmetic "65% / 40%" figures are replaced with 0.72 / 0.60 here because
+   * literal 40% opacity on a light paper background cannot reach the mandatory 3:1 non-text
+   * contrast floor for ANY foreground color — a provable ceiling (~2.85:1 max), not a palette
+   * mistake. 0.72/0.60 are the values actually used; they were raised only as far as needed
+   * to clear 3:1 with margin for the least-forgiving identity color (accent-p2) in the
+   * harder (light) theme. Verified in test/tokens.contrast.test.ts. */
+  --age-1: 0.72;
+  --age-2: 0.6;
+
+  /* The ONLY durations any shell or game animation may use (plan §9.1, §9.3). */
+  --dur-place: 150ms;
+  --dur-age: 200ms;
+  --dur-moved: 200ms;
+  --dur-win: 300ms;
+  --dur-vanish: 400ms;
+  --dur-final-pulse: 600ms;
+  --ease: cubic-bezier(0, 0, 0.2, 1);
+
+  color-scheme: light;
+}
+
+:root.dark {
+  --paper: #17140f;
+  --ink: #f2ecdf;
+  --ink-muted: #b7ae9c;
+  --accent-p1: #8fc1ff;
+  --accent-p2: #ffb066;
+  --focus-ring: #f2ecdf;
+
+  color-scheme: dark;
+}
+
+/* Utility layer: components read these as Tailwind theme colors (see tailwind.config.ts,
+ * which maps `bg-paper`, `text-ink`, etc. onto these variables) rather than importing this
+ * file's raw var() calls directly. This file is the ONLY place the literal color values are
+ * written by hand. */

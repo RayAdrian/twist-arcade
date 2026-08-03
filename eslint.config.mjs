@@ -27,6 +27,125 @@ const purityRules = {
   ],
 };
 
+// Board-path heavy-animation boundary (orchestrator directive 2026-08-03, architecture-lens
+// §5): "Motion One or plain CSS over Framer Motion for the hot path... avoid inside per-cell
+// rendering." ReactBits-sourced polish is welcome in CHROME (ResultModal, GameCard, the library
+// home, page/route transitions, empty states) precisely because motion there carries no game
+// state — it is NOT welcome on the board, where ux-lens §9's rule ("every animation must
+// restate a state change a static encoding already shows") is what makes `prefers-reduced-
+// motion` safe. A ReactBits effect that becomes the only carrier of a state change is a bug,
+// however good it looks — so this is enforced structurally, not left as a comment: any board-
+// path file (BoardShell/Cell/board-context/CalloutLayer/CountdownBadge, effects-map.ts, and
+// every game's `games/*/ui/**`) is statically forbidden from importing framer-motion, gsap, or
+// Motion One's React entry (`motion/react` — the "motion" package's react bundle wraps the same
+// ~30kB animation engine as framer-motion; only bare `motion`/`motion/mini`, Motion One's
+// lightweight vanilla-JS API, is sanctioned here), full stop.
+//
+// Everything lives under a single `patterns` array (stage-6 review C1, part 3): `paths` only
+// matches an EXACT specifier, so it can never express "framer-motion and any of its subpaths"
+// — `framer-motion/dom` slipped the old `paths`-based ban entirely. `patterns` (gitignore-style,
+// via the `ignore` package) handles both the exact and the wildcard cases uniformly, with a
+// per-group custom message preserved for each library.
+const boardPathAnimationBoundary = {
+  "no-restricted-imports": [
+    "error",
+    {
+      patterns: [
+        {
+          group: ["framer-motion", "framer-motion/*"],
+          message:
+            "Framer Motion (~30kB) is banned on the board path (architecture-lens §5). It is welcome in chrome " +
+            "(ResultModal, GameCard, the library home, transitions) — move this import there, or use Motion One / plain CSS here.",
+        },
+        {
+          group: ["gsap", "gsap/*"],
+          message:
+            "GSAP is banned on the board path (architecture-lens §5) — many ReactBits components pull it in. It is " +
+            "welcome in chrome; move this effect there, or use Motion One / plain CSS on the board.",
+        },
+        {
+          group: ["motion/react", "motion/react-*"],
+          message:
+            "motion/react (Motion One's React entry) ships the same ~30kB animation engine as Framer Motion and is " +
+            "banned on the board path for the same reason (architecture-lens §5). Bare `motion`/`motion/mini` — " +
+            "Motion One's sanctioned lightweight vanilla-JS API — is NOT banned; use that or plain CSS here instead.",
+        },
+      ],
+    },
+  ],
+};
+
+// Registry-driven code splitting (plan §3.2.3): "App code may statically import only
+// games/registry.ts re-exported manifests... Engines and presentations load exclusively
+// through registry[id].loadEngine()/loadPresentation()." Manifests are eager (the catalog
+// payload games/registry.ts re-exports); a game's engine, UI, or its package-root `index`
+// (which typically re-exports both) must load ONLY through the registry entry's own dynamic
+// `import()` — a static import of any of those from `app/**` or `packages/shell/**` would pull
+// that game's whole engine+presentation bundle into every route that imports it, defeating the
+// "game 40 adds zero bytes to game 1's route" budget entirely.
+//
+// Single-`*` prefixes matched at most ONE leading path segment (stage-6 review C1, part 2) —
+// `*/games/*/engine` matched `../games/x/engine` (one level up) but NOT `../../games/x/engine`
+// (two levels up), and every real file under `app/play/[gameId]/` imports at three. `**` (via
+// the `ignore` package's gitignore-style matching, which — unlike minimatch's default — does
+// NOT special-case a leading `.` segment) matches zero OR MORE leading segments, so it covers a
+// bare specifier and a relative one at any depth uniformly, while `games/registry` (the one
+// games/* import app code IS required to make — the eager manifest catalog) stays unmatched
+// since "registry" is never "engine"/"ui"/"index".
+const registrySplittingBoundary = {
+  "no-restricted-imports": [
+    "error",
+    {
+      patterns: [
+        {
+          group: ["**/games/*/engine", "**/games/*/engine/**"],
+          message:
+            "A game's engine must load only via registry[id].loadEngine() (plan §3.2) — a static import here defeats per-game code splitting.",
+        },
+        {
+          group: ["**/games/*/ui", "**/games/*/ui/**"],
+          message:
+            "A game's presentation/UI must load only via registry[id].loadPresentation() (plan §3.2) — a static import here defeats per-game code splitting.",
+        },
+        {
+          // Deliberately NOT a bare "games/*" — that would also match "games/registry" itself,
+          // the ONE games/* import app code is required to make (the eager manifest catalog).
+          // Only a game's own package-root index (an additional path segment past the game
+          // folder) is banned here.
+          group: ["**/games/*/index"],
+          message:
+            "A game's package root (typically re-exporting engine + presentation together) must never be statically imported outside games/registry.ts — go through the registry's loadEngine()/loadPresentation() instead (plan §3.2).",
+        },
+      ],
+    },
+  ],
+};
+
+// The six shell board-path files (see boardPathAnimationBoundary's own comment for why these
+// specific files) ALSO live under `packages/shell/src/**` and so are matched by
+// registrySplittingBoundary below. Flat config's rule-merging is per-key, not additive: when
+// two blocks both set the same rule key (`no-restricted-imports`, here) for a file, the LATER
+// block's value REPLACES the earlier one entirely — it does not union their option objects
+// (stage-6 review C1, part 1: this is exactly how the registry-splitting block silently killed
+// the animation ban for every one of these six files, since it was declared after it). The fix
+// is to never let two blocks both claim the same rule key for the same file: this list drives a
+// third, explicitly-merged block declared after BOTH boardPathAnimationBoundary and
+// registrySplittingBoundary below, so it is the one block whose `no-restricted-imports` value
+// actually governs these six files, and that value is a union of both option sets.
+// Exported (not just module-local) so packages/shell/test/eslint-config.test.ts can assert
+// this list against its own independently-hardcoded expectation (stage-6 re-review C1: a self
+// -test that only iterates whatever this array currently contains would silently shrink its
+// own coverage the moment an entry is dropped from it — the export lets the test catch that
+// drift explicitly instead of just testing fewer files).
+export const BOARD_PATH_FILES = [
+  "packages/shell/src/components/BoardShell.tsx",
+  "packages/shell/src/components/Cell.tsx",
+  "packages/shell/src/components/board-context.tsx",
+  "packages/shell/src/components/CalloutLayer.tsx",
+  "packages/shell/src/components/CountdownBadge.tsx",
+  "packages/shell/src/effects-map.ts",
+];
+
 export default tseslint.config(
   {
     ignores: [
@@ -35,6 +154,9 @@ export default tseslint.config(
       "**/node_modules/**",
       "**/coverage/**",
       "**/*.config.*",
+      // Next-generated, gitignored (.gitignore's own entry) — its triple-slash reference to
+      // .next/types/routes.d.ts is Next's own required convention, not something to lint.
+      "next-env.d.ts",
     ],
   },
   js.configs.recommended,
@@ -46,9 +168,37 @@ export default tseslint.config(
     },
   },
   {
+    // Games' own `ui/**` only here — the six shell board-path files get BOTH boundaries via
+    // the explicitly-merged block below (declared after registrySplittingBoundary), not this
+    // one, per the BOARD_PATH_FILES comment above (stage-6 review C1, part 1).
+    files: ["games/**/ui/**/*.tsx", "games/**/ui/**/*.ts"],
+    rules: boardPathAnimationBoundary,
+  },
+  {
     // Purity boundary: the engine package and every game package.
     files: ["packages/engine/**/*.ts", "games/**/*.ts", "games/**/*.tsx"],
     rules: purityRules,
+  },
+  {
+    files: ["app/**/*.ts", "app/**/*.tsx", "packages/shell/src/**/*.ts", "packages/shell/src/**/*.tsx"],
+    rules: registrySplittingBoundary,
+  },
+  {
+    // The merged block (stage-6 review C1, part 1): declared after registrySplittingBoundary
+    // above so it is the LAST block matching these six files, making its `no-restricted-imports`
+    // value — the union of both boundaries' patterns — the one that actually applies to them.
+    files: BOARD_PATH_FILES,
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            ...boardPathAnimationBoundary["no-restricted-imports"][1].patterns,
+            ...registrySplittingBoundary["no-restricted-imports"][1].patterns,
+          ],
+        },
+      ],
+    },
   },
   {
     // Purity boundary, bots edition: search algorithms (mcts/minimax/beam/flat-mc/tiers/

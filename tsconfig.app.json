@@ -8,15 +8,45 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "preserve",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "plugins": [{ "name": "next" }],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
     "noEmit": true,
     "declaration": false,
     "paths": {
-      "@/*": ["./*"]
-    }
+      "@/*": [
+        "./*"
+      ]
+    },
+    "allowJs": true,
+    "incremental": true
   },
-  "include": ["app/**/*.ts", "app/**/*.tsx", "games/**/*.ts", "next-env.d.ts", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"],
-  "references": [{ "path": "./packages/engine" }, { "path": "./packages/game-spec" }]
+  "include": [
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "games/**/*.ts",
+    "next-env.d.ts",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ],
+  "references": [
+    {
+      "path": "./packages/engine"
+    },
+    {
+      "path": "./packages/game-spec"
+    },
+    {
+      "path": "./packages/shell"
+    }
+  ]
 }

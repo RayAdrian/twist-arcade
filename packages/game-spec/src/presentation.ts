@@ -60,6 +60,33 @@ export interface GamePresentation<
   V extends WithEffects = S,
 > {
   Board: ComponentType<BoardProps<V, M>>;
+  /**
+   * ADDED post-freeze, shell-side (S1 implementation gap, flagged for orchestrator sign-off —
+   * see the shell team's final report): `BoardShell` needs `rows`/`cols` for its APG grid math
+   * (`aria-rowcount`/`colcount`, the roving-tabindex cursor) and `GameManifest` carries no board
+   * dimensions at all — there was no way for `GameShell` to render `BoardShell` around a game's
+   * `Board` without it. Additive only (no existing field changed shape), computed from the
+   * current view since some boards may not be a fixed size across a game's lifetime.
+   *
+   * ORCHESTRATOR SIGN-OFF (stage-6 review escalation): per-view, on the presentation — endorsed,
+   * not a static manifest number. Dynamic boards are real (a seed-varied grid at setup, or a
+   * shrinking-board twist mid-game), and a static manifest field would be actively WRONG for
+   * those, not merely redundant; the manifest is the eager catalog payload shipped to `/` and
+   * must stay small and data-only, so it is not the right home for this even as a cache.
+   *
+   * CONTRACT (binding on every implementation): this function must be TOTAL and PURE over every
+   * `view` the game can ever hand it for the lifetime of a game instance — called on every
+   * render, its result directly drives `BoardShell`'s roving-tabindex cursor math and ARIA grid
+   * attributes, so it must never throw, never return `{0,0}` or any other placeholder for a
+   * view it doesn't recognize, and never depend on anything other than `view` itself (no
+   * randomness, no closed-over mutable state). `BoardShell` clamps its cursor against
+   * whatever `rows`/`cols` this returns on every render specifically so a SHRINKING board (this
+   * function legitimately returning smaller dimensions than the previous render) never strands
+   * the roving tabindex on a cell position that no longer exists — that clamp only works if this
+   * function's own return value is always a value BoardShell can trust immediately, for the
+   * CURRENT view, with no lag or exception.
+   */
+  boardDimensions(view: V): { rows: number; cols: number };
   announce(ev: GameEvent<V>): string;
   /**
    * ARRAY, not a single entry (platform-corrections.md, folded in while this shape is still

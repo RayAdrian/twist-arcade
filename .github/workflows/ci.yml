@@ -40,5 +40,19 @@ jobs:
         # to depend on React for real; only packages/engine is constrained. See
         # scripts/check-engine-purity.mjs.
 
+      - name: Build (production)
+        run: pnpm build
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E + a11y gate (Playwright + axe, plan §11.2/§11.3)
+        run: pnpm test:e2e
+        # Scope note (shell team, S1): the registry is still empty (no game has a presentation
+        # yet), so this currently exercises "/" and the unknown-gameId 404 path only — see
+        # playwright.config.ts and e2e/a11y.spec.ts for what's deferred until a real game
+        # lands (cold-load timing, keyboard-only play, the 320px cell floor, reduced-motion
+        # parity, the input lockout, persistence resume).
+
       # Harness CI suites (packages/harness) and the size-limit budget check land in M3/M4;
-      # this workflow is the M0 skeleton only — typecheck -> lint -> test -> engine purity.
+      # this workflow is otherwise the M0 skeleton — typecheck -> lint -> test -> engine purity.
