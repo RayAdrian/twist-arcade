@@ -363,3 +363,42 @@ but this is the platform-wide pipeline and the next fog game inherits it.
 **Fix:** a rejection clause in `certifyDay` when
 `engine.meta.hiddenInformation && !solveResult.guessFree`, plus a `fogDeductionOnly` row in
 both gate tables (N/A with a reason for non-fog and for chase formats).
+
+---
+
+## Remote Supabase — prepped 2026-08-03, deny-all until Phase 2
+
+**Project:** `fjiwrzaosluymamannaw` · `https://fjiwrzaosluymamannaw.supabase.co`
+
+Applied migration `phase2_async_match_schema_deny_all` — the Phase 2 async-multiplayer
+schema from `architecture-lens.md` §4 (`matches` / `match_players` / `moves`, with indexes
+on `join_code`, `updated_at`, and `(match_id, idx)`).
+
+**Every table has RLS enabled and zero policies.** That is the point, not an oversight.
+The plan states its RLS intent in prose — "no client-facing SELECT of `state`/`seed` for
+hidden-info games" — and prose is not enforcement. A partially-written policy set reads as
+reviewed while leaking; an empty policy set cannot leak at all. Phase 2 opens exactly the
+access it needs, one policy at a time, each justified. The three `rls_enabled_no_policy`
+INFO advisories are the expected signature of this posture.
+
+**Verified rather than assumed.** Writes from an anon client are refused (`42501`, RLS
+violation). For reads, an empty table returning `200 []` proves nothing — so a row was
+inserted server-side carrying `seed = 'SECRET-SEED-DO-NOT-LEAK'` and a canary in `state`,
+and the anon client was queried for `select=*` and for `select=seed,state` directly. Both
+returned `[]`; the canary appeared nowhere in any response. The probe row was then deleted
+(0 rows remain).
+
+That distinction matters and is worth keeping: **`200 []` from PostgREST is
+indistinguishable between "RLS filtered everything" and "the table is empty."** If a
+permissive SELECT policy is ever added by accident, the failure is silent — the endpoint
+simply starts returning rows and nothing errors. Any future RLS work here must be verified
+against a table that actually contains a row.
+
+**Not applied, deliberately:** Phase 3's `game_results` and leaderboard tables, and any
+policy at all. Phase 2 has no Fable plan yet, and this schema predates what M1–M3 taught us
+about view redaction (C1) and trust boundaries (C4) — it will likely be revised when the
+async-multiplayer feature is actually planned.
+
+**Local development is unchanged.** Agent teams use per-worktree local stacks per
+`CLAUDE.md` §5 and never point at this project. The remote is for deployed environments
+only.
