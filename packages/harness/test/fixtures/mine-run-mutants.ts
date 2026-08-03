@@ -52,6 +52,78 @@ export function createGrindBrokenMineRun(
 }
 
 /**
+ * Grind-probe mutant #2 (platform-corrections.md C9's own executed counterexample): `bank`
+ * credits `streakValue` into `banked` but never resets `streakLen`/`streakValue` back to 0.
+ * Unlike the streak-0 self-loop above, this is NOT byte-identical after one `bank` — `banked`
+ * strictly increases — so the OLD `encode(next) === encode(start)` cycle check (blind to
+ * anything living inside canonical state, C9's finding) could never see it. But it is still a
+ * genuine, indefinitely-repeatable, zero-risk farm: `bank` doesn't touch `revealsLeft` (real
+ * Mine Run's `bank` never did — only `reveal` costs a budget unit), and `streakLen`/
+ * `streakValue` staying frozen means `bank` remains legal forever and credits the exact same
+ * `streakValue` every single time — a true infinite loop, not just a longer one.
+ */
+export function createGrindStreakNeverResetsMineRun(
+  opts: Parameters<typeof createMineRun>[0] = {}
+): GameEngine<MineRunState, MineRunMove, MineRunView> {
+  const base = createMineRun(opts);
+  return {
+    ...base,
+    apply(state, moves, rng) {
+      const move = moves.get(0);
+      if (move && move.t === "bank" && state.streakLen >= 1) {
+        // BUG: credits the streak into banked but leaves streakLen/streakValue (and
+        // everything else — mines/revealed/exploded/revealsLeft) untouched, so `bank` stays
+        // legal and stays worth the exact same amount, forever.
+        return {
+          ...state,
+          banked: state.banked + state.streakValue,
+          lastEffects: [{ type: "banked", points: state.streakValue }],
+        };
+      }
+      return base.apply(state, moves, rng);
+    },
+  };
+}
+
+/**
+ * Grind-probe NEGATIVE fixture (platform-corrections.md C9's "verified clean in the over-fire
+ * direction" claim, made concrete): the SAME bank-legal-at-streak-0/zero-delta shape as
+ * `createGrindBrokenMineRun`, except this variant also costs one unit of the reveal budget
+ * per use (and is gated on `revealsLeft > 0`). A single repeat of this move looks IDENTICAL
+ * to the genuine unbounded farm above (legal, zero score delta) — the only difference is that
+ * this one is bounded: it can repeat at most `revealsLeft` times before becoming illegal, so
+ * a correct fix must NOT flag it, no matter how many times it happens to repeat before that.
+ */
+export function createGrindBoundedStreakZeroBankMineRun(
+  opts: Parameters<typeof createMineRun>[0] = {}
+): GameEngine<MineRunState, MineRunMove, MineRunView> {
+  const base = createMineRun(opts);
+  return {
+    ...base,
+    legalMoves(state, player) {
+      const moves = base.legalMoves(state, player);
+      if (player === 0 && state.revealsLeft > 0 && !moves.some((m) => m.t === "bank")) {
+        return [...moves, { t: "bank" }];
+      }
+      return moves;
+    },
+    isLegal(state, player, move) {
+      if (player === 0 && move.t === "bank" && state.streakLen === 0) return state.revealsLeft > 0;
+      return base.isLegal(state, player, move);
+    },
+    apply(state, moves, rng) {
+      const move = moves.get(0);
+      if (move && move.t === "bank" && state.streakLen === 0) {
+        // Same "bank legal at streak 0" bug as createGrindBrokenMineRun, but BOUNDED: costs
+        // one unit of the reveal budget every time, so it runs out.
+        return { ...state, revealsLeft: state.revealsLeft - 1, lastEffects: [{ type: "banked", points: 0 }] };
+      }
+      return base.apply(state, moves, rng);
+    },
+  };
+}
+
+/**
  * Always-Safe mutant, via a legitimate tuning lever rather than a code bug (docs/plans/
  * mine-run.md §4.2's own "tuning levers" note: "If the gap is too large... lower density").
  * At very low mine density almost every cell is provably safe by deduction alone (the CSP's

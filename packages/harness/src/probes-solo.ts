@@ -26,7 +26,9 @@ export interface GrindCycleStep {
 
 export interface GrindResult {
   found: boolean;
-  /** The move sequence that returns to an identically-`encode()`d state, when found. */
+  /** The move sequence proven to be indefinitely repeatable (platform-corrections.md C9 —
+   *  NOT necessarily a full-state `encode()` repeat; see `searchForCycle`'s doc comment for
+   *  why that used to be, and no longer is, the criterion), when found. */
   cycle?: GrindCycleStep[];
   scoreDelta?: number;
   startSeed?: string;
@@ -46,11 +48,23 @@ export interface GrindOptions {
   /** Length of the random walk sampled per seed to generate additional candidate start
    *  states beyond the raw setup() state. */
   walkLength?: number;
+  /** platform-corrections.md C9: how many ADDITIONAL times a candidate move sequence must
+   *  replay — staying legal and producing the exact same non-negative score delta every
+   *  time — before it's accepted as a genuine, indefinitely-repeatable farm (so
+   *  `confirmations + 1` total occurrences in a row). Set high enough that a real,
+   *  budget-bounded action (one that costs a unit of some finite resource, e.g. a reveal
+   *  budget) exhausts that resource and becomes illegal well before this many repeats, while
+   *  a genuinely zero-marginal-cost farm (nothing it touches is ever consumed) survives
+   *  indefinitely no matter how high this is set — see this file's own bounded-vs-unbounded
+   *  test fixtures for why 5 was chosen (comfortably above any of this milestone's small test
+   *  budgets, still cheap to check). */
+  confirmations?: number;
 }
 
 const DEFAULT_MAX_CYCLE_LENGTH = 8;
 const DEFAULT_MAX_NODES_PER_START = 20_000;
 const DEFAULT_WALK_LENGTH = 20;
+const DEFAULT_CONFIRMATIONS = 5;
 
 function scoreOfState<S extends WithEffects, M extends Json, V extends WithEffects>(
   engine: GameEngine<S, M, V>,
@@ -61,25 +75,77 @@ function scoreOfState<S extends WithEffects, M extends Json, V extends WithEffec
   return status.kind === "scored" ? (status.scores[0] ?? 0) : 0;
 }
 
-/** DFS from `start`, looking for ANY move sequence of length 1..maxDepth that returns to a
- *  state whose `encode()` equals `encode(start)` again, with a non-negative score delta over
- *  the loop. Because these games draw no further randomness in `apply()` beyond setup (Mine
- *  Run, Crackstep, and every shipped launch game — stochastic games are out of scope for this
- *  probe's exactness and would need a probabilistic survival estimate instead), an EXACT
- *  repeat of the encoded state is deterministic proof the loop repeats forever: "termination
- *  risk ~= 0" is implied by determinism, not separately estimated. */
+/**
+ * DFS from `start`, looking for ANY move sequence of length 1..maxDepth that is a genuine,
+ * indefinitely-repeatable, zero-risk farm.
+ *
+ * platform-corrections.md C9: an earlier version of this function required
+ * `encode(next) === encode(start)` — a FULL-state repeat. Score (e.g. Mine Run's `banked`)
+ * lives INSIDE canonical state, so that check could only ever match a byte-identical repeat;
+ * a real farm where the score itself keeps climbing every iteration (banked strictly
+ * increasing, nothing else ever changing) was structurally invisible to it, which defeated
+ * the probe's own headline case. Spine §7.4's "cycle detection on encode(S) … score delta >=
+ * 0" turned out to describe two clauses that contradict each other under that check.
+ *
+ * The fix drops the full-state-equality requirement entirely and instead verifies
+ * repeatability DIRECTLY: does this exact move sequence stay legal, and does it keep
+ * producing the exact same non-negative score delta, over `confirmations` additional replays
+ * in a row (`confirmRepeatable` below)? This is provably robust to both directions:
+ *   - a genuine zero-marginal-cost farm (nothing the sequence touches is ever consumed, e.g.
+ *     Mine Run's `bank` not costing a reveal) survives any number of replays, so it is caught
+ *     regardless of how high `confirmations` is set;
+ *   - a bounded action (one that costs a unit of some finite resource) exhausts that resource
+ *     and becomes illegal well before a `confirmations` set comfortably above any realistic
+ *     test budget, so it is correctly NOT flagged (see probes-solo.test.ts's bounded-vs-
+ *     unbounded fixture pair for both directions proven side by side).
+ *
+ * Because these games draw no further randomness in `apply()` beyond setup (Mine Run,
+ * Crackstep, and every shipped launch game — stochastic games are out of scope for this
+ * probe's exactness and would need a probabilistic survival estimate instead), a confirmed
+ * replay is deterministic proof the same outcome repeats every time: "termination risk ~= 0"
+ * is implied by determinism, not separately estimated.
+ */
 function searchForCycle<S extends WithEffects, M extends Json, V extends WithEffects>(
   engine: GameEngine<S, M, V>,
   start: S,
   maxDepth: number,
-  maxNodes: number
+  maxNodes: number,
+  confirmations: number
 ): GrindResult | undefined {
-  const startEncoded = engine.encode(start);
-  const startScore = scoreOfState(engine, start);
   let nodes = 0;
   let rngCounter = 0;
 
-  function dfs(state: S, depth: number, path: GrindCycleStep[]): GrindResult | undefined {
+  /** Replays `path` once from `state`, checking each move's legality as it goes (a path
+   *  found via `legalMoves` at the ORIGINAL state may no longer be legal once resources
+   *  have drifted — that drift is exactly what distinguishes a bounded action from a real
+   *  farm). Returns the resulting state and the path's total score delta, or `undefined` if
+   *  a move stopped being legal or the node budget ran out. */
+  function replayPathOnce(state: S, path: readonly M[]): { next: S; delta: number } | undefined {
+    let cur = state;
+    const before = scoreOfState(engine, cur);
+    for (const move of path) {
+      if (nodes >= maxNodes) return undefined;
+      nodes += 1;
+      if (!engine.isLegal(cur, 0, move)) return undefined;
+      cur = engine.apply(cur, new Map([[0, move]]), rngFor("__grind_probe__", rngCounter++));
+    }
+    return { next: cur, delta: scoreOfState(engine, cur) - before };
+  }
+
+  /** `path` produced `afterFirst` from its own start with `firstDelta`. Confirms the SAME
+   *  path keeps replaying, legally, with the SAME delta, `confirmations` more times in a
+   *  row. */
+  function confirmRepeatable(afterFirst: S, firstDelta: number, path: readonly M[]): boolean {
+    let state = afterFirst;
+    for (let rep = 0; rep < confirmations; rep++) {
+      const replay = replayPathOnce(state, path);
+      if (!replay || replay.delta !== firstDelta) return false;
+      state = replay.next;
+    }
+    return true;
+  }
+
+  function dfs(state: S, depth: number, path: GrindCycleStep[], moves: readonly M[]): GrindResult | undefined {
     if (depth >= maxDepth) return undefined;
     const legal = engine.legalMoves(state, 0);
     for (const move of legal) {
@@ -89,19 +155,21 @@ function searchForCycle<S extends WithEffects, M extends Json, V extends WithEff
       const applyRng = rngFor("__grind_probe__", rngCounter++);
       const next = engine.apply(state, new Map([[0, move]]), applyRng);
       const after = scoreOfState(engine, next);
+      const delta = after - before;
       const nextPath: GrindCycleStep[] = [...path, { move: move as unknown as Json, scoreBefore: before, scoreAfter: after }];
+      const nextMoves: M[] = [...moves, move];
 
-      if (engine.encode(next) === startEncoded && after - startScore >= 0) {
-        return { found: true, cycle: nextPath, scoreDelta: after - startScore };
+      if (delta >= 0 && confirmRepeatable(next, delta, nextMoves)) {
+        return { found: true, cycle: nextPath, scoreDelta: delta };
       }
       if (engine.status(next).kind !== "ongoing") continue; // a terminal can't extend a loop
-      const deeper = dfs(next, depth + 1, nextPath);
+      const deeper = dfs(next, depth + 1, nextPath, nextMoves);
       if (deeper) return deeper;
     }
     return undefined;
   }
 
-  return dfs(start, 0, []);
+  return dfs(start, 0, [], []);
 }
 
 /** Searches for a zero-risk unbounded farming loop (solo-games-lens §3.6): any repeatable
@@ -115,6 +183,7 @@ export function grindProbe<S extends WithEffects, M extends Json, V extends With
   const maxCycleLength = opts.maxCycleLength ?? DEFAULT_MAX_CYCLE_LENGTH;
   const maxNodesPerStart = opts.maxNodesPerStart ?? DEFAULT_MAX_NODES_PER_START;
   const walkLength = opts.walkLength ?? DEFAULT_WALK_LENGTH;
+  const confirmations = opts.confirmations ?? DEFAULT_CONFIRMATIONS;
   const seeds = opts.startSeeds ?? pairedSeeds("grind-probe", 3);
 
   for (const seed of seeds) {
@@ -132,7 +201,7 @@ export function grindProbe<S extends WithEffects, M extends Json, V extends With
 
     for (const candidate of candidates) {
       if (engine.status(candidate).kind !== "ongoing") continue;
-      const result = searchForCycle(engine, candidate, maxCycleLength, maxNodesPerStart);
+      const result = searchForCycle(engine, candidate, maxCycleLength, maxNodesPerStart, confirmations);
       if (result) return { ...result, startSeed: seed };
     }
   }

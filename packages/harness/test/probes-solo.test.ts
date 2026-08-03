@@ -19,7 +19,9 @@ import { runSoloAgentOverSeeds, pairedSeeds } from "../src/solo-runner";
 import {
   createAlwaysSafeBrokenMineRun,
   createAlwaysSafeHealthyMineRun,
+  createGrindBoundedStreakZeroBankMineRun,
   createGrindBrokenMineRun,
+  createGrindStreakNeverResetsMineRun,
 } from "./fixtures/mine-run-mutants";
 
 // ---------------------------------------------------------------------------------------
@@ -136,6 +138,43 @@ describe("grindProbe — planted violation (docs/plans/mine-run.md §4.1's own w
     expect(result.cycle!.length).toBe(1);
     expect(result.cycle![0]!.move).toEqual({ t: "bank" });
     expect(result.scoreDelta).toBe(0); // zero-risk AND zero-gain — still a hard-fail shape
+  }, 15_000);
+});
+
+describe("grindProbe — C9 correction: the probe must not be blind to score living inside canonical state", () => {
+  it("catches a mutant whose bank credits streakValue but never resets the streak — a genuine infinite zero-risk farm the OLD encode()-equality check could never see (banked strictly increases every iteration)", () => {
+    // This is platform-corrections.md C9's own executed counterexample: `banked` lives
+    // inside `encode(state)`, so the old `encode(next) === encode(start)` check could only
+    // ever match a byte-IDENTICAL repeat — a real, indefinitely-repeatable farm where the
+    // score itself keeps climbing was structurally invisible to it. The fixed probe instead
+    // confirms repeatability directly: does the SAME move sequence stay legal and keep
+    // producing the SAME (non-negative) delta, over and over, regardless of whether the
+    // full encoded state ever repeats.
+    const engine = createGrindStreakNeverResetsMineRun({ width: 5, height: 5, mines: 5, budget: 20 });
+    const result = grindProbe(engine, { startSeeds: pairedSeeds("grind-streak-never-resets", 3) });
+    expect(result.found).toBe(true);
+    expect(result.cycle).toBeDefined();
+    expect(result.cycle!.length).toBe(1);
+    expect(result.cycle![0]!.move).toEqual({ t: "bank" });
+    expect(result.scoreDelta).toBeGreaterThan(0); // a real, growing gain each iteration — not the streak-0 zero-gain shape
+  }, 15_000);
+
+  it("does NOT flag a BOUNDED legal no-op (same streak-0-bank shape, but this one also costs one unit of the reveal budget) — bounded is not a farm, even though a single repeat looks identical to the unbounded case", () => {
+    // Contrast case (the finding's "verified clean in the over-fire direction"): reuses the
+    // exact bank-legal-at-streak-0/zero-delta shape from createGrindBrokenMineRun, but this
+    // variant also decrements revealsLeft each time, so it can only repeat `budget` times
+    // before `bank` becomes illegal again (this mutant's own isLegal gates it on
+    // revealsLeft > 0). A tiny budget (3) guarantees it runs out long before any reasonable
+    // confirmation count — proving the fix's repeatability check isn't satisfied by "happened
+    // to repeat a few times", only by "keeps being legal indefinitely". maxCycleLength: 1
+    // keeps this fast (no need to search deeper than the single self-referential move).
+    const engine = createGrindBoundedStreakZeroBankMineRun({ width: 5, height: 5, mines: 5, budget: 3 });
+    const result = grindProbe(engine, {
+      startSeeds: pairedSeeds("grind-bounded-noop", 3),
+      maxCycleLength: 1,
+      walkLength: 0,
+    });
+    expect(result.found).toBe(false);
   }, 15_000);
 });
 
