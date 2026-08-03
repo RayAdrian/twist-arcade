@@ -1,8 +1,16 @@
-// packages/harness/test/fixtures/twin-track.ts — a tiny hand-built ACYCLIC 2-player fixture
-// built to exercise retrograde.ts's LOSS-by-countdown machinery (review Note 7), which corridor
-// alone never exercises: corridor's only labeled values are WIN (pos=3) and draw-residue
-// (pos=0/1/2) — nothing in it is ever proven LOSS, so the "every child must be proven a loss
-// before the parent is" countdown path (retrograde.ts:143-145) has no test pinning it directly.
+// packages/harness/test/fixtures/twin-track.ts — a tiny hand-built 2-player fixture built to
+// exercise retrograde.ts's LOSS-by-countdown machinery (review Note 7), which corridor alone
+// never exercises: corridor's only labeled values are WIN (pos=3) and draw-residue (pos=0/1/2) —
+// nothing in it is ever proven LOSS, so the "every child must be proven a loss before the parent
+// is" countdown path (retrograde.ts:143-145) has no test pinning it directly.
+//
+// NOT acyclic, deliberately: (pos=2, turn=0) --left--> (pos=1, turn=1) --right--> (pos=2, turn=0)
+// is a 2-cycle straight back to the root (and its turn=1 mirror the same way). The hand-computed
+// values below are correct either way — retrograde's countdown only needs every child PROVEN
+// before it decrements the parent, and cycling back through an already-enqueued node is exactly
+// the case the countdown must not get confused by. A reader should take that as this fixture
+// arguably being the STRONGER exercise of the countdown path, not a bug: reword any future edit
+// of this comment accordingly rather than re-asserting acyclicity.
 //
 // THE GAME: a 5-cell track, positions 0..4, BOTH ends win immediately for whoever just moved
 // onto them (unlike corridor, which has exactly one winning end) — hence "twin track". Turns
