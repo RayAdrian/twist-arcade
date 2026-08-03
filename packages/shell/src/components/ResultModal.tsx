@@ -26,6 +26,12 @@ export interface ResultModalProps {
   textureLine?: string;
   /** The game's shareArtifact() output — also displayed as the move-timeline preview. */
   artifactBody: string;
+  /** The FULL composed share text (title + result phrase + artifactBody + daily/restart
+   *  decoration + url — the exact text a successful share would have sent), shown in the
+   *  share-failed fallback (I4). Deliberately NOT just `artifactBody`: the player should be
+   *  able to copy/share the same thing a working share button would have, not merely the
+   *  game's own move-timeline fragment in isolation. */
+  shareFallbackText: string;
   /** Exactly one suggestion, or null when there is no other game in the registry (§8.4). */
   nextTwist: GameManifest | null;
   /** Canonical path to `nextTwist` (e.g. `/play/{id}`) — rendered as a REAL `<a href>` (C4: this
@@ -55,6 +61,7 @@ export function ResultModal({
   resultText,
   textureLine,
   artifactBody,
+  shareFallbackText,
   nextTwist,
   nextTwistHref,
   onRematch,
@@ -137,12 +144,16 @@ export function ResultModal({
             {shareState.kind === "failed" && (
               <div role="status" className="mt-1 text-center text-sm text-ink-muted">
                 <p>Couldn&apos;t share — long-press to copy</p>
-                <input
+                {/* I4: the FULL composed text (title, result, url, daily/restart lines), not
+                 *  just the game's own artifactBody fragment — a <textarea> (not <input>) so
+                 *  every line is actually visible, not squished/scrolled in a single-line box. */}
+                <textarea
                   readOnly
-                  value={artifactBody}
+                  value={shareFallbackText}
                   aria-label="Share text"
+                  rows={shareFallbackText.split("\n").length}
                   onFocus={(e) => e.currentTarget.select()}
-                  className="mt-1 w-full rounded border border-ink-muted bg-paper px-2 py-1 text-center text-ink"
+                  className="mt-1 w-full resize-none rounded border border-ink-muted bg-paper px-2 py-1 text-center text-ink"
                 />
               </div>
             )}

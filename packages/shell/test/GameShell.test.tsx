@@ -229,6 +229,59 @@ describe("GameShell — result modal", () => {
     const link = await screen.findByRole("link", { name: /Next:.*Fixture Secret Pick/ });
     expect(link).toHaveAttribute("href", `/play/${secretPickManifest.id}`);
   });
+
+  it("Share degrades to the failed state instead of crashing when the game's own shareArtifact() body is malformed (I4)", async () => {
+    // A >7-total-line shareArtifact() body is a bug in a GAME's presentation, not something the
+    // player caused — composeShareArtifact() throws ShareFrameTooLongError for it. Uncaught,
+    // this crashed the Share button (an unhandled promise rejection, no UI feedback at all).
+    const overLongPresentation = {
+      ...tttDefinition.presentation,
+      shareArtifact: () => "l1\nl2\nl3\nl4\nl5\nl6", // 6 lines + header + url > 7 total
+    };
+    const registryEntry: RegistryEntry = {
+      manifest: tttManifest,
+      async loadEngine() {
+        return tttDefinition.engine;
+      },
+      async loadPresentation() {
+        return overLongPresentation;
+      },
+    };
+    render(
+      <GameShell
+        gameId={tttManifest.id}
+        registryEntry={registryEntry}
+        manifests={[tttManifest]}
+        mode="solo-bot"
+        botDriver={scriptedBotDriver([{ cell: 3 }, { cell: 5 }])}
+      />
+    );
+    await waitFor(() => expect(screen.getAllByRole("gridcell").length).toBe(9));
+
+    async function clickCell(index: number) {
+      const cell = screen.getAllByRole("gridcell")[index]!;
+      await act(async () => {
+        cell.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+        cell.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 0, clientY: 0 }));
+      });
+    }
+    await clickCell(0);
+    await waitFor(() => expect(screen.getAllByRole("gridcell")[3]?.textContent).toBe("O"));
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    await clickCell(1);
+    await waitFor(() => expect(screen.getAllByRole("gridcell")[5]?.textContent).toBe("O"));
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    await clickCell(2);
+
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getByRole("button", { name: /Share/ })).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: /Share/ }));
+
+    await waitFor(() => expect(screen.getByText(/Couldn't share.*long-press to copy/)).toBeInTheDocument());
+    // Falls back to at least the raw artifact body (composeShareArtifact itself couldn't be
+    // built at all) — the textarea must still show SOMETHING, never be empty.
+    expect(screen.getByRole("textbox", { name: "Share text" })).toHaveValue("l1\nl2\nl3\nl4\nl5\nl6");
+  });
 });
 
 describe("GameShell — bot driver failure shows a retryable error, never a silent hang (C2)", () => {

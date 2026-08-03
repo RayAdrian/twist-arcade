@@ -22,6 +22,8 @@ const nextTwist: GameManifest = {
   difficultyTiers: [],
 };
 
+const fullShareText = "Fixture Tic-Tac-Toe — You won\n❌⭕❌⭕❌💨⭕❌🎯\nhttps://example.com/play/fixture-ttt";
+
 function baseProps(overrides: Partial<React.ComponentProps<typeof ResultModal>> = {}) {
   return {
     open: true,
@@ -33,6 +35,7 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof ResultModal>> 
     onNextTwistClick: vi.fn(),
     onShare: vi.fn().mockResolvedValue("copied"),
     onOpenChange: vi.fn(),
+    shareFallbackText: fullShareText,
     ...overrides,
   };
 }
@@ -106,13 +109,20 @@ describe("ResultModal", () => {
     expect(screen.queryByText("Copied")).toBeNull();
   });
 
-  it("shows the long-press-to-copy error text with a selectable artifact on share failure", async () => {
+  it("shows the long-press-to-copy error text with the FULL composed share text (not just artifactBody) in a multi-line, readonly textarea on share failure (I4)", async () => {
     const user = userEvent.setup();
     const onShare = vi.fn().mockResolvedValue("failed");
     render(<ResultModal {...baseProps({ onShare })} />);
     await user.click(screen.getByRole("button", { name: /Share/ }));
     await waitFor(() => expect(screen.getByText(/Couldn't share.*long-press to copy/)).toBeInTheDocument());
-    expect(screen.getByDisplayValue(/❌⭕❌⭕❌💨⭕❌🎯/)).toBeInTheDocument();
+
+    const fallback = screen.getByRole("textbox", { name: "Share text" });
+    expect(fallback.tagName).toBe("TEXTAREA");
+    expect(fallback).toHaveAttribute("readonly");
+    // The FULL composed text (title, result, url) must be present, not merely the game's own
+    // move-timeline artifact body in isolation — the player should be able to copy/share the
+    // exact same thing a successful share would have sent.
+    expect(fallback).toHaveValue(fullShareText);
   });
 
   it("calls onOpenChange(false) on Escape", async () => {

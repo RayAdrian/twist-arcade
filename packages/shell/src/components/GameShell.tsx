@@ -18,7 +18,7 @@ import type { Json, PlayerId } from "@twist-arcade/engine";
 import { useGame, type DailyOptions, type Mode } from "../useGame";
 import type { TurnPhase } from "../announcer";
 import { stubBotDriver, type BotDriver, type TierId } from "../bot-driver";
-import { composeShareArtifact, invokeShare } from "../share-frame";
+import { composeShareArtifact, invokeShare, type ShareOutcome } from "../share-frame";
 import { pickNextTwist } from "../next-twist";
 import { moveToCellId } from "../cell-id";
 import { BoardShell } from "./BoardShell";
@@ -168,6 +168,10 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
   const [howOpen, setHowOpen] = useState(false);
   const [resultModalOpen, setResultModalOpen] = useState(false);
   const [recentlyShownId, setRecentlyShownId] = useState<string | undefined>(undefined);
+  // I4: best-effort text for ResultModal's share-failed fallback — set on every Share attempt
+  // (success or failure) so the textarea always has SOMETHING sensible to show if the player
+  // later needs it.
+  const [shareFallbackText, setShareFallbackText] = useState("");
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
   const isDark = useMediaQuery("(prefers-color-scheme: dark)");
 
@@ -223,17 +227,36 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
             ? `${game.status.scores[humanSeat ?? 0] ?? 0} points`
             : "";
 
-  async function handleShare() {
-    const artifactBody = presentation.shareArtifact(game.history, game.view);
-    const text = composeShareArtifact({
-      title: manifest.title,
-      resultPhrase: resultText,
-      artifactBody,
-      url: shareUrl,
-      ...(daily ? { daily: { dayNumber: daily.dayNumber, ...(daily.par !== undefined ? { par: daily.par } : {}) } } : {}),
-      ...(game.restartCount > 0 ? { restarts: game.restartCount } : {}),
-    });
-    return invokeShare(text);
+  // Minor: previously recomputed on every render (once inline in the ResultModal JSX prop
+  // below) AND again inside handleShare on every Share click — memoized so it's computed once
+  // per actual (history, view) change instead, and shared by both.
+  const artifactBody = useMemo(
+    () => presentation.shareArtifact(game.history, game.view),
+    [presentation, game.history, game.view]
+  );
+
+  async function handleShare(): Promise<ShareOutcome> {
+    try {
+      const text = composeShareArtifact({
+        title: manifest.title,
+        resultPhrase: resultText,
+        artifactBody,
+        url: shareUrl,
+        ...(daily ? { daily: { dayNumber: daily.dayNumber, ...(daily.par !== undefined ? { par: daily.par } : {}) } } : {}),
+        ...(game.restartCount > 0 ? { restarts: game.restartCount } : {}),
+      });
+      setShareFallbackText(text);
+      return await invokeShare(text);
+    } catch {
+      // I4: composeShareArtifact() throws ShareFrameTooLongError for a malformed (>7-line)
+      // shareArtifact() body — a bug in a GAME's presentation, not something the player caused.
+      // Uncaught, this crashed the Share button (an unhandled rejection with no UI feedback at
+      // all). Degrade to the same "failed" state a real share/clipboard failure already has, so
+      // there's still a working fallback rather than a dead button — falling back further to
+      // just the raw artifact body (rather than nothing) since the full text couldn't be built.
+      setShareFallbackText(artifactBody);
+      return "failed";
+    }
   }
 
   // C4: GameShell previously built this onClick itself with no navigation prop at all, so no
@@ -358,7 +381,8 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
       <ResultModal
         open={resultModalOpen}
         resultText={resultText}
-        artifactBody={presentation.shareArtifact(game.history, game.view)}
+        artifactBody={artifactBody}
+        shareFallbackText={shareFallbackText || artifactBody}
         nextTwist={nextTwist}
         nextTwistHref={nextTwistHref}
         onRematch={game.rematch}
