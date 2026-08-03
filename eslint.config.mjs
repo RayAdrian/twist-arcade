@@ -27,6 +27,45 @@ const purityRules = {
   ],
 };
 
+// Board-path heavy-animation boundary (orchestrator directive 2026-08-03, architecture-lens
+// §5): "Motion One or plain CSS over Framer Motion for the hot path... avoid inside per-cell
+// rendering." ReactBits-sourced polish is welcome in CHROME (ResultModal, GameCard, the library
+// home, page/route transitions, empty states) precisely because motion there carries no game
+// state — it is NOT welcome on the board, where ux-lens §9's rule ("every animation must
+// restate a state change a static encoding already shows") is what makes `prefers-reduced-
+// motion` safe. A ReactBits effect that becomes the only carrier of a state change is a bug,
+// however good it looks — so this is enforced structurally, not left as a comment: any board-
+// path file (BoardShell/Cell/board-context/CalloutLayer/CountdownBadge, effects-map.ts, and
+// every game's `games/*/ui/**`) is statically forbidden from importing framer-motion or gsap,
+// full stop. Motion One (~4kB) and plain CSS remain the only motion options in those files.
+const boardPathAnimationBoundary = {
+  "no-restricted-imports": [
+    "error",
+    {
+      paths: [
+        {
+          name: "framer-motion",
+          message:
+            "Framer Motion (~30kB) is banned on the board path (architecture-lens §5). It is welcome in chrome " +
+            "(ResultModal, GameCard, the library home, transitions) — move this import there, or use Motion One / plain CSS here.",
+        },
+        {
+          name: "gsap",
+          message:
+            "GSAP is banned on the board path (architecture-lens §5) — many ReactBits components pull it in. It is " +
+            "welcome in chrome; move this effect there, or use Motion One / plain CSS on the board.",
+        },
+      ],
+      patterns: [
+        {
+          group: ["gsap/*"],
+          message: "GSAP is banned on the board path (architecture-lens §5). See the framer-motion/gsap restriction above.",
+        },
+      ],
+    },
+  ],
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -44,6 +83,19 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
     },
+  },
+  {
+    files: [
+      "packages/shell/src/components/BoardShell.tsx",
+      "packages/shell/src/components/Cell.tsx",
+      "packages/shell/src/components/board-context.tsx",
+      "packages/shell/src/components/CalloutLayer.tsx",
+      "packages/shell/src/components/CountdownBadge.tsx",
+      "packages/shell/src/effects-map.ts",
+      "games/**/ui/**/*.tsx",
+      "games/**/ui/**/*.ts",
+    ],
+    rules: boardPathAnimationBoundary,
   },
   {
     // Purity boundary: the engine package and every game package.
