@@ -132,7 +132,12 @@ const registrySplittingBoundary = {
 // third, explicitly-merged block declared after BOTH boardPathAnimationBoundary and
 // registrySplittingBoundary below, so it is the one block whose `no-restricted-imports` value
 // actually governs these six files, and that value is a union of both option sets.
-const BOARD_PATH_FILES = [
+// Exported (not just module-local) so packages/shell/test/eslint-config.test.ts can assert
+// this list against its own independently-hardcoded expectation (stage-6 re-review C1: a self
+// -test that only iterates whatever this array currently contains would silently shrink its
+// own coverage the moment an entry is dropped from it — the export lets the test catch that
+// drift explicitly instead of just testing fewer files).
+export const BOARD_PATH_FILES = [
   "packages/shell/src/components/BoardShell.tsx",
   "packages/shell/src/components/Cell.tsx",
   "packages/shell/src/components/board-context.tsx",
