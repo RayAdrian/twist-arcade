@@ -10,7 +10,9 @@
   },
   "scripts": {
     "typecheck": "tsc -b --pretty false",
-    "test": "vitest run"
+    "test": "vitest run",
+    "certify": "tsx solver/run-certify.mts",
+    "calibrate": "tsx solver/run-calibrate.mts"
   },
   "dependencies": {
     "@twist-arcade/engine": "workspace:*",
@@ -23,8 +25,14 @@
     "react": "^19.0.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
     "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
     "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tsx": "^4.23.1",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   }
