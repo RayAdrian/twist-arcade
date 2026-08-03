@@ -38,4 +38,43 @@ describe("AriaAnnouncer", () => {
     const { container } = render(<AriaAnnouncer polite="Your move." assertive="" />);
     expect(await axe(container)).toHaveNoViolations();
   });
+
+  describe("forced mutation for a repeated identical announcement (I7)", () => {
+    it("mutates the DOM text when the SAME polite string is announced again via a new `token`", () => {
+      const tokenA = {};
+      const tokenB = {};
+      const { rerender } = render(<AriaAnnouncer polite="Your move." assertive="" token={tokenA} />);
+      const region = screen.getByRole("status");
+      const firstContent = region.textContent;
+      expect(firstContent).toBe("Your move.");
+
+      // A genuinely NEW announcement event (useGame hands AriaAnnouncer a fresh `announcement`
+      // object per event) with the identical logical text — a naive re-render would leave the
+      // DOM text byte-for-byte unchanged, and a live region's MutationObserver-based AT support
+      // never re-announces unchanged text. `token` changing is the caller's signal that this IS
+      // a new event, distinct from an unrelated parent re-render with the same props.
+      rerender(<AriaAnnouncer polite="Your move." assertive="" token={tokenB} />);
+      const secondContent = region.textContent;
+
+      expect(secondContent).not.toBe(firstContent);
+      // Still logically the same phrase once the forced-mutation marker is stripped — this must
+      // never change what a screen reader actually SPEAKS, only that a mutation occurred at all.
+      expect(secondContent?.replace(/\u200b/g, "")).toBe("Your move.");
+    });
+
+    it("does NOT mutate when the token is unchanged (no spurious re-announcement on an unrelated re-render)", () => {
+      const token = {};
+      const { rerender } = render(<AriaAnnouncer polite="Your move." assertive="" token={token} />);
+      const region = screen.getByRole("status");
+      const firstContent = region.textContent;
+
+      rerender(<AriaAnnouncer polite="Your move." assertive="" token={token} />);
+      expect(region.textContent).toBe(firstContent);
+    });
+
+    it("without `token` at all, behaves exactly as before (backward compatible — existing callers/tests rely on exact text)", () => {
+      render(<AriaAnnouncer polite="Your move." assertive="" />);
+      expect(screen.getByText("Your move.")).toBeInTheDocument();
+    });
+  });
 });

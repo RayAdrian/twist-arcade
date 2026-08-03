@@ -403,7 +403,15 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
         onOpenChange={setResultModalOpen}
       />
 
-      <AriaAnnouncer polite={game.announcement.polite ?? ""} assertive={game.announcement.assertive ?? ""} />
+      {/* I7: `token={game.announcement}` — useGame hands back a FRESH object literal every time
+       *  it composes a new announcement (even when the resulting text repeats verbatim), so its
+       *  identity is exactly the "this is a genuinely new event" signal AriaAnnouncer needs to
+       *  force a live-region mutation for a repeated identical phrase. */}
+      <AriaAnnouncer
+        polite={game.announcement.polite ?? ""}
+        assertive={game.announcement.assertive ?? ""}
+        token={game.announcement}
+      />
     </div>
   );
 }
