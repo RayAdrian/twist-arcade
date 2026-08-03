@@ -34,4 +34,33 @@ describe("stableStringify", () => {
     expect(stableStringify("x")).toBe('"x"');
     expect(stableStringify(true)).toBe("true");
   });
+
+  // Gap G-4 (M2 entry checklist, platform-corrections.md): NaN/Infinity are outside
+  // JSON-plain semantics but `JSON.stringify` silently maps them to the string "null" —
+  // colliding with a real `null` value and breaking canonical-form uniqueness (two states
+  // differing only by "field is NaN" vs "field is null" would hash identically). Must throw,
+  // not silently null-ify. Tightening this early (before any game generates real states)
+  // cannot orphan a valid replay: anything containing NaN/Infinity was never JSON-plain to
+  // begin with, so no legitimate stored state could have relied on the old silent behavior.
+  it("throws on NaN instead of silently encoding it as null (Gap G-4)", () => {
+    expect(() => stableStringify(NaN)).toThrow(/NaN|finite/i);
+  });
+
+  it("throws on Infinity instead of silently encoding it as null (Gap G-4)", () => {
+    expect(() => stableStringify(Infinity)).toThrow(/Infinity|finite/i);
+  });
+
+  it("throws on -Infinity instead of silently encoding it as null (Gap G-4)", () => {
+    expect(() => stableStringify(-Infinity)).toThrow(/Infinity|finite/i);
+  });
+
+  it("throws when a non-finite number is nested inside an object or array", () => {
+    expect(() => stableStringify({ a: NaN })).toThrow(/finite/i);
+    expect(() => stableStringify([1, Infinity, 3])).toThrow(/finite/i);
+  });
+
+  it("still accepts -0 (finite) and stringifies it via normal JSON semantics", () => {
+    expect(() => stableStringify(-0)).not.toThrow();
+    expect(stableStringify(-0)).toBe("0");
+  });
 });

@@ -102,7 +102,15 @@ export interface GameEngine<
   encode(state: S): string;
   decode(encoded: string): S;
 
-  /** Optional per-game eval for minimax/greedy; MCTS needs nothing. Positive = good for player. */
+  /**
+   * Optional per-game eval for minimax/greedy; MCTS needs nothing. Positive = good for player.
+   * Only SIGN and ORDERING are contractual — magnitude/range is NOT: implementations must not
+   * rely on any particular scale (e.g. "already commensurate with ±1"), because nothing
+   * enforces one. Consumers that need a bounded value (packages/bots/src/search-utils.ts's
+   * valueOfStatus, used by mcts/flat-mc/beam) squash the result themselves (`Math.tanh`) rather
+   * than trusting callers to pre-scale it — do not write a heuristic whose correctness depends
+   * on its raw magnitude surviving unchanged.
+   */
   heuristic?(state: S, player: PlayerId): number;
 
   /**

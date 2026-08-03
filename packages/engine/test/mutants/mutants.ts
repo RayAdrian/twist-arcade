@@ -465,3 +465,46 @@ export function fogEffectsLeakSecretExtractor(state: unknown, _player: PlayerId)
   const s = state as EffectsLeakState;
   return s.phase === "revealed" ? [] : [String(s.secret)];
 }
+
+// -----------------------------------------------------------------------------------------
+// 12. encode() is constant — collapses every distinct state to the same hash. Plan §3:
+//    "solvers hash on this" — a collision-prone encode silently mis-values every future
+//    solve, yet nothing in the ORIGINAL kit checked injectivity (M2 entry checklist Gap G-2:
+//    encode(decode(encode(s))) === encode(s) is trivially satisfied by a constant encode,
+//    and checkDeterminism compares trajectories via encode() too, so a constant encode also
+//    passes determinism vacuously — every state "matches" every other state).
+// -----------------------------------------------------------------------------------------
+export const mutantEncodeConstant: GameEngine<TTTState, TTTMove, TTTState> = {
+  ...classicTicTacToe,
+  encode(_state) {
+    // BUG: ignores the state entirely.
+    return '{"constant":true}';
+  },
+  decode(_encoded) {
+    // Must still return SOMETHING structurally valid for encode/decode-driven checks to run
+    // at all; the empty board is as good as any fixed answer for a constant-encode mutant.
+    return { board: Array.from({ length: 9 }, () => null), turn: 0, lastEffects: [] };
+  },
+};
+
+// -----------------------------------------------------------------------------------------
+// 13. apply() mutates the `moves` Map argument — plan §3: apply "MUST NOT mutate input", and
+//    that covers ALL inputs, not just `state`. M2 entry checklist Gap G-9: the ORIGINAL
+//    checkPurity froze `state` (and the individual move VALUES placed into the map) via
+//    Object.freeze, but never froze — and cannot meaningfully freeze — the Map OBJECT itself:
+//    Object.freeze(aMap) does not stop aMap.set()/.clear()/.delete() because Map's storage
+//    lives in internal slots, not enumerable properties. An engine that mutates its `moves`
+//    argument used to sail through checkPurity undetected.
+// -----------------------------------------------------------------------------------------
+export const mutantMutatesMovesMap: GameEngine<TTTState, TTTMove, TTTState> = {
+  ...classicTicTacToe,
+  apply(state, moves, rng) {
+    const real = classicTicTacToe.apply(state, moves, rng);
+    // BUG: clears and rewrites the caller's `moves` map in place after computing a perfectly
+    // correct result — a purity violation on the SECOND parameter, not the first.
+    const mutableMoves = moves as Map<PlayerId, TTTMove>;
+    mutableMoves.clear();
+    mutableMoves.set(state.turn, { cell: -1 });
+    return real;
+  },
+};
