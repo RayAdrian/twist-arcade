@@ -1,8 +1,9 @@
 // packages/daily/src/era.ts — DailyBotRecord (plan §2.2): the pinned two-player daily
 // opponent, stored and versioned — never "whatever the Standard tier happens to be today".
 // `data/daily/era.json` (one entry per two-player game) is the review point for any change;
-// DY1's era-snapshot guard (test/guards/era-snapshot.test.ts) is what makes an edit without
-// a bumped `era` a build break rather than a silent retune.
+// DY1's era-snapshot guard (era-guard.ts, tested in test/era-guard.test.ts — should-fix 8: this
+// comment previously named a nonexistent test/guards/era-snapshot.test.ts) is what makes an edit
+// without a bumped `era` a build break rather than a silent retune.
 
 import type { PolicySpec, SearchBudget } from "@twist-arcade/game-spec";
 

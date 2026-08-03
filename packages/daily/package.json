@@ -17,13 +17,8 @@
     "guard:manifests": "tsx src/bin/verify-manifests.ts"
   },
   "dependencies": {
-    "@twist-arcade/engine": "workspace:*",
     "@twist-arcade/game-spec": "workspace:*",
-    "@twist-arcade/bots": "workspace:*",
     "@twist-arcade/shell": "workspace:*"
-  },
-  "peerDependencies": {
-    "react": "^19.0.0"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",

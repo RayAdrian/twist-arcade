@@ -5,7 +5,8 @@ import type { DailyBotRecord, EraFile } from "../src/era";
 // Plan §2.3, point 1: "Era snapshot test — a committed vitest snapshot of era.json. Any edit
 // fails CI unless the era number was bumped in the same diff and a line added to
 // data/daily/CHANGELOG.md. A bot change is thereby always a visible, reviewed event." This
-// module is the pure diff-comparison predicate behind that rule; scripts/check-era-changelog.mjs
+// module is the pure diff-comparison predicate behind that rule; src/bin/check-era-changelog.ts
+// (should-fix 8: this comment previously named a nonexistent scripts/check-era-changelog.mjs)
 // is the git-diff-driven CLI that feeds it real before/after era.json content.
 
 function bot(overrides: Partial<DailyBotRecord> = {}): DailyBotRecord {

@@ -1,7 +1,10 @@
 // packages/daily/src/immutability.ts — the manifest immutability guard (plan §2.3, point 2):
-// "CI diffs data/daily/*.json against main and hard-fails if any file whose day <= today-at-build
-// changes at all (byte-diff). Shipped days are frozen forever; era bumps apply only to
-// not-yet-shipped days."
+// "CI diffs COMMITTED CHANGES ON THIS BRANCH VS. THE BASE REF for data/daily/*.json and hard-
+// fails if any file whose day <= today-at-build changes at all (byte-diff). Shipped days are
+// frozen forever; era bumps apply only to not-yet-shipped days." (should-fix 8: spelled out
+// explicitly — "against main" alone was ambiguous about whether this is a working-tree diff or a
+// committed-history diff; it is the latter, `git diff <base>...HEAD`, exactly what src/bin/
+// check-daily-immutability.ts below runs.)
 //
 // This is the guard against the roadmap's standing risk "Daily bot retuned silently": if
 // `tier`/`budget.n`/`blunder`/`botsVersion`/`engineVersion`/`humanSeat`/the seed formula changed
@@ -9,8 +12,9 @@
 // silently incomparable with every other — nothing errors, the numbers just stop meaning
 // anything. This module turns that into a build break. The pure predicate lives here so it is
 // unit-testable (including a PLANTED VIOLATION, per this task's standing instruction) without
-// needing a real git checkout; scripts/check-daily-immutability.mjs is the thin CLI that feeds it
-// real `git diff` output.
+// needing a real git checkout; src/bin/check-daily-immutability.ts (should-fix 8: this comment
+// previously named a nonexistent scripts/check-daily-immutability.mjs) is the thin CLI that
+// feeds it real `git diff` output.
 
 export interface ImmutabilityViolation {
   day: string;

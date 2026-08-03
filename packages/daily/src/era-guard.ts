@@ -2,7 +2,8 @@
 // edit to data/daily/era.json must bump the changed entry's `era` AND touch
 // data/daily/CHANGELOG.md in the same diff — otherwise a bot retune is a silent, unreviewed
 // event, which is the exact failure this whole guard system exists to make structurally
-// impossible. scripts/check-era-changelog.mjs is the git-diff-driven CLI that feeds this pure
+// impossible. src/bin/check-era-changelog.ts (should-fix 8: this comment previously named a
+// nonexistent scripts/check-era-changelog.mjs) is the git-diff-driven CLI that feeds this pure
 // predicate real before/after era.json content plus whether CHANGELOG.md changed.
 
 import type { DailyBotRecord, EraFile } from "./era";

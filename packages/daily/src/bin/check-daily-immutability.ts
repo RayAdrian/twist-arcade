@@ -45,7 +45,15 @@ function parseArgs(argv: readonly string[]): { base: string; today: string } {
 function changedManifestDays(base: string): string[] {
   let out: string;
   try {
-    out = execFileSync("git", ["diff", "--name-only", `${base}...HEAD`, "--", "data/daily"], { encoding: "utf8", cwd: REPO_ROOT });
+    // --no-renames (should-fix 8): without it, git may detect a shipped day's manifest being
+    // DELETED while a near-identical new day's manifest is ADDED as a single RENAME — and
+    // --name-only then reports only the new path, silently omitting that the OLD (shipped, must-
+    // be-frozen) file was touched at all. Forcing add/delete pairs to stay separate is what makes
+    // every touched path in data/daily actually show up here.
+    out = execFileSync("git", ["diff", "--no-renames", "--name-only", `${base}...HEAD`, "--", "data/daily"], {
+      encoding: "utf8",
+      cwd: REPO_ROOT,
+    });
   } catch (err) {
     throw new Error(`check-daily-immutability: \`git diff\` against "${base}" failed — is the base ref fetched? (${(err as Error).message})`);
   }

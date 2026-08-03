@@ -20,7 +20,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { DAILY_EPOCH, addUTCDays } from "../day";
+import { DAILY_EPOCH, addUTCDays, isValidDailyDay } from "../day";
 import { proposeRotation, RotationError, type ScheduledDay } from "../rotation";
 import { LAUNCH_GAMES } from "../rotation-games";
 
@@ -74,6 +74,18 @@ function hasCertificate(gameId: string, day: string): boolean {
 
 function main(): void {
   const { days, start } = parseArgs(process.argv.slice(2));
+
+  // Should-fix 8: an unvalidated --start previously flowed straight into addUTCDays()/
+  // proposeRotation() — a typo'd date (or one that doesn't name a real calendar day, e.g.
+  // "2026-13-40") silently produced "NaN-NaN-NaN" downstream (Date.parse's leniency, per
+  // day.ts's own parseUTCDay comment) rather than failing loudly at the one place a human
+  // actually typed the value.
+  if (start !== undefined && !isValidDailyDay(start)) {
+    console.error(`schedule-cli: --start "${start}" is not a valid "yyyy-mm-dd" day at or after DAILY_EPOCH (${DAILY_EPOCH})`);
+    process.exitCode = 1;
+    return;
+  }
+
   const history = readHistory();
   const lastCommittedDay = history.length > 0 ? history[history.length - 1]!.day : undefined;
   const startDay = start ?? (lastCommittedDay ? addUTCDays(lastCommittedDay, 1) : DAILY_EPOCH);

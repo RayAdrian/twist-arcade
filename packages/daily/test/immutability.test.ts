@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { assertNoShippedManifestChanged, findImmutabilityViolations } from "../src/immutability";
 
-// Plan §2.3.2: "CI diffs data/daily/*.json against main and hard-fails if any file whose day
-// <= today-at-build changes at all (byte-diff). Shipped days are frozen forever; era bumps apply
-// only to not-yet-shipped days." This is the guard the task calls out by name as needing a
-// planted-violation demonstration, not just a unit test in isolation — see also
-// scripts/check-daily-immutability.mjs for the real git-diff-driven CLI this predicate backs,
-// and the final report for a live retune-and-watch-it-fail demonstration against real git history
-// in this worktree.
+// Plan §2.3.2: "CI diffs COMMITTED CHANGES ON THIS BRANCH VS. THE BASE REF for data/daily/*.json
+// and hard-fails if any file whose day <= today-at-build changes at all (byte-diff). Shipped days
+// are frozen forever; era bumps apply only to not-yet-shipped days." This is the guard the task
+// calls out by name as needing a planted-violation demonstration, not just a unit test in
+// isolation — see also src/bin/check-daily-immutability.ts (should-fix 8: this comment previously
+// named a nonexistent scripts/check-daily-immutability.mjs) for the real git-diff-driven CLI this
+// predicate backs, and the final report for a live retune-and-watch-it-fail demonstration against
+// real git history in this worktree.
 
 describe("immutability.ts — findImmutabilityViolations() / assertNoShippedManifestChanged()", () => {
   it("no violations when nothing changed", () => {

@@ -16,6 +16,8 @@
 // "solo-frequent" role bucket and the 14-day floor rather than hard-coding per-game-name
 // frequencies, so the policy stays game-agnostic (a future ninth game just picks a `role`).
 
+import { addUTCDays } from "./day";
+
 export type DailyKind = "vs-bot" | "solo-puzzle" | "solo-chase";
 
 export interface RotationGame {
@@ -49,14 +51,11 @@ export class RotationError extends Error {
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const SOLO_KINDS: ReadonlySet<DailyKind> = new Set(["solo-puzzle", "solo-chase"]);
 
-function addDays(day: string, n: number): string {
-  const ms = Date.parse(`${day}T00:00:00Z`) + n * MS_PER_DAY;
-  const d = new Date(ms);
-  return `${d.getUTCFullYear().toString().padStart(4, "0")}-${(d.getUTCMonth() + 1).toString().padStart(2, "0")}-${d
-    .getUTCDate()
-    .toString()
-    .padStart(2, "0")}`;
-}
+// Should-fix 8: this module used to carry its own hand-rolled addDays() duplicating day.ts's
+// addUTCDays() byte-for-byte — the same "yyyy-mm-dd" UTC arithmetic maintained in two places.
+// addUTCDays is used directly below instead; MS_PER_DAY stays local (daysSince() still needs the
+// raw millisecond constant for its own Date.parse-based diff, which isn't a day-adding operation
+// day.ts exposes a helper for).
 
 function dueThreshold(role: RotationGame["role"]): number {
   return role === "regular" ? 14 : 7;
@@ -80,14 +79,14 @@ export function proposeRotation(startDay: string, numDays: number, history: read
   // buffer with a hole in it) must not carry a stale adjacency constraint forward — only seed
   // prevGameId/prevKind when history's last day IS literally the day immediately before startDay.
   const lastHistoryEntry = history.length > 0 ? history[history.length - 1]! : undefined;
-  const adjacent = lastHistoryEntry !== undefined && addDays(lastHistoryEntry.day, 1) === startDay;
+  const adjacent = lastHistoryEntry !== undefined && addUTCDays(lastHistoryEntry.day, 1) === startDay;
   let prevGameId = adjacent ? lastHistoryEntry.gameId : null;
   let prevKind = adjacent ? lastHistoryEntry.kind : null;
 
   const result: ScheduledDay[] = [];
 
   for (let i = 0; i < numDays; i++) {
-    const day = addDays(startDay, i);
+    const day = addUTCDays(startDay, i);
 
     function daysSince(gameId: string): number {
       const last = lastPlayed.get(gameId);

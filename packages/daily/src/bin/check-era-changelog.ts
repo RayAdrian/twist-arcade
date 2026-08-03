@@ -53,7 +53,13 @@ function changelogChanged(base: string): boolean {
   // See REPO_ROOT's comment: a bare pathspec like CHANGELOG_PATH is resolved relative to cwd by
   // git, not the repo root — must pin cwd or this silently matches nothing when invoked from a
   // package subdirectory (as `pnpm --filter ... run guard:era-changelog` does).
-  const out = execFileSync("git", ["diff", "--name-only", `${base}...HEAD`, "--", CHANGELOG_PATH], { encoding: "utf8", cwd: REPO_ROOT });
+  // --no-renames (should-fix 8, same reasoning as check-daily-immutability.ts): a single-file
+  // pathspec can't itself BE renamed away silently the way a directory's contents could, but kept
+  // consistent with the sibling script rather than relying on that being the only reason it's safe.
+  const out = execFileSync("git", ["diff", "--no-renames", "--name-only", `${base}...HEAD`, "--", CHANGELOG_PATH], {
+    encoding: "utf8",
+    cwd: REPO_ROOT,
+  });
   return out.trim().length > 0;
 }
 

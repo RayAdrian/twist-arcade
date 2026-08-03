@@ -107,12 +107,6 @@ importers:
 
   packages/daily:
     dependencies:
-      '@twist-arcade/bots':
-        specifier: workspace:*
-        version: link:../bots
-      '@twist-arcade/engine':
-        specifier: workspace:*
-        version: link:../engine
       '@twist-arcade/game-spec':
         specifier: workspace:*
         version: link:../game-spec
