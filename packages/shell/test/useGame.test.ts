@@ -374,6 +374,34 @@ describe("useGame — bot driver failure exposes a retryable error, never a sile
   });
 });
 
+describe("useGame — undo re-dispatches the bot when the resulting state is the bot's turn (I2)", () => {
+  it("does not hang when undo rewinds all the way past the bot's own opening move (humanSeat: 1)", async () => {
+    const { result } = renderHook(() =>
+      useGame({
+        definition: tttDefinition,
+        mode: "solo-bot",
+        seed: "undo-i2-seed",
+        humanSeat: 1,
+        persist: false,
+        botDriver: scriptedBotDriver([{ cell: 0 }, { cell: 1 }]),
+      })
+    );
+
+    // Bot (seat 0) moves first automatically on mount — humanSeat is 1.
+    await waitFor(() => expect(result.current.moveCount).toBe(1));
+    expect(result.current.activeSeat).toBe(1);
+    expect(result.current.view.board[0]).toBe(0);
+
+    act(() => result.current.undo());
+
+    // Rewinds all the way to the initial setup state (there's nothing of the human's own to
+    // undo yet) — the bot must be re-dispatched from there, not leave the game awaiting a move
+    // nobody will ever submit.
+    await waitFor(() => expect(result.current.moveCount).toBe(1));
+    expect(result.current.view.board[1]).toBe(0); // the bot's second scripted move landed
+  });
+});
+
 describe("useGame — cancels the in-flight bot request on undo", () => {
   it("calls driver.cancel() with the pending requestId when undo() is invoked mid-flight", async () => {
     let capturedRequestId: string | undefined;

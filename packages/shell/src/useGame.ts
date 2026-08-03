@@ -518,6 +518,12 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
       firstOccurrence: null,
       announcement: {},
     });
+
+    // I2: undo can rewind all the way past the bot's own opening move (e.g. humanSeat !== 0),
+    // landing on a state where it's the BOT's turn again. Nothing else re-prompts it from
+    // here — applyMove/reset already do this after every transition they make; undo must too,
+    // or the game hangs awaiting a move nobody will ever submit.
+    dispatchRef.current(state, record);
   }
 
   function reset(): void {
