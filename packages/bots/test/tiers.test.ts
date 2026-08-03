@@ -214,7 +214,12 @@ describe("softmaxSample (the blunder mechanism's core, unit-tested in isolation)
 });
 
 describe("tierPolicy: blunder wrapper", () => {
-  it("epsilon 0 (or no blunder config) always plays the tree's top-visit move, deterministically", () => {
+  it("epsilon 0 (or no blunder config): same seed + same rollouts budget ⇒ identical move (determinism)", () => {
+    // A prior version of this test varied the DECISION rng across 8 iterations and only
+    // asserted `moves.size > 0` — unfalsifiable (true for any non-throwing policy, blundering
+    // or not) and titled "deterministically" without checking determinism at all. The actual,
+    // falsifiable determinism property — same seed twice must yield the identical move — is
+    // the same pattern mcts.test.ts's own "same seed + same rollouts budget" test already uses.
     const noBlunder: DifficultyTier = {
       id: "ruthless",
       policy: { kind: "mcts" },
@@ -225,25 +230,24 @@ describe("tierPolicy: blunder wrapper", () => {
     const policy = tierPolicy<TTTState, TTTMove>(noBlunder);
     const engine = classicTicTacToe;
     const state = engine.setup(2, rngFromSeed("tier-no-blunder"));
-    const moves = new Set<number>();
-    for (let i = 0; i < 8; i++) {
-      const { move } = policy.chooseMove({
-        engine,
-        state,
-        player: 0,
-        rng: rngFromSeed(`tier-no-blunder-decision-${i}`),
-        budget: { kind: "rollouts", n: 1 },
-        clock: fakeClock(),
-      });
-      moves.add(move.cell);
-    }
-    // Same STATE each time; only the search's internal exploration rng differs by seed, but
-    // the ROBUST-CHILD (highest-visit) selection at epsilon=0 should be stable enough across
-    // seeds at 100 rollouts on an empty board's opening move that we don't assert exact
-    // equality (search noise CAN shift which of several near-tied opening moves wins) — this
-    // test instead lives in the epsilon=1 comparison below, which is the property that
-    // actually matters: blunder rate is OBSERVABLE and controllable.
-    expect(moves.size).toBeGreaterThan(0);
+    const a = policy.chooseMove({
+      engine,
+      state,
+      player: 0,
+      rng: rngFromSeed("tier-no-blunder-decision"),
+      // tierPolicy ignores this — it always uses the tier's own declared budget.
+      budget: { kind: "rollouts", n: 1 },
+      clock: fakeClock(),
+    });
+    const b = policy.chooseMove({
+      engine,
+      state,
+      player: 0,
+      rng: rngFromSeed("tier-no-blunder-decision"),
+      budget: { kind: "rollouts", n: 1 },
+      clock: fakeClock(),
+    });
+    expect(a.move).toEqual(b.move);
   });
 
   it("a high epsilon visibly changes the move distribution relative to epsilon 0, across many seeds", () => {
