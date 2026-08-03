@@ -187,11 +187,15 @@ describe("alwaysSafeVsStrongRatio — real engine vs. a planted density violatio
     expect(ratio).toBeGreaterThanOrEqual(0.95);
   }, 30_000);
 
-  it("sanity: the SHIPPED default-wiring roster.strong (samples=1, random rollout) still runs end-to-end here", () => {
+  it("sanity: the SHIPPED default-wiring roster.strong still runs end-to-end here", () => {
     // Not a gate assertion (see this file's top-of-suite comment for why) — agents.ts's own
     // view-honesty is already covered by agents.test.ts's C1 suite. This only confirms
     // buildSoloRoster(engine).strong runs without throwing, so a future reader doesn't
     // mistake this file's greedy-rollout agent for a replacement of the shipped roster.
+    // UPDATE (platform-corrections.md C6): as of this milestone, the shipped wiring itself is
+    // K-sample (STRONG_HIDDEN_INFO_SAMPLES) determinized flat-MC with a GREEDY rollout — see
+    // "Always-Safe validation against the SHIPPED roster.strong" below for the gate re-run this
+    // fix was actually FOR.
     const engine = createAlwaysSafeHealthyMineRun();
     const strong = runSoloAgentOverSeeds(engine, buildSoloRoster(engine).strong, pairedSeeds("sanity", 2), {
       budget: { kind: "rollouts", n: 50 },
@@ -199,4 +203,61 @@ describe("alwaysSafeVsStrongRatio — real engine vs. a planted density violatio
     });
     expect(strong.scores).toHaveLength(2);
   }, 15_000);
+});
+
+// ---------------------------------------------------------------------------------------
+// Always-Safe validation against the SHIPPED roster.strong (platform-corrections.md C6's
+// actual close-out). The two suites above validate the Always-Safe GATE MECHANISM using a
+// test-local, K-sample, greedy-rollout Strong built by hand inside this file — proving the
+// gate CAN separate a healthy Mine Run from a degenerate one when given a strong-enough
+// yardstick. C6's finding was that the SHIPPED wiring (agents.ts's buildSoloRoster/
+// resolveStrongPolicy, before this milestone: determinize(flatMonteCarloPolicy()) at the
+// default samples=1, with flatMonteCarloPolicy's rollout uniform-random) could NOT reproduce
+// that separation — a weak Strong collapses the ratio toward 1 on a good game (false fail) and
+// stops catching a genuinely degenerate one once any threshold is loosened to compensate
+// (false pass). This suite re-runs the identical healthy/broken comparison against
+// `buildSoloRoster(engine).strong` itself and confirms the SAME separation holds with the
+// real, shipped agent — not a stand-in.
+//
+// The shipped agent is now `determinizedFlatMonteCarloPolicy` (packages/bots) with a greedy
+// rollout, wired directly (not through `determinize()`'s generic per-world-vote wrapping —
+// see agents.ts's `resolveStrongPolicy`/`buildSoloRoster` doc comments for why that shape
+// under-delivered even AFTER adding a greedy rollout: it draws K worlds ONCE per decision and
+// majority-votes full per-world re-searches, which lets a rare catastrophic world get
+// out-voted). Two empirical findings from tuning this suite, worth recording:
+//   1. A `rollouts` budget of ~60 (a handful of samples per candidate at this board's ~30-cell
+//      branching factor) reproduced the exact same ratio as a naive majority-vote wrapper —
+//      not because the averaging fix didn't matter (packages/bots/test/
+//      determinized-flat-mc.test.ts proves it does, on a fixture designed to show it), but
+//      because at low N the ROOT decision (the widest branching factor, ~36 candidates) gets
+//      only ~1 sample each — too little for the averaging to out-perform a vote at all.
+//   2. Raising the budget to 400 (~10+ samples per candidate even at the widest branching
+//      factor) is what actually produced separation — confirming the bottleneck was sample
+//      count at the root, not the aggregation architecture in isolation. Both mattered.
+describe("alwaysSafeVsStrongRatio — against the SHIPPED buildSoloRoster(engine).strong (C6 close-out)", () => {
+  const seeds = pairedSeeds("shipped-strong-gate", 20);
+  const moveCapShipped = 30;
+  const budget = { kind: "rollouts" as const, n: 400 };
+
+  it("healthy density (~22%): Always-Safe stays below the 0.95 hard-fail line against the shipped Strong", () => {
+    const engine = createAlwaysSafeHealthyMineRun();
+    const strong = runSoloAgentOverSeeds(engine, buildSoloRoster(engine).strong, seeds, {
+      budget,
+      moveCap: moveCapShipped,
+    });
+    const alwaysSafe = runAlwaysSafeProbe(engine, mineRunSafeMove, seeds, { moveCap: moveCapShipped });
+    const ratio = alwaysSafeVsStrongRatio(alwaysSafe, strong);
+    expect(ratio).toBeLessThan(0.95);
+  }, 120_000);
+
+  it("planted violation — near-zero density (~5.5%): Always-Safe closes to >= 0.95 of the shipped Strong (the risk is fake)", () => {
+    const engine = createAlwaysSafeBrokenMineRun();
+    const strong = runSoloAgentOverSeeds(engine, buildSoloRoster(engine).strong, seeds, {
+      budget,
+      moveCap: moveCapShipped,
+    });
+    const alwaysSafe = runAlwaysSafeProbe(engine, mineRunSafeMove, seeds, { moveCap: moveCapShipped });
+    const ratio = alwaysSafeVsStrongRatio(alwaysSafe, strong);
+    expect(ratio).toBeGreaterThanOrEqual(0.95);
+  }, 120_000);
 });

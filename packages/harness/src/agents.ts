@@ -11,14 +11,18 @@ import type { GameEngine, Json, PlayerId, Rng, WithEffects } from "@twist-arcade
 import type { SearchBudget } from "@twist-arcade/game-spec";
 import {
   beamPolicy,
+  determinizedFlatMonteCarloPolicy,
   deriveView,
   determinize,
   flatMonteCarloPolicy,
+  greedyMoveSelector,
   greedyOnlyPolicy,
   randomPolicy,
   type Clock,
+  type DeterminizeOptions,
   type Policy,
   type SearchStats,
+  type ViewPolicy,
 } from "@twist-arcade/bots";
 
 /** Uniform agent surface the runner drives — identical whether the underlying game is
@@ -41,14 +45,20 @@ export interface SoloAgent<S extends WithEffects, M extends Json> {
  *  `meta.hiddenInformation === true`, routes through `determinize()` so the policy only ever
  *  sees self-generated worlds consistent with `playerView(state, seat)` — never the real
  *  secret. For perfect-info games, `playerView` is the identity (engine contract, testkit-
- *  asserted), so handing the policy the real state loses nothing. */
+ *  asserted), so handing the policy the real state loses nothing.
+ *
+ *  `determinizeOpts` (default `{}` — `determinize()`'s own default of 1 sample) is forwarded
+ *  to `determinize()` only on the hidden-info path; it is inert for perfect-info games. Used by
+ *  `buildSoloRoster` to give hidden-info Strong more than one sampled world (platform-
+ *  corrections.md C6) without changing Random/Greedy's single-sample behavior. */
 export function buildAgent<S extends WithEffects, M extends Json, V extends WithEffects>(
   engine: GameEngine<S, M, V>,
   base: Policy<S, M>,
-  name: string
+  name: string,
+  determinizeOpts: DeterminizeOptions = {}
 ): SoloAgent<S, M> {
   if (engine.meta.hiddenInformation) {
-    const viewPolicy = determinize<S, M, V>(base);
+    const viewPolicy = determinize<S, M, V>(base, determinizeOpts);
     return {
       name,
       chooseMove({ state, player, rng, budget, clock }) {
@@ -65,6 +75,27 @@ export function buildAgent<S extends WithEffects, M extends Json, V extends With
   };
 }
 
+/** Wraps a `ViewPolicy<S,M,V>` (a policy whose `chooseMove` never receives a real state at
+ *  all, only `deriveView(engine, state, player)`'s branded output) into a `SoloAgent<S,M>`.
+ *  Structurally stronger than routing through `buildAgent`/`determinize()`: a `ViewPolicy` here
+ *  is handed the derived view directly, with no adapter in between that could reintroduce a
+ *  state parameter. Used for hidden-info Strong (platform-corrections.md C6's close-out) —
+ *  `determinizedFlatMonteCarloPolicy` IS a `ViewPolicy` already, not a `Policy<S,M>` that needs
+ *  `determinize()`'s generic (and, for this shape, too-lossy) wrapping. */
+export function buildViewPolicyAgent<S extends WithEffects, M extends Json, V extends WithEffects>(
+  engine: GameEngine<S, M, V>,
+  viewPolicy: ViewPolicy<S, M, V>,
+  name: string
+): SoloAgent<S, M> {
+  return {
+    name,
+    chooseMove({ state, player, rng, budget, clock }) {
+      const view = deriveView(engine, state, player);
+      return viewPolicy.chooseMove({ engine, view, player, rng, budget, clock });
+    },
+  };
+}
+
 export class StrongPolicyUnavailableError extends Error {
   constructor(gameId: string) {
     super(
@@ -77,15 +108,50 @@ export class StrongPolicyUnavailableError extends Error {
   }
 }
 
+/** Ply cap for each of hidden-info Strong's greedy rollouts. Mirrors the size used to validate
+ *  the Always-Safe gate itself (packages/harness/test/probes-solo.test.ts's test-local
+ *  greedy-rollout Strong) — generous relative to a score-chase's typical run length (mine-
+ *  run.md §4.6: median ~65-70 decisions) while still bounding a single decision's cost. */
+const STRONG_HIDDEN_INFO_ROLLOUT_CAP_PLIES = 60;
+
+/** Per-candidate world-sample count for hidden-info Strong, when the caller's budget is
+ *  `deadlineMs` (mine-run.md §4.4's "Decided mechanism": "for each candidate move, sample K
+ *  consistent layouts, roll out with the greedy policy to terminal, average, pick the best").
+ *  Inert for the harness's own runs — every harness call uses a `rollouts` budget (platform
+ *  §5.2), under which `determinizedFlatMonteCarloPolicy` derives its per-candidate sample count
+ *  from `budget.n / legal.length` instead (the same convention `flatMonteCarloPolicy` already
+ *  uses) — kept only as the option's documented default for a non-harness caller. */
+export const STRONG_HIDDEN_INFO_SAMPLES = 16;
+
 /** THE solo Strong agent (solo-games-lens §3.1): beam-100 for perfect-information score
- *  chases; determinized flat-Monte-Carlo (Mine Run plan §4.4/O1 — approved as the platform-
- *  wide pattern for hidden-info games) otherwise. Both are product code — this is the same
- *  policy that ships as the hint/ghost feature, so the harness and the shipped feature never
- *  diverge in what "Strong" means for a given game. */
+ *  chases; a GREEDY-rollout `determinizedFlatMonteCarloPolicy` (mine-run.md §4.4 — approved as
+ *  the platform-wide pattern for hidden-info games) otherwise. Both are product code — this is
+ *  the same policy that ships as the hint/ghost feature, so the harness and the shipped feature
+ *  never diverge in what "Strong" means for a given game.
+ *
+ *  Returns a bare `Policy<S,M>` — usable directly against an already-sampled world (e.g. a
+ *  caller that wants ONLY the underlying per-world greedy-rollout search, or a perfect-info
+ *  game, which never needs determinization at all). For a hidden-info game's OWN roster
+ *  "strong" entry, `buildSoloRoster` does NOT wrap this return value — it builds
+ *  `determinizedFlatMonteCarloPolicy` directly instead (platform-corrections.md C6's
+ *  close-out): wrapping this bare policy through the generic `determinize()` adapter draws K
+ *  worlds ONCE per decision and majority-votes full per-world re-searches, which — unlike
+ *  `determinizedFlatMonteCarloPolicy`'s true per-candidate averaging — let a single
+ *  catastrophic-but-rare sampled world get out-voted by several mildly-preferring ones, even
+ *  when the truly-averaged value says otherwise (see packages/bots/test/
+ *  determinized-flat-mc.test.ts's "true per-candidate averaging" case for the concrete proof).
+ *  That mismatch is why the ORIGINAL C6 finding — the shipped Strong could not reliably clear
+ *  the Always-Safe gate on a healthy Mine Run — held even after adding a greedy rollout and
+ *  more samples to the old `determinize(flatMonteCarloPolicy())` wiring alone. */
 export function resolveStrongPolicy<S extends WithEffects, M extends Json, V extends WithEffects>(
   engine: GameEngine<S, M, V>
 ): Policy<S, M> {
-  if (engine.meta.hiddenInformation) return flatMonteCarloPolicy<S, M>();
+  if (engine.meta.hiddenInformation) {
+    return flatMonteCarloPolicy<S, M>({
+      rolloutMoveSelector: greedyMoveSelector,
+      rolloutCapPlies: STRONG_HIDDEN_INFO_ROLLOUT_CAP_PLIES,
+    });
+  }
   if (!engine.score && !engine.heuristic) throw new StrongPolicyUnavailableError(engine.meta.id);
   return beamPolicy<S, M>({ width: 100 });
 }
@@ -96,14 +162,32 @@ export interface SoloRoster<S extends WithEffects, M extends Json> {
   strong: SoloAgent<S, M>;
 }
 
-/** The full score-chase roster (solo-games-lens §3.1 table), view-honesty-wired uniformly. */
+/** The full score-chase roster (solo-games-lens §3.1 table), view-honesty-wired uniformly.
+ *  `strong` is built specially for a hidden-info game — `determinizedFlatMonteCarloPolicy`
+ *  directly (a `ViewPolicy`, true per-candidate world averaging), NOT
+ *  `resolveStrongPolicy(engine)` routed through the generic `determinize()` wrap (see
+ *  `resolveStrongPolicy`'s doc for why that shape under-delivers here). Random and Greedy stay
+ *  on the plain `buildAgent`/`determinize()` path at its default of 1 sample — a K-sampled
+ *  "Random" or "Greedy" baseline would no longer mean what those names promise, only how
+ *  strong they are. */
 export function buildSoloRoster<S extends WithEffects, M extends Json, V extends WithEffects>(
   engine: GameEngine<S, M, V>
 ): SoloRoster<S, M> {
+  const strong: SoloAgent<S, M> = engine.meta.hiddenInformation
+    ? buildViewPolicyAgent(
+        engine,
+        determinizedFlatMonteCarloPolicy<S, M, V>({
+          samplesPerCandidate: STRONG_HIDDEN_INFO_SAMPLES,
+          rolloutMoveSelector: greedyMoveSelector,
+          rolloutCapPlies: STRONG_HIDDEN_INFO_ROLLOUT_CAP_PLIES,
+        }),
+        "strong"
+      )
+    : buildAgent(engine, resolveStrongPolicy(engine), "strong");
   return {
     random: buildAgent(engine, randomPolicy<S, M>(), "random"),
     greedy: buildAgent(engine, greedyOnlyPolicy<S, M>(), "greedy"),
-    strong: buildAgent(engine, resolveStrongPolicy(engine), "strong"),
+    strong,
   };
 }
 

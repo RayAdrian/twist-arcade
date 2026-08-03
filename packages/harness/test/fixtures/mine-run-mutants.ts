@@ -7,7 +7,7 @@
 // never imported by anything outside this test suite.
 
 import type { GameEngine } from "@twist-arcade/engine";
-import { createMineRun } from "@twist-arcade/mine-run";
+import { assertRevealBudgetScarcity, createMineRun } from "@twist-arcade/mine-run";
 import type { MineRunMove, MineRunState, MineRunView } from "@twist-arcade/mine-run";
 
 /**
@@ -66,7 +66,10 @@ export function createAlwaysSafeHealthyMineRun(): GameEngine<MineRunState, MineR
   // cell count so revealsLeft scarcity is a real constraint, not just deduction exhaustion —
   // a 4x4/budget==totalCells configuration was tried first and showed no separation at all
   // (see the harness handoff report): with no reveal scarcity, both Always-Safe and any
-  // Strong agent simply clear the whole board regardless of policy.
+  // Strong agent simply clear the whole board regardless of policy. `assertRevealBudgetScarcity`
+  // (platform-corrections.md C6's "also record" note) turns that observation into an enforced
+  // precondition rather than a comment someone could silently invalidate later.
+  assertRevealBudgetScarcity(24, 6 * 6);
   return createMineRun({ width: 6, height: 6, mines: 8, budget: 24 });
 }
 
@@ -74,5 +77,6 @@ export function createAlwaysSafeBrokenMineRun(): GameEngine<MineRunState, MineRu
   // Same board/budget, 2 mines ~= 5.5% density — deduction alone clears nearly the whole
   // board, so Always-Safe's conservative "never carry a streak into an unproven reveal"
   // costs it nothing.
+  assertRevealBudgetScarcity(24, 6 * 6);
   return createMineRun({ width: 6, height: 6, mines: 2, budget: 24 });
 }
