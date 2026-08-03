@@ -17,7 +17,7 @@
 
 import { describe, expect, it } from "vitest";
 import { neighbors, countAdjacentMines } from "../board";
-import { analyzeFrontier } from "../csp";
+import { analyzeFrontier, frontierComponentCount } from "../csp";
 import type { MineRunView, MineRunCellView } from "../engine";
 
 function makeView(
@@ -163,42 +163,21 @@ describe("CSP module — known-answer patterns", () => {
     }
   });
 
-  it("global mine-count coupling: the frontier alone is ambiguous, but the total mine budget decides it", () => {
-    // Construct TWO separate frontier components with no shared constraint, plus a tiny
-    // background, such that:
-    //  - Component A (a single revealed "1" over 2 unrevealed cells) admits two local
-    //    assignments: {exactly one of a0,a1 is a mine} — always exactly 1 mine from A, in
-    //    either of 2 ways. This component alone never pins a SPECIFIC cell (a0 or a1 each
-    //    have posterior 0.5 from local information alone).
-    //  - Background has exactly 0 remaining slots (background is empty / fully accounted),
-    //    and the total mines remaining forces a HARD split between A and a second component B
-    //    that DOES resolve one of A's cells once combined with B's own possibilities.
-        //
-    // Concretely: 4x2 board. Row0 = revealed: cell0 count=1 (neighbors are 1,4,5), cell2
-    // count=1 (neighbors are 1,3,5,6,7 minus OOB -> compute exactly below). Row1 = mostly
-    // unrevealed except we reveal cell1 as a SEPARATE non-adjacent "wall" is impossible on
-    // such a tiny board without cells touching; instead, use a 5x1 (single row, height=1)
-    // board split by geometry is impossible (1D adjacency touches everything). Use a 5x3
-    // board instead, with two well-separated components and total mines fixed at 3, where a
-    // component with 2 unrevealed cells "wants" either 1 or 2 mines depending on which is
-    // globally forced.
-    //
-    // Board (5 wide x 3 tall), revealed cells and counts (computed FROM a real ground-truth
-    // mine set below, then the test discards which specific ground truth was used and only
-    // feeds analyzeFrontier the COUNTS + total mines — the whole point is that the frontier
-    // is ambiguous from local information, so there are multiple ground truths that produce
-    // the identical view; we verify analyzeFrontier's result against the oracle operating on
-    // the SAME view, not against "the" ground truth we happened to pick).
+  it("background/frontier global mine-count coupling on a single connected frontier component", () => {
+    // CORRECTED per Fable review (should-fix 3): this test previously claimed to construct
+    // "two well-separated components" on a 5x3 board, but the geometry does not actually do
+    // that -- the revealed row-0 cells bridge cells 5/6 to 8/9 through shared constraints, and
+    // cell 7 (meant as a "wall") itself pulls row-2 cell 12 into the same frontier. The actual
+    // frontier here is ONE connected component: {5,6,8,9,11,12,13}. That was never verified
+    // structurally, so the "well-separated" claim went unnoticed while untested. This test
+    // still exercises real, non-trivial machinery worth keeping (background/frontier coupling
+    // via the global mine-count convolution, oracle-cross-checked in full) -- it just is NOT a
+    // multi-component test. See "genuinely separated two-component frontier" below for that.
     const width = 5;
     const height = 3;
-    // Component A: revealed cell 1 (row0,col1) with unrevealed neighbors 5,6 (row1,col0/1) as
-    // its ONLY unrevealed neighbors (col2.. of row1 will be revealed too, acting as a wall).
-    // Component B: revealed cell 3 (row0,col3) with unrevealed neighbors 8,9 (row1,col3/4).
-    // Reveal row1 col2 (cell 7) as a plain revealed "0"-ish separator so A and B share no cell.
-    // Row2 (cells 10-14) stays fully unrevealed as background.
     const mines = new Set([5, 8, 12]); // ground truth used only to MANUFACTURE a valid view
     const revealedCellsRow0 = [0, 1, 2, 3, 4];
-    const revealedRow1Wall = [7]; // separates component A (col0/1) from component B (col3/4)
+    const revealedRow1Wall = [7];
     const trueCounts = new Map<number, number>();
     for (const c of [...revealedCellsRow0, ...revealedRow1Wall]) {
       trueCounts.set(c, countAdjacentMines(c, mines, width, height));
@@ -210,17 +189,72 @@ describe("CSP module — known-answer patterns", () => {
     // The discriminating assertion: cross-check the FULL posterior/provable sets against the
     // independent oracle. If csp.ts only did local (single-point/per-component) deduction and
     // ignored the global total, it would disagree with the oracle on any cell whose true
-    // status depends on inter-component coupling -- this assertion is what a single-point
-    // solver would fail, not just a smoke check.
+    // status depends on frontier/background coupling.
     expect(result.provablyMine).toEqual(oracle.provablyMine);
     expect(result.provablySafe).toEqual(oracle.provablySafe);
     expect(result.posterior.size).toBe(oracle.posterior.size);
     for (const [cell, p] of oracle.posterior) {
       expect(result.posterior.get(cell)).toBeCloseTo(p, 6);
     }
-    // Sanity that this scenario actually HAS more than one frontier component (otherwise the
-    // "global coupling across components" claim would be untested by construction).
-    expect(oracle.posterior.size).toBeGreaterThan(0);
+    // Honest structural check (replaces the previous vacuous `posterior.size > 0`): this
+    // view's frontier really is exactly ONE connected component, not "two well-separated"
+    // ones as the old comment claimed.
+    expect(frontierComponentCount(view)).toBe(1);
+  });
+
+  it("genuinely separated two-component frontier: component count verified structurally, " +
+    "cross-checked against the independent oracle (should-fix 3)", () => {
+    // A 1x9 board (single row, so `neighbors()` gives simple, easy-to-verify left/right
+    // adjacency). Revealed cell 1 constrains ONLY {0,2}; revealed cell 5 constrains ONLY
+    // {4,6} -- the two frontier groups share no cell and no constraint, so the component
+    // algorithm (which only ever unions cells appearing in the SAME constraint) cannot merge
+    // them. Background = {3,7,8} (adjacent to neither revealed cell). Ground truth mines
+    // {0,6,8} put exactly one mine in each frontier group plus one in the background, giving
+    // every unrevealed cell a genuinely non-degenerate (neither 0 nor 1) posterior to check.
+    const width = 9;
+    const height = 1;
+    const mines = new Set([0, 6, 8]);
+    const trueCounts = new Map<number, number>([
+      [1, countAdjacentMines(1, mines, width, height)], // neighbors {0,2} -> count 1
+      [5, countAdjacentMines(5, mines, width, height)], // neighbors {4,6} -> count 1
+    ]);
+    expect([...trueCounts.values()]).toEqual([1, 1]);
+
+    const view = makeView(width, height, trueCounts, mines.size);
+
+    // Structural proof of separation, BEFORE trusting any posterior value: no adjacency path
+    // connects component A's cells ({0,2}) to component B's cells ({4,6}) -- verified directly
+    // via the public `neighbors()` function, independent of csp.ts's own component-grouping
+    // logic, then cross-checked against what csp.ts itself reports.
+    for (const a of [0, 2]) {
+      for (const b of [4, 6]) {
+        expect(neighbors(a, width, height)).not.toContain(b);
+        expect(neighbors(b, width, height)).not.toContain(a);
+      }
+    }
+    expect(frontierComponentCount(view)).toBeGreaterThanOrEqual(2);
+    expect(frontierComponentCount(view)).toBe(2);
+
+    const oracle = bruteForceOracle(width, height, trueCounts, new Set(), mines.size);
+    const result = analyzeFrontier(view);
+
+    expect(result.provablyMine).toEqual(oracle.provablyMine);
+    expect(result.provablySafe).toEqual(oracle.provablySafe);
+    expect(result.posterior.size).toBe(oracle.posterior.size);
+    for (const [cell, p] of oracle.posterior) {
+      expect(result.posterior.get(cell)).toBeCloseTo(p, 6);
+    }
+    // Every background cell (3, 7, 8) shares one uniform posterior; every frontier cell in
+    // each pair is exactly 0.5 given only its own component's local constraint. Pin the actual
+    // hand-solved values so this test would fail if the cross-component wiring silently
+    // regressed to something that still happens to satisfy the oracle loop above by accident.
+    expect(result.posterior.get(0)).toBeCloseTo(0.5, 6);
+    expect(result.posterior.get(2)).toBeCloseTo(0.5, 6);
+    expect(result.posterior.get(4)).toBeCloseTo(0.5, 6);
+    expect(result.posterior.get(6)).toBeCloseTo(0.5, 6);
+    expect(result.posterior.get(3)).toBeCloseTo(1 / 3, 6);
+    expect(result.posterior.get(7)).toBeCloseTo(1 / 3, 6);
+    expect(result.posterior.get(8)).toBeCloseTo(1 / 3, 6);
   });
 
   it("posterior values on a hand-solved position match to 3 decimals (oracle cross-check)", () => {

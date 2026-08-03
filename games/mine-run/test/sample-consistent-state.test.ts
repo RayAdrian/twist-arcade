@@ -160,4 +160,45 @@ describe("sampleConsistentState", () => {
       expect(Math.abs(empirical - expected)).toBeLessThan(0.07); // loose band
     }
   });
+
+  it("empirical sampling frequency matches analyzeFrontier on a GENUINELY separated " +
+    "two-component frontier (should-fix 3's companion case)", () => {
+    // Same 1x9 two-component board as csp.test.ts's "genuinely separated two-component
+    // frontier" test: component A = {0,2} (revealed cell 1, count 1), component B = {4,6}
+    // (revealed cell 5, count 1), background = {3,7,8}. This is the sequential per-component
+    // conditioning path in sampleConsistentState (suffix convolutions across >=2 components) —
+    // previously exercised by NO test, since every other frequency check here runs against a
+    // single-component or single-blob view.
+    const width = 9;
+    const height = 1;
+    const mines = new Set([0, 6, 8]);
+    const trueCounts = new Map<number, number>([
+      [1, countAdjacentMines(1, mines, width, height)],
+      [5, countAdjacentMines(5, mines, width, height)],
+    ]);
+    const view = makeView(width, height, trueCounts, mines.size);
+    const analysis = analyzeFrontier(view);
+
+    const rng = rngFromSeed("frequency-check-two-component");
+    const N = 3000;
+    const cells = [0, 2, 4, 6, 3, 7, 8];
+    const counts = new Map<number, number>(cells.map((c) => [c, 0]));
+    for (let i = 0; i < N; i++) {
+      const sample = sampleConsistentState(view, rng);
+      const mineSet = new Set(sample.mines);
+      for (const cell of cells) {
+        if (mineSet.has(cell)) counts.set(cell, counts.get(cell)! + 1);
+      }
+      // Every sample must still put exactly 2 mines total across the two frontier pairs plus
+      // exactly 1 in the background, since the view's total (3) and each component's own
+      // local constraint (exactly 1 per pair) are both hard requirements.
+      expect(mineSet.has(0) !== mineSet.has(2)).toBe(true); // exactly one of {0,2}
+      expect(mineSet.has(4) !== mineSet.has(6)).toBe(true); // exactly one of {4,6}
+    }
+    for (const cell of cells) {
+      const empirical = counts.get(cell)! / N;
+      const expected = analysis.posterior.get(cell)!;
+      expect(Math.abs(empirical - expected)).toBeLessThan(0.05); // loose band, per plan §10
+    }
+  });
 });

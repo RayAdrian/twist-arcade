@@ -285,11 +285,26 @@ function buildFrontierModel(view: MineRunView): FrontierModel {
   return { components, background, remainingMines, fallbackUsed };
 }
 
-/** True iff any frontier component exceeded the enumeration caps for this view. Exposed
- *  separately from `analyzeFrontier` so the harness can log the fallback rate (plan §4.2's
- *  <1% design-review requirement) without recomputing the whole analysis. */
+/** True iff any frontier component exceeded the enumeration caps for this view. Exposed as a
+ *  standalone convenience for a caller that only wants this one bit (e.g. a fallback-rate
+ *  audit script) and does not otherwise need `analyzeFrontier`'s full result. NOTE: this
+ *  REBUILDS the frontier model from scratch (comment corrected per Fable review's "notes to
+ *  fold in" -- the previous comment claimed this avoids recomputing the whole analysis, which
+ *  is not true). A caller that already has (or is about to compute) an `analyzeFrontier`
+ *  result should read `.fallbackUsed` off that return value instead of calling this function a
+ *  second time. */
 export function frontierFallbackUsed(view: MineRunView): boolean {
   return buildFrontierModel(view).fallbackUsed;
+}
+
+/** Number of separately-enumerated frontier connected components for this view (cells folded
+ *  into the background via the enumeration-cap fallback do not count as their own component).
+ *  Exposed so a caller — or a test — can assert on component SEPARATION structurally (e.g.
+ *  "this view's frontier decomposes into >=2 components") rather than inferring it indirectly
+ *  from posterior values alone, which a self-certifying assertion can get away with never
+ *  actually proving (see test/csp.test.ts's cross-component coupling test). */
+export function frontierComponentCount(view: MineRunView): number {
+  return buildFrontierModel(view).components.length;
 }
 
 /**
