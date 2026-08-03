@@ -455,3 +455,51 @@ describe("GameShell — board prefs.theme derives from the ACTUALLY APPLIED them
     window.matchMedia = originalMatchMedia;
   });
 });
+
+describe("GameShell — hotseat Restart confirms after just ONE move (I10, orchestrator ruling)", () => {
+  it("confirms hotseat Restart once moveCount >= 1 — destroying a two-player game with one accidental tap is the stronger case for a guard", async () => {
+    const registryEntry = makeRegistryEntry();
+    const user = userEvent.setup();
+    render(<GameShell gameId={tttManifest.id} registryEntry={registryEntry} manifests={[tttManifest]} mode="hotseat" />);
+    await waitFor(() => expect(screen.getAllByRole("gridcell").length).toBe(9));
+
+    // Before any move: no confirm needed (nothing to lose yet) — Restart fires immediately.
+    await user.click(screen.getByRole("button", { name: /restart/i }));
+    expect(screen.queryByText("Restart?")).toBeNull();
+
+    // One move in: hotseat's own ruling is >= 1, NOT the solo >= 3 threshold.
+    await act(async () => {
+      firstCellButton().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      firstCellButton().dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 0, clientY: 0 }));
+    });
+    await waitFor(() => expect(screen.getAllByRole("gridcell")[0]?.textContent).toBe("X"));
+
+    await user.click(screen.getByRole("button", { name: /restart/i }));
+    expect(screen.getByText("Restart?")).toBeInTheDocument();
+  });
+
+  it("solo-bot Restart still uses the >= 3 threshold, unaffected by the hotseat ruling", async () => {
+    const registryEntry = makeRegistryEntry();
+    const user = userEvent.setup();
+    render(
+      <GameShell
+        gameId={tttManifest.id}
+        registryEntry={registryEntry}
+        manifests={[tttManifest]}
+        mode="solo-bot"
+        botDriver={scriptedBotDriver([{ cell: 4 }])}
+      />
+    );
+    await waitFor(() => expect(screen.getAllByRole("gridcell").length).toBe(9));
+
+    await act(async () => {
+      firstCellButton().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      firstCellButton().dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 0, clientY: 0 }));
+    });
+    await waitFor(() => expect(screen.getAllByRole("gridcell")[4]?.textContent).toBe("O"));
+
+    // Only 2 total moves so far (human + bot) — solo's threshold is >= 3, so no confirm yet.
+    await user.click(screen.getByRole("button", { name: /restart/i }));
+    expect(screen.queryByText("Restart?")).toBeNull();
+  });
+});

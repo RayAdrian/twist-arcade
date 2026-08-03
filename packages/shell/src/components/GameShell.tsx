@@ -389,7 +389,12 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
           {...(game.canUndo ? { onUndo: game.undo } : {})}
           onRestart={game.restart}
           onHow={() => setHowOpen(true)}
-          confirmRestart={mode !== "hotseat" && game.moveCount >= 3 && game.status.kind === "ongoing"}
+          // I10, orchestrator ruling: hotseat confirms Restart whenever moveCount >= 1, NOT the
+          // solo >= 3 threshold — destroying a shared two-player game with one accidental tap
+          // is the STRONGER case for a guard, not the weaker one solo's higher threshold
+          // implied. `mode !== "hotseat" && ...` previously made this unconditionally false for
+          // every hotseat game — a mid-game restart never confirmed at all.
+          confirmRestart={game.status.kind === "ongoing" && (mode === "hotseat" ? game.moveCount >= 1 : game.moveCount >= 3)}
           extras={
             // I6: describeBoard() (plan §6.2's "readback on request") had zero consumers —
             // composed but never triggerable. A visible, always-discoverable control (not just a
