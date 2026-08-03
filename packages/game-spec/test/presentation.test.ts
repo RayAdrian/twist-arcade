@@ -22,6 +22,15 @@ interface DummyMove {
   readonly [key: string]: Json;
 }
 
+describe("GamePresentation.boardDimensions (S1 shell-side addition, flagged for sign-off)", () => {
+  it("is a required (view) => {rows, cols} function", () => {
+    const boardDimensions: GamePresentation<DummyState, DummyMove, DummyState>["boardDimensions"] = (
+      view
+    ) => ({ rows: view.x, cols: view.x });
+    expect(boardDimensions({ x: 3, lastEffects: [] })).toEqual({ rows: 3, cols: 3 });
+  });
+});
+
 describe("GamePresentation.firstOccurrence (M1 review finding 5 — corrections.md)", () => {
   it("accepts an array of independently-keyed entries, each with its own flagKey", () => {
     const firstOccurrence: NonNullable<

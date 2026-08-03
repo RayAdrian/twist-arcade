@@ -2,7 +2,7 @@
 // game's Board. Owns sizing, the >=48px floor (via Cell), the roving-tabindex APG grid,
 // pointer-commit + lockout, all so no game reimplements them.
 
-import { Children, type ReactNode, useMemo, useRef, useState } from "react";
+import { type ReactNode, useMemo, useRef, useState } from "react";
 import { BoardContext, type CellRegistration } from "./board-context";
 
 export interface BoardShellProps {
@@ -101,15 +101,26 @@ export function BoardShell({
     [rows, cols, disabled, reducedMotion, cursor, lockedUntil, onCellAction, boardEl]
   );
 
-  // ARIA's grid pattern requires role="gridcell" to be a child of role="row" (axe:
-  // aria-required-parent) — but the visual layout is a single CSS grid (§4.4's sizing box),
-  // not a table of nested boxes. `display: contents` on the row wrapper satisfies BOTH: the
-  // wrapper exists for the accessibility tree, and its children still lay out as direct
-  // items of the outer CSS grid. Requires the game's Board to render exactly rows*cols Cells
-  // as a flat, row-major child list (Children.toArray flattens the nested-map shape a Board
-  // naturally produces).
-  const flatCells = Children.toArray(children);
-
+  // Deliberately NOT the "N row wrappers + Children.toArray().slice()" shape an earlier
+  // revision used: that required a game's Board to render exactly rows*cols Cells as a flat,
+  // row-major child list, syntactically, as BoardShell's direct JSX children. That breaks the
+  // instant a game's Board is its own component instance (`<presentation.Board/>`, per §4.1's
+  // "Board slot... rendered inside BoardShell") — `Children.toArray` only sees the ONE opaque
+  // <Board/> element BoardShell was actually handed; it cannot (and must not try to) reach
+  // through into what Board's own render eventually produces, since forcing that would mean
+  // calling Board as a bare function instead of JSX, which breaks the Rules of Hooks the
+  // instant a game's Board uses any hook of its own.
+  //
+  // Fix: exactly ONE `role="row"` wrapper (not one per visual row) around the whole board,
+  // `display: contents` so it never affects the CSS grid layout — this satisfies axe's
+  // aria-required-parent rule (every `role="gridcell"` needs a `row` ancestor somewhere in the
+  // DOM) without BoardShell needing to know how many cells exist or which ones belong to which
+  // row. Each cell's TRUE position is carried by `aria-rowindex`/`aria-colindex` on the cell
+  // itself (`Cell` sets these directly) — the documented APG technique for grids where the DOM
+  // doesn't mirror row structure 1:1 (the same technique used for virtualized grids). `children`
+  // is otherwise rendered completely opaquely: BoardShell has no opinion on its shape beyond
+  // "some gridcells are in there somewhere," which is the only guarantee an arbitrary Board
+  // component can give.
   return (
     <BoardContext.Provider value={contextValue}>
       <div className="relative mx-auto" style={{ width: "min(calc(100vw - 32px), 52svh)" }}>
@@ -128,11 +139,9 @@ export function BoardShell({
           }}
           className="gap-1"
         >
-          {Array.from({ length: rows }, (_, r) => (
-            <div key={r} role="row" aria-rowindex={r + 1} style={{ display: "contents" }}>
-              {flatCells.slice(r * cols, r * cols + cols)}
-            </div>
-          ))}
+          <div role="row" style={{ display: "contents" }}>
+            {children}
+          </div>
         </div>
         {overlay}
       </div>

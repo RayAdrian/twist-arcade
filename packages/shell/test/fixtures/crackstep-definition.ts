@@ -33,6 +33,9 @@ export const crackstepDefinition: GameDefinition<CrackstepState, CrackstepMove, 
       }
       return "";
     },
+    boardDimensions(): { rows: number; cols: number } {
+      return { rows: 3, cols: 3 };
+    },
     shareArtifact(): string {
       return "fixture artifact";
     },

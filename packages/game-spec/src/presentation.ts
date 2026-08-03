@@ -60,6 +60,15 @@ export interface GamePresentation<
   V extends WithEffects = S,
 > {
   Board: ComponentType<BoardProps<V, M>>;
+  /**
+   * ADDED post-freeze, shell-side (S1 implementation gap, flagged for orchestrator sign-off —
+   * see the shell team's final report): `BoardShell` needs `rows`/`cols` for its APG grid math
+   * (`aria-rowcount`/`colcount`, the roving-tabindex cursor) and `GameManifest` carries no board
+   * dimensions at all — there was no way for `GameShell` to render `BoardShell` around a game's
+   * `Board` without it. Additive only (no existing field changed shape), computed from the
+   * current view since some boards may not be a fixed size across a game's lifetime.
+   */
+  boardDimensions(view: V): { rows: number; cols: number };
   announce(ev: GameEvent<V>): string;
   /**
    * ARRAY, not a single entry (platform-corrections.md, folded in while this shape is still

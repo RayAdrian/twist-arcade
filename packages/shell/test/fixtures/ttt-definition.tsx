@@ -82,6 +82,9 @@ export const tttDefinition: GameDefinition<TTTState, TTTMove, TTTState> = {
         anchor: (ev) => (ev.kind === "moved" ? moveToCellId({ cell: moveOf(ev)?.cell ?? 0 }) : ""),
       },
     ],
+    boardDimensions(): { rows: number; cols: number } {
+      return { rows: 3, cols: 3 };
+    },
     shareArtifact(): string {
       return "fixture artifact";
     },

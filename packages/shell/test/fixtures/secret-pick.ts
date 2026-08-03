@@ -134,6 +134,9 @@ export const secretPickDefinition: GameDefinition<SecretState, SecretMove, Secre
       if (ev.kind === "status") return ev.status.kind === "draw" ? "Draw." : "";
       return "";
     },
+    boardDimensions(): { rows: number; cols: number } {
+      return { rows: 1, cols: 1 };
+    },
     shareArtifact(): string {
       return "fixture artifact";
     },
