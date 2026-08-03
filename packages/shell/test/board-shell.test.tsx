@@ -165,6 +165,30 @@ describe("BoardShell — pointer commit semantics (plan §7: commit on pointerup
     firePointer(cell, "pointerdown", { clientX: 10, clientY: 10 });
     expect(onCellAction).not.toHaveBeenCalled();
   });
+
+  // C5: TalkBack's double-tap activation gesture dispatches a synthesized `click` (no pointer
+  // down/up pair at all — `event.detail === 0` is how a script/AT-synthesized click is told
+  // apart from a real mouse/touch click, which browsers always give `detail >= 1`). Without an
+  // onClick handler at all, Cell had no path for that activation to ever reach `commit()`.
+  it("commits on a synthesized click (detail === 0) — the TalkBack/AT activation shape", () => {
+    const onCellAction = vi.fn();
+    render(<DummyBoard onCellAction={onCellAction} />);
+    const cell = screen.getAllByRole("gridcell")[0]!;
+    cell.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 0 }));
+    expect(onCellAction).toHaveBeenCalledWith("0-0");
+  });
+
+  it("does NOT double-commit a real pointer tap's own browser-synthesized click (detail >= 1)", () => {
+    const onCellAction = vi.fn();
+    render(<DummyBoard onCellAction={onCellAction} />);
+    const cell = screen.getAllByRole("gridcell")[0]!;
+    firePointer(cell, "pointerdown", { clientX: 10, clientY: 10 });
+    firePointer(cell, "pointerup", { clientX: 20, clientY: 20 });
+    // A real tap already committed via pointerup above; the browser's own follow-up `click`
+    // (detail >= 1, since it came from an actual pointer gesture) must not commit again.
+    cell.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
+    expect(onCellAction).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("BoardShell — disabled / lockout gating", () => {

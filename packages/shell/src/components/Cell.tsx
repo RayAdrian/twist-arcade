@@ -90,6 +90,17 @@ export function Cell({ id, row, col, occupant, ageStep = 0, countdown, ghost, st
     pointerDownAt.current = null;
   }
 
+  // C5: an assistive-tech activation (e.g. TalkBack's double-tap gesture) may dispatch a bare
+  // `click` with no pointerdown/pointerup pair at all — `onPointerUp` alone leaves that gesture
+  // with no path to `commit()`, and the board would silently never respond to it. A REAL pointer
+  // tap already commits via `onPointerUp` above, and the browser's own follow-up synthetic
+  // `click` for that tap always carries `detail >= 1` (the OS/browser-assigned click count) —
+  // only a script/AT-synthesized click reports `detail === 0` — so gating on that is how this
+  // commits the AT gesture without ever double-committing a real tap.
+  function onClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (e.detail === 0) tryCommit(performance.now());
+  }
+
   function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
@@ -115,6 +126,7 @@ export function Cell({ id, row, col, occupant, ageStep = 0, countdown, ghost, st
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
+      onClick={onClick}
       onKeyDown={onKeyDown}
       style={{ opacity, aspectRatio: "1 / 1" }}
       className={`relative flex min-h-[48px] min-w-[48px] items-center justify-center border border-ink-muted ${transitionClass} ${
