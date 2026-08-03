@@ -11,6 +11,15 @@
 // This is exactly why pass 1 (raw-engine.ts) is NOT reused as a C1 proof directly — see below
 // for the one direction it safely IS reusable.
 //
+// A SUPERKO GAME IS ALWAYS DECISIVE, NEVER A DRAW (platform-corrections.md's ruleset-freeze
+// note; see engine.ts's `computeStatus` — the draw branch there is gated on
+// `resolved.repetition === "threefold"` and does not exist for superko at all): positions can
+// never repeat under superko, so a mover who runs out of legal targets simply LOSES (the
+// no-legal-moves corner, plan §3.3) — there is no draw terminal to reach. `value()` below
+// reflects this directly: it returns only "win" or "loss", NEVER "draw" (see the "sawDraw is
+// intentionally absent" note at its return site) — a three-valued minimax accumulator would be
+// solving the wrong-arity game.
+//
 // THE ONE SOUND, UNCONDITIONAL SHORTCUT FROM PASS 1 (monotonicity argument, recorded here so a
 // future reader doesn't have to re-derive it): superko's legal-move set at any position is a
 // SUBSET of the raw graph's legal-move set at that same position (superko only ever REMOVES a
@@ -19,25 +28,49 @@
 //     under superko the mover has a SUBSET of those same losing continuations available — still
 //     every one of them a loss. LOSS is a universal, history-independent lower bound: it
 //     transfers to C1 UNCONDITIONALLY, for every possible history that could have led there.
-//   - Pass-1 WIN values do NOT transfer unconditionally: retrograde's canonical win-witness for
-//     a WIN-labeled raw position is itself repeat-free (a corollary of write-once resolution
-//     order — a proof can only cite already-resolved, hence strictly earlier-proven, children,
-//     so following "the move that's proven win" can never revisit a position), so the winner
-//     COULD replay that exact line under superko too UNLESS it collides with a position from
-//     BEFORE this node in the actual game-in-progress (a possibility pass 1, which has no
-//     concept of "before this node", cannot rule out). That is the Graph-History-Interaction
-//     residue this file exists to resolve by real search.
+//   - Pass-1 WIN values ALSO transfer unconditionally, but not for the reason this file used to
+//     claim ("the winner could replay that exact line under superko too" — invalid as stated: a
+//     witness line fixes only the WINNER's own moves, and nothing about "the winner could
+//     replay it" rules out the OPPONENT steering into a history collision). The real reason,
+//     specific to how THIS search is shaped, not just to the raw graph in isolation:
+//       1. This search never recurses PAST a raw-LOSS position — every move whose child is
+//          raw-LOSS is resolved by the unconditional shortcut immediately, below, before any
+//          recursive call is made for it. So `historyBefore`, at any point in this search, is
+//          built entirely from positions that were raw-WIN or raw-DRAW for their own mover —
+//          a raw-LOSS position can never be a member.
+//       2. Every OPPONENT-ply position along a canonical win-witness
+//          (raw-engine.ts's `winWitnessPositionKeys`) IS raw-LOSS for the opponent, by
+//          construction — that is what "the opponent's forced reply" means (see
+//          raw-engine.ts's `stepWitness` doc). By (1) and (2) together, no opponent-ply
+//          position along the witness can ever already be in `historyBefore` — a set-membership
+//          argument, not a lucky property of one specific line.
+//       3. The WINNER's own ply positions along the witness are exactly the ones
+//          raw-engine.ts's `stepWitness` doc proves are visited in strictly decreasing
+//          retrograde resolution order: a WIN proof always cites a child resolved strictly
+//          earlier, and a LOSS node's children (which is what the OPPONENT picks from, for
+//          "every defense" the opponent could mount) are ALL resolved strictly earlier than the
+//          LOSS node itself, by definition of the LOSS proof rule. So the winner's own future
+//          positions, from the current node onward, occupy a strictly decreasing, never-
+//          repeating slice of resolution order — one that can never coincide with an ancestor
+//          reached earlier in this same search.
+//     Put together: a raw-WIN position's witness line is unconditionally safe to reuse under
+//     superko from wherever this search reaches it — witness/historyBefore disjointness holds
+//     by construction, not by the good luck of one specific opponent line. The
+//     `witness.every(...)` check at the call site is retained as a defensive, cheap assertion of
+//     this invariant, not a correctness dependency.
 //   - Pass-1 DRAW values carry no guarantee either way under C1 — plan §16's whole reason for
 //     running pass 2 at all is that superko is expected to convert some of this residue into
 //     decisive results (removing the "repeat forever" escape).
 //
-// THE ALGORITHM: plain three-valued minimax, but computed directly over (queues, toMove,
-// historySoFar) rather than over a pre-built graph — no position-keyed memoization at all
-// (unsound in general, per the above), EXCEPT for the one shortcut just described. Budget-
-// bounded (both wall-clock and a raw node-visit ceiling) per plan §2.3's 10-minute-per-variant
-// allowance; exceeding it reports the pass-1 (C2) value as a documented fallback rather than
-// asserting an unproven C1 claim (plan: "Do not ship a superko value claim the solve did not
-// prove").
+// THE ALGORITHM: plain two-valued minimax (win/loss only — see the note above on why this game
+// has no draw terminal under superko), computed directly over (queues, toMove, historySoFar)
+// rather than over a pre-built graph — no position-keyed memoization at all (unsound in
+// general, per the above), EXCEPT for the one shortcut just described. Budget-bounded (both
+// wall-clock and a raw node-visit ceiling) per plan §2.3's 10-minute-per-variant allowance;
+// exceeding it reports the pass-1 (C2) value as a documented fallback rather than asserting an
+// unproven C1 claim (plan: "Do not ship a superko value claim the solve did not prove") — that
+// C2 fallback value CAN legitimately be "draw" (C2 is threefold, which does have a draw
+// terminal); only the true C1 value that pass 2 searches for cannot be.
 
 import type { PlayerId } from "@twist-arcade/engine";
 import type { PositionValue } from "@twist-arcade/harness";
@@ -123,17 +156,30 @@ class SuperkoBudgetExceededError extends Error {
   }
 }
 
-/**
- * Exact superko (C1) value at the ROOT (empty board) plus a per-opening table, for one
- * (decayTiming, playThrough) config. `raw` must be `solveRaw()`'s result for the SAME
- * (decayTiming, playThrough) pair — used only for the unconditional LOSS shortcut and for move
- * ordering (never as a WIN proof; see the module doc).
- */
-export function solveSuperko(
+export interface SuperkoPositionResult {
+  value: PositionValue;
+  /** See `SuperkoSolveResult.budgetExceeded` — same contract, one position instead of a root +
+   *  opening table. When true, `value` falls back to the pass-1 (C2) value AT THIS POSITION. */
+  budgetExceeded: boolean;
+  nodesVisited: number;
+  elapsedMs: number;
+}
+
+/** One shared search engine (memoized win witnesses, budget/progress bookkeeping) behind both
+ *  `solveSuperko` (root + opening table) and `solveSuperkoFromPosition` (arbitrary position) —
+ *  factored out so an arbitrary-position entry point doesn't have to duplicate the recursive
+ *  search, the shortcuts, or the budget machinery. Exported only within this module: callers use
+ *  the two functions below, both of which share this one implementation. */
+function createSuperkoSearch(
   config: RawConfig,
   raw: RawSolveResult,
-  budget: SuperkoBudget = {}
-): SuperkoSolveResult {
+  budget: SuperkoBudget
+): {
+  resolved: ResolvedRulesetConfig;
+  value: (queues: Queues, toMove: PlayerId, historyBefore: ReadonlySet<string>) => PositionValue;
+  valueOfMove: (queues: Queues, mover: PlayerId, cell: number, historyBeforeMove: ReadonlySet<string>) => PositionValue;
+  stats: () => { nodesVisited: number; elapsedMs: number };
+} {
   const resolved = resolvedSuperkoConfig(config);
   const wallClockMs = budget.wallClockMs ?? 5 * 60 * 1000;
   const maxNodesVisited = budget.maxNodesVisited ?? 5_000_000;
@@ -165,7 +211,9 @@ export function solveSuperko(
   /** Mover-relative exact value at (queues, toMove) given the superko history accumulated
    *  strictly BEFORE this position (matches state.history's real semantics exactly: it does
    *  NOT yet include the current position — see engine.ts's apply(), which appends the
-   *  PRE-move key on the way OUT of a position, not on the way in). */
+   *  PRE-move key on the way OUT of a position, not on the way in). Returns only "win" or
+   *  "loss" — see the module doc: superko has no draw terminal, so no leaf of this recursion is
+   *  ever a draw, and no three-valued accumulator is needed here. */
   function value(queues: Queues, toMove: PlayerId, historyBefore: ReadonlySet<string>): PositionValue {
     nodesVisited++;
     if (onProgress && nodesVisited % progressEveryNodes === 0) {
@@ -176,10 +224,9 @@ export function solveSuperko(
     }
 
     const currentKeyEarly = positionKey({ queues, toMove });
-    // WIN-witness shortcut (plan §2.3: "verifies a cached win's line is disjoint from the
-    // current path" — see raw-engine.ts's winWitnessPositionKeys doc and this module's doc for
-    // why disjointness against historyBefore is sufficient). Checked before even enumerating
-    // legal moves: if it fires, none of that work is needed.
+    // WIN-witness shortcut — see the module doc's "Pass-1 WIN values ALSO transfer
+    // unconditionally" argument for why this is sound regardless of `historyBefore`'s contents.
+    // Checked before even enumerating legal moves: if it fires, none of that work is needed.
     try {
       if (raw.valueAt(currentKeyEarly) === "win") {
         const witness = witnessOf(currentKeyEarly);
@@ -192,7 +239,8 @@ export function solveSuperko(
     const moves = legalSuperkoCells(queues, toMove, historyBefore, resolved);
     if (moves.length === 0) {
       // The no-legal-moves corner (plan §3.3): a 2P engine resolves this as a loss for the
-      // player with no move, never `lost`/`draw`.
+      // player with no move, never `lost`/`draw`. This is also the ONLY base case other than an
+      // immediate win below — both are decisive, consistent with superko having no draw at all.
       return "loss";
     }
 
@@ -203,7 +251,6 @@ export function solveSuperko(
     // recursion) — the raw graph's occupancy+toMove is the same key space positionKey uses, so
     // this lookup is exact, not approximate. Immediate winners (checkWinner fires right away)
     // are equally cheap and tried alongside. Everything else is tried in ascending cell order.
-    let sawDraw = false;
     const deferred: typeof moves = [];
 
     for (const move of moves) {
@@ -228,15 +275,27 @@ export function solveSuperko(
       deferred.push(move);
     }
 
+    // No `sawDraw` accumulator: by the module doc's opening note, no leaf of this recursion can
+    // ever produce "draw" (the only base cases are the empty-moves "loss" above and the
+    // immediate-win/LOSS-shortcut "win"s), so by induction no recursive call below can either —
+    // asserted, not just assumed, so a future change that ever DOES yield a "draw" here fails
+    // loudly instead of silently reintroducing a draw outcome this game cannot have under
+    // superko.
     for (const move of deferred) {
       const childValue = value(move.childQueues, move.childToMove, historyAfter);
+      if (childValue === "draw") {
+        throw new Error(
+          "pass2-superko: value() recursed into a child that evaluated to \"draw\" — structurally " +
+            "impossible under superko (no draw terminal exists; see this module's doc), so this " +
+            "indicates a real bug rather than an expected case."
+        );
+      }
       // childToMove is always the OPPONENT of toMove (strict alternation) — flip.
-      const asSeenByMover: PositionValue = childValue === "draw" ? "draw" : childValue === "win" ? "loss" : "win";
+      const asSeenByMover: PositionValue = childValue === "win" ? "loss" : "win";
       if (asSeenByMover === "win") return "win";
-      if (asSeenByMover === "draw") sawDraw = true;
     }
 
-    return sawDraw ? "draw" : "loss";
+    return "loss";
   }
 
   /** Value of a SPECIFIC move from `mover`'s perspective (as opposed to `value()`, which
@@ -264,31 +323,80 @@ export function solveSuperko(
     const historyAfter = new Set(historyBeforeMove);
     historyAfter.add(positionKey({ queues, toMove: mover }));
     const childValue = value(result.queues, result.toMove, historyAfter);
-    return childValue === "draw" ? "draw" : childValue === "win" ? "loss" : "win";
+    if (childValue === "draw") {
+      throw new Error(
+        "pass2-superko: valueOfMove() reached a \"draw\" child — structurally impossible under " +
+          "superko (see this module's doc); this indicates a real bug rather than an expected case."
+      );
+    }
+    return childValue === "win" ? "loss" : "win";
   }
 
-  const totalCells = resolved.boardSize * resolved.boardSize;
+  return {
+    resolved,
+    value,
+    valueOfMove,
+    stats: () => ({ nodesVisited, elapsedMs: performance.now() - startedAt }),
+  };
+}
+
+/**
+ * Exact superko (C1) value at the ROOT (empty board) plus a per-opening table, for one
+ * (decayTiming, playThrough) config. `raw` must be `solveRaw()`'s result for the SAME
+ * (decayTiming, playThrough) pair — used only for the unconditional LOSS shortcut and for move
+ * ordering (never as a WIN proof; see the module doc).
+ */
+export function solveSuperko(
+  config: RawConfig,
+  raw: RawSolveResult,
+  budget: SuperkoBudget = {}
+): SuperkoSolveResult {
+  const search = createSuperkoSearch(config, raw, budget);
+  const totalCells = search.resolved.boardSize * search.resolved.boardSize;
   const rootQueues: Queues = [[], []];
   const rootMover: PlayerId = 0;
 
   try {
-    const rootValue = value(rootQueues, rootMover, new Set());
+    const rootValue = search.value(rootQueues, rootMover, new Set());
     const openings: SuperkoOpeningValue[] = [];
     for (let cell = 0; cell < totalCells; cell++) {
-      openings.push({ cell, value: valueOfMove(rootQueues, rootMover, cell, new Set()) });
+      openings.push({ cell, value: search.valueOfMove(rootQueues, rootMover, cell, new Set()) });
     }
-    return { rootValue, openings, budgetExceeded: false, nodesVisited, elapsedMs: performance.now() - startedAt };
+    return { rootValue, openings, budgetExceeded: false, ...search.stats() };
   } catch (err) {
     if (err instanceof SuperkoBudgetExceededError) {
       // Fallback per plan §2.3: report the C2 (pass-1) value rather than an unproven C1 claim.
+      // (This fallback value CAN legitimately be "draw" — it's the THREEFOLD/raw value, which
+      // does have a draw terminal; only the true C1 search above cannot produce one.)
       const openings: SuperkoOpeningValue[] = raw.openings.map((o) => ({ cell: o.cell, value: o.value }));
-      return {
-        rootValue: raw.rootValue,
-        openings,
-        budgetExceeded: true,
-        nodesVisited,
-        elapsedMs: performance.now() - startedAt,
-      };
+      return { rootValue: raw.rootValue, openings, budgetExceeded: true, ...search.stats() };
+    }
+    throw err;
+  }
+}
+
+/**
+ * Exact superko (C1) value at an ARBITRARY (queues, toMove, historyBefore) position — the
+ * from-position counterpart to `solveSuperko`'s root-only entry point, needed to express plan
+ * §2.4's own pass-2 TDD anchor directly (a hand-built position, not the empty root) rather than
+ * only via the `legalSuperkoCells` mechanism test. Same shortcuts, same budget/fallback
+ * contract as `solveSuperko`; the only difference is where the search starts.
+ */
+export function solveSuperkoFromPosition(
+  config: RawConfig,
+  raw: RawSolveResult,
+  position: { queues: Queues; toMove: PlayerId; historyBefore: ReadonlySet<string> },
+  budget: SuperkoBudget = {}
+): SuperkoPositionResult {
+  const search = createSuperkoSearch(config, raw, budget);
+  try {
+    const value = search.value(position.queues, position.toMove, position.historyBefore);
+    return { value, budgetExceeded: false, ...search.stats() };
+  } catch (err) {
+    if (err instanceof SuperkoBudgetExceededError) {
+      // Fallback per plan §2.3: report the C2 (pass-1) value AT THIS POSITION.
+      const key = positionKey({ queues: position.queues, toMove: position.toMove });
+      return { value: raw.valueAt(key), budgetExceeded: true, ...search.stats() };
     }
     throw err;
   }

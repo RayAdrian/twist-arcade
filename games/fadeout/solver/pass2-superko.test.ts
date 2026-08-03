@@ -7,6 +7,10 @@
 //     where the R1 axis collapse + the pass-1 LOSS shortcut resolve nearly instantly) — the
 //     other two configs (playThrough=false) are the genuinely hard GHI residue; see the solve
 //     report for how those are handled (fallback + escalation, not asserted here as "proven").
+//   - plan §2.4's OWN anchor 4 (VALUE, not legality): a hand-built position where the only
+//     non-losing raw move recreates a prior position — C1 must score the mover lost, C2 must
+//     report draw. Needs `solveSuperkoFromPosition`'s from-position entry point (below), since
+//     `solveSuperko` only ever starts from the empty root.
 
 import { describe, expect, it } from "vitest";
 import { positionKey } from "../engine";
@@ -14,6 +18,7 @@ import {
   legalSuperkoCells,
   resolvedSuperkoConfig,
   solveSuperko,
+  solveSuperkoFromPosition,
   type SuperkoOpeningValue,
 } from "./pass2-superko";
 import { solveRaw } from "./raw-engine";
@@ -102,5 +107,49 @@ describe("solveSuperko() — root-level exact proof on the fast (playThrough=tru
     const superkoA2 = solveSuperko(a2, solveRaw(a2), { wallClockMs: 30_000 });
     expect(superkoA1.rootValue).toBe(superkoA2.rootValue);
     expect(superkoA1.openings).toEqual(superkoA2.openings);
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// Plan §2.4's OWN anchor 4, asserted at the VALUE level (not the legality-only mechanism test
+// above): "a hand-built position where the only non-losing move recreates a prior position —
+// under C1 the mover must be scored as lost (superko removes the escape), under C2 as draw."
+//
+// `remove-first/solid` cannot host this fixture: the solve report (§1.5, finding #6) found its
+// raw graph has ZERO reachable LOSS positions anywhere, so there is no config where "every
+// other move already loses" is even possible. `place-first/solid` DOES have real LOSS
+// positions (24,268 of them per the report) — found programmatically against the already-
+// solved raw graph (same honest, found-not-guessed spirit as raw-engine.test.ts's anchor 3):
+// after P0 opens on cell 0, P1 to move has exactly one non-losing reply (cell 4, a draw) and
+// loses with every other reply. `raw.valueAt` on the position itself confirms the C2 value is
+// "draw" (P1's best is the cell-4 draw) — matching the per-opening table in the solve report
+// (opening cell 0 = draw for P0).
+// ---------------------------------------------------------------------------------------
+
+describe("solveSuperkoFromPosition() — plan §2.4 anchor 4: the ONLY non-losing move recreates history", () => {
+  it("C2 (raw graph) reports draw at this position; C1 (superko, with that move already in history) scores the mover LOST", () => {
+    const config = { decayTiming: "place-first" as const, playThrough: false };
+    const raw = solveRaw(config);
+
+    // P0 has played cell 0; P1 to move. Found by walking the solved raw graph for a node with
+    // exactly one non-loss move whose own value is "draw" — not hand-traced ply-by-ply.
+    const queues: [readonly number[], readonly number[]] = [[0], []];
+    const toMove = 1 as const;
+    const key = positionKey({ queues, toMove });
+
+    // C2: the raw graph's own value at this exact position.
+    expect(raw.valueAt(key)).toBe("draw");
+
+    // The one non-losing move: P1 plays cell 4, reaching queues=[[0],[4]], toMove=0.
+    const nonLosingChildKey = positionKey({ queues: [[0], [4]], toMove: 0 });
+
+    // C1: seed historyBefore with that exact child key, as if this exact position had already
+    // been visited once before — superko must therefore reject cell 4 as a repeat, leaving P1
+    // with only its seven other (all raw-LOSS) replies.
+    const historyBefore = new Set([nonLosingChildKey]);
+    const result = solveSuperkoFromPosition(config, raw, { queues, toMove, historyBefore }, { wallClockMs: 30_000 });
+
+    expect(result.budgetExceeded).toBe(false);
+    expect(result.value).toBe("loss");
   });
 });
