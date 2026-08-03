@@ -35,6 +35,8 @@ export type {
 export { analyzeFrontier, sampleConsistentState, frontierFallbackUsed, frontierComponentCount } from "./csp";
 export type { FrontierAnalysis } from "./csp";
 
-export { safeMove, chooseSafeMove } from "./probes";
+export { createMineRunHeuristic } from "./heuristic";
+
+export { safeMove, chooseSafeMove, assertRevealBudgetScarcity, RevealBudgetNotScarceError } from "./probes";
 
 export { makeMineRunSecretExtractor, mineSecretToken, MINES_FIELD_TOKEN } from "./secret";
