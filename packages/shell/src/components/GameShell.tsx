@@ -16,6 +16,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { GameManifest, RegistryEntry } from "@twist-arcade/game-spec";
 import type { Json, PlayerId } from "@twist-arcade/engine";
 import { useGame, type DailyOptions, type Mode } from "../useGame";
+import type { TurnPhase } from "../announcer";
 import { stubBotDriver, type BotDriver, type TierId } from "../bot-driver";
 import { composeShareArtifact, invokeShare } from "../share-frame";
 import { pickNextTwist } from "../next-twist";
@@ -241,8 +242,34 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
     // the no-repeat state pickNextTwist needs; the caller wires this to real navigation.
   }
 
-  const showBanner = mode === "hotseat" && game.handoff?.pending && !engine.meta.hiddenInformation;
-  const showBlockingInterstitial = mode === "hotseat" && game.handoff?.pending && engine.meta.hiddenInformation;
+  // C3: useGame emits `handoff` with `pending: true` for the hidden-information (blocking)
+  // variant and `pending: false` for the open-information (banner) variant — never both at
+  // once, so branching on `pending` alone (rather than ALSO re-checking hiddenInformation,
+  // which produced the impossible `pending && !hiddenInformation` the banner could never
+  // satisfy) is sufficient and matches useGame's own contract.
+  const showBanner = mode === "hotseat" && game.handoff !== null && !game.handoff.pending;
+  const showBlockingInterstitial = mode === "hotseat" && game.handoff?.pending === true;
+
+  // C3: hotseat never has a single "you" — presentingSeat tracks whichever seat is active, so
+  // `activeSeat === presentingSeat` is true on every hotseat turn by construction, and the
+  // generic "your-turn" phrase ("Your move.") would say the same thing to both players with no
+  // actor named. Mirror useGame's own currentPhaseAndActor rule here: hotseat always gets the
+  // actor-naming phrase; solo-bot names the bot explicitly instead of falling back to "Opponent".
+  const statusPhase: TurnPhase = game.botThinking
+    ? "bot-thinking"
+    : game.status.kind !== "ongoing"
+      ? "finished"
+      : mode === "hotseat"
+        ? "their-turn"
+        : game.activeSeat === game.presentingSeat
+          ? "your-turn"
+          : "their-turn";
+  const statusActorLabel =
+    mode === "hotseat"
+      ? `Player ${game.presentingSeat + 1}`
+      : mode === "solo-bot" && statusPhase === "their-turn"
+        ? "Bot"
+        : undefined;
 
   return (
     <div className="mx-auto max-w-md p-4">
@@ -273,7 +300,8 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
             </div>
           ) : (
             <StatusLine
-              phase={game.botThinking ? "bot-thinking" : game.status.kind !== "ongoing" ? "finished" : game.activeSeat === game.presentingSeat ? "your-turn" : "their-turn"}
+              phase={statusPhase}
+              {...(statusActorLabel !== undefined ? { actorLabel: statusActorLabel } : {})}
               resultText={resultText}
             />
           )}

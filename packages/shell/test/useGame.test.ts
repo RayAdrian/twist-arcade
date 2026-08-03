@@ -149,6 +149,52 @@ describe("useGame — hotseat handoff gating (hidden information)", () => {
   });
 });
 
+describe("useGame — hotseat, OPEN-information turn signal (C3)", () => {
+  it("emits a non-pending handoff signal (the banner variant) after a seat change, auto-clearing on the next move", async () => {
+    const { result } = renderHook(() =>
+      useGame({
+        definition: tttDefinition, // open info (hiddenInformation: false), hotseat-capable
+        mode: "hotseat",
+        seed: "open-hotseat-seed",
+        persist: false,
+      })
+    );
+
+    expect(result.current.presentingSeat).toBe(0);
+    expect(result.current.handoff).toBeNull();
+
+    act(() => result.current.submitMove({ cell: 0 }));
+
+    // Open info: presentingSeat updates immediately (no blocking confirm step) — but a
+    // non-pending signal must still exist so the shell can render a turn banner (C3).
+    expect(result.current.presentingSeat).toBe(1);
+    expect(result.current.handoff).toEqual({ pending: false, nextSeat: 1 });
+
+    act(() => result.current.submitMove({ cell: 1 }));
+
+    // Auto-cleared on the very next move (since seat changed again, a FRESH signal fires).
+    expect(result.current.presentingSeat).toBe(0);
+    expect(result.current.handoff).toEqual({ pending: false, nextSeat: 0 });
+  });
+
+  it("names the actor in the turn phrase ('Player 2's move.'), never the generic 'Your move.'", () => {
+    const { result } = renderHook(() =>
+      useGame({
+        definition: tttDefinition,
+        mode: "hotseat",
+        seed: "hotseat-actor-seed",
+        persist: false,
+      })
+    );
+
+    act(() => result.current.submitMove({ cell: 0 }));
+
+    expect(result.current.presentingSeat).toBe(1);
+    expect(result.current.announcement.polite).toMatch(/Player 2's move\.$/);
+    expect(result.current.announcement.polite).not.toMatch(/Your move\./);
+  });
+});
+
 describe("useGame — first-occurrence callout (once per device)", () => {
   it("fires on first trigger, clears on the next move, and never fires again across a second hook lifetime", async () => {
     const { result, unmount } = renderHook(() =>

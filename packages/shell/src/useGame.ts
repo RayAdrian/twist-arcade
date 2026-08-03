@@ -280,6 +280,11 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
     if (status.kind !== "ongoing") return { phase: "finished" };
     if (botThinking) return { phase: "bot-thinking" };
     if (handoffPending) return { phase: "handoff", actorLabel: seatLabel(opts.seatLabels, activeSeat ?? presentingSeat) };
+    // C3: hotseat never has a single "you" — presentingSeat tracks whichever seat is active, so
+    // `activeSeat === presentingSeat` is true on EVERY hotseat turn by construction, and the
+    // generic "Your move." would say the same thing to both players with no actor named. Route
+    // hotseat through the actor-naming branch unconditionally instead.
+    if (mode === "hotseat") return { phase: "their-turn", actorLabel: seatLabel(opts.seatLabels, activeSeat ?? presentingSeat) };
     if (activeSeat === presentingSeat) return { phase: "your-turn" };
     return { phase: "their-turn", actorLabel: mode === "solo-bot" ? "Bot" : seatLabel(opts.seatLabels, activeSeat ?? presentingSeat) };
   }
@@ -396,7 +401,12 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
           handoff = { pending: true, nextSeat };
           // presentingSeat stays put until confirmHandoff() (blocking interstitial).
         } else {
-          presentingSeat = nextSeat; // open-info: auto-confirm (banner variant).
+          presentingSeat = nextSeat; // open-info: auto-confirm immediately (banner variant).
+          // C3: still emit a non-pending signal — `pending: false` — so the shell can render
+          // the (non-blocking) turn banner naming who's up now. `handoff` defaults to null at
+          // the top of every applyMove call, so this auto-clears the instant a move lands
+          // without ANOTHER seat change (and re-fires fresh if one does).
+          handoff = { pending: false, nextSeat };
         }
       }
     }

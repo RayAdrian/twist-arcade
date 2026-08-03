@@ -244,6 +244,32 @@ describe("GameShell — bot driver failure shows a retryable error, never a sile
   });
 });
 
+describe("GameShell — hotseat, OPEN-information turn banner (C3)", () => {
+  it("renders a non-blocking turn banner naming the now-presenting player, input stays enabled", async () => {
+    const registryEntry = makeRegistryEntry();
+    render(<GameShell gameId={tttManifest.id} registryEntry={registryEntry} manifests={[tttManifest]} mode="hotseat" />);
+    await waitFor(() => expect(screen.getAllByRole("gridcell").length).toBe(9));
+
+    await act(async () => {
+      firstCellButton().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      firstCellButton().dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 0, clientY: 0 }));
+    });
+
+    // Non-blocking: no "show board" confirm gate (that's the hidden-information variant only).
+    expect(await screen.findByText(/pass the device to player 2/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /show board/i })).toBeNull();
+
+    // Input stays enabled — the next player can move immediately, no confirm step required.
+    const secondCell = screen.getAllByRole("gridcell")[1]!;
+    expect(secondCell).not.toHaveAttribute("aria-disabled", "true");
+
+    // The StatusLine AND the live region (AriaAnnouncer) both carry the actor-named turn phrase
+    // — not "Your move." to both players indiscriminately (the underlying bug this banner fix
+    // also corrects). Both surfaces render the phrase, hence getAllByText, not getByText.
+    expect(screen.getAllByText(/player 2's move\./i).length).toBeGreaterThan(0);
+  });
+});
+
 describe("GameShell — hotseat, hidden-information handoff", () => {
   function secretRegistryEntry(): RegistryEntry {
     return {
