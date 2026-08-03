@@ -369,6 +369,18 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
           onRestart={game.restart}
           onHow={() => setHowOpen(true)}
           confirmRestart={mode !== "hotseat" && game.moveCount >= 3 && game.status.kind === "ongoing"}
+          extras={
+            // I6: describeBoard() (plan §6.2's "readback on request") had zero consumers —
+            // composed but never triggerable. A visible, always-discoverable control (not just a
+            // keybinding) so a screen-reader user doesn't have to already know a shortcut exists.
+            <button
+              type="button"
+              onClick={game.describeBoard}
+              className="rounded px-3 py-2 text-sm text-ink underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+            >
+              Describe board
+            </button>
+          }
         />
       </div>
 

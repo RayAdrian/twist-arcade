@@ -152,6 +152,19 @@ describe("GameShell — ready state, solo-bot", () => {
     await waitFor(() => expect(screen.getAllByRole("gridcell").length).toBe(9));
     expect(await axe(container)).toHaveNoViolations();
   });
+
+  it("wires a 'Describe board' control to describeBoard() — the plan §6.2 readback-on-request affordance (I6)", async () => {
+    const registryEntry = makeRegistryEntry();
+    const user = userEvent.setup();
+    render(<GameShell gameId={tttManifest.id} registryEntry={registryEntry} manifests={[tttManifest]} mode="solo-bot" />);
+    await waitFor(() => expect(screen.getAllByRole("gridcell").length).toBe(9));
+
+    await user.click(screen.getByRole("button", { name: /describe board/i }));
+
+    // describeBoard() composes a boardSummary readback into the polite live region — an empty
+    // fresh board has 0 marks per the ttt fixture's own announce() (see ttt-definition.tsx).
+    await waitFor(() => expect(screen.getByText(/board has 0 marks\./i)).toBeInTheDocument());
+  });
 });
 
 describe("GameShell — result modal", () => {
