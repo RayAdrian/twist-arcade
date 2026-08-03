@@ -34,11 +34,19 @@
 // exactly once, and nowhere else fabricates one.
 //
 // RUNTIME PROBE (C1: "keep regardless" — belt-and-braces for a failure this quiet):
-// `probeViewHonesty` fixes a view, re-deals hidden worlds consistent with it (two DIFFERENT
-// real states that project to the identical view), and asserts a `ViewPolicy` returns the
-// identical move for both — given the same rng seed. This catches the bug the type system
-// cannot: a `ViewPolicy` implementation that closes over the real state via a stray outer
-// closure instead of the sanctioned `sampleConsistentState` path.
+// `probeViewHonesty` takes real, DIFFERENT hidden worlds that all project to the identical
+// view, rebuilds the policy pipeline fresh PER WORLD via a caller-supplied factory (mirroring
+// how the harness constructs the pipeline inside a live game whose true state is that world),
+// and asserts every rebuild returns the identical move for the identical (view, rng seed).
+// This catches the bug the type system cannot: a `ViewPolicy` implementation that closes over
+// the real state via a stray outer closure instead of the sanctioned `sampleConsistentState`
+// path. An earlier version of this probe took a single fixed `policy` instance and a fixed
+// `view`, with `worldLabels: string[]` documenting the (never-passed) worlds only in comments
+// — that version ran the SAME policy against IDENTICAL everything every iteration, so it could
+// only ever detect nondeterminism, never dishonesty (a policy reading the real state through a
+// closure returns the SAME wrong answer every time, which such a probe cannot distinguish from
+// an honest policy returning the same right answer every time). Varying the world and
+// rebuilding the pipeline per world is what makes a closure-smuggled world observable at all.
 
 import type { GameEngine, Json, PlayerId, Rng, WithEffects } from "@twist-arcade/engine";
 import type { SearchBudget } from "@twist-arcade/game-spec";
@@ -250,47 +258,67 @@ export function determinize<S extends WithEffects, M extends Json, V extends Wit
 }
 
 /**
- * Runtime honesty probe (C1: "keep regardless" of the type-level fix). Given a FIXED view and
- * two (or more) independently-supplied "hidden worlds" that a caller asserts project to that
- * identical view, re-run the SAME `ViewPolicy` with the SAME rng seed against each world and
- * assert it returns the identical move. An honest `ViewPolicy` cannot see the worlds at all
- * (only the view crosses the type boundary), so this must always pass for any implementation
- * built the sanctioned way — a failure means some implementation smuggled real state through
- * a closure instead of `sampleConsistentState`.
+ * Runtime honesty probe (C1: "keep regardless" of the type-level fix). Given two or more
+ * REAL, DISTINCT hidden worlds that all project to the identical view, and a `makePolicy`
+ * factory that rebuilds the policy pipeline fresh for each world (mirroring how the harness
+ * constructs the pipeline inside a live game whose true state IS that world), run each rebuilt
+ * pipeline against the SAME derived view with the SAME rng seed and assert every world
+ * produces the identical move.
+ *
+ * An honestly-built `ViewPolicy` (e.g. anything produced by `determinize()`) never reads
+ * `world` at all — it only ever samples FRESH worlds of its own, via
+ * `engine.sampleConsistentState`, during `chooseMove`. So varying the real world across calls
+ * costs an honest implementation nothing: it must still return the same move every time. A
+ * `ViewPolicy` that instead smuggles the real world through a closure (never touching
+ * `sampleConsistentState`) will see its answer track the varying world and diverge — that
+ * divergence is what this probe detects and throws on.
  *
  * `makeRng` must build a FRESH Rng from the same seed for each call (e.g. `() =>
- * rngFromSeed(seed)`) — reusing one stateful Rng instance across the two invocations would
- * make the second call see a different (already-advanced) stream and invalidate the probe.
+ * rngFromSeed(seed)`) — reusing one stateful Rng instance across invocations would make later
+ * calls see a different (already-advanced) stream and invalidate the probe.
  */
 export function probeViewHonesty<S extends WithEffects, M extends Json, V extends WithEffects>(args: {
   engine: GameEngine<S, M, V>;
-  policy: ViewPolicy<S, M, V>;
-  view: PlayerView<V>;
+  /** Rebuilds the policy pipeline for one hidden world. Called once per entry in `worlds`.
+   *  An honest implementation ignores its `world` argument entirely (or uses it only to decide
+   *  what to build, never to answer with) — see the function doc. */
+  makePolicy: (world: S) => ViewPolicy<S, M, V>;
+  /** Two or more REAL, DISTINCT states the caller asserts all project to the identical view
+   *  (asserted below, not just assumed — a probe run against worlds that don't actually share
+   *  a view isn't testing view-honesty at all). */
+  worlds: S[];
   player: PlayerId;
   budget: SearchBudget;
   clock: Clock;
   makeRng: () => Rng;
-  /** Distinct hidden worlds the caller asserts all project to `view` — for documentation
-   *  only; not passed to the policy (that would defeat the probe). Used purely to size the
-   *  number of comparison runs and to make failure messages legible. */
-  worldLabels: string[];
 }): void {
-  const { engine, policy, view, player, budget, clock, makeRng, worldLabels } = args;
-  if (worldLabels.length < 2) {
-    throw new RangeError("probeViewHonesty: need at least 2 worldLabels to compare");
+  const { engine, makePolicy, worlds, player, budget, clock, makeRng } = args;
+  if (worlds.length < 2) {
+    throw new RangeError("probeViewHonesty: need at least 2 worlds to compare");
   }
-  const moves: { label: string; move: M }[] = [];
-  for (const label of worldLabels) {
+  const view = deriveView(engine, worlds[0]!, player);
+  const moves: { world: S; move: M }[] = [];
+  for (const world of worlds) {
+    const worldView = deriveView(engine, world, player);
+    if (JSON.stringify(worldView) !== JSON.stringify(view)) {
+      throw new RangeError(
+        `probeViewHonesty: world ${JSON.stringify(world)} does not project to the same view as ` +
+          `the first world (${JSON.stringify(worldView)} vs ${JSON.stringify(view)}) — these are ` +
+          "not valid hidden worlds to compare (fix the caller's fixture, not this probe)."
+      );
+    }
+    const policy = makePolicy(world);
     const { move } = policy.chooseMove({ engine, view, player, rng: makeRng(), budget, clock });
-    moves.push({ label, move });
+    moves.push({ world, move });
   }
   const first = JSON.stringify(moves[0]!.move);
   for (const entry of moves.slice(1)) {
     if (JSON.stringify(entry.move) !== first) {
       throw new Error(
         `probeViewHonesty: the SAME view produced DIFFERENT moves across hidden worlds ` +
-          `(${moves[0]!.label} -> ${first}, ${entry.label} -> ${JSON.stringify(entry.move)}) — ` +
-          "the policy is behaving as though it can see something beyond the view (C1 violation)."
+          `(${JSON.stringify(moves[0]!.world)} -> ${first}, ${JSON.stringify(entry.world)} -> ` +
+          `${JSON.stringify(entry.move)}) — the policy is behaving as though it can see ` +
+          "something beyond the view (C1 violation)."
       );
     }
   }

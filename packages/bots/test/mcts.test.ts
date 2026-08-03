@@ -4,7 +4,7 @@ import { classicTicTacToe, type TTTMove, type TTTState } from "@twist-arcade/eng
 import { bankRun, type BankRunMove, type BankRunState } from "@twist-arcade/engine/testkit/fixtures/bank-run";
 import { mctsPolicy } from "../src/mcts";
 import { randomPolicy } from "../src/random";
-import { determinize, deriveView, probeViewHonesty, type Policy } from "../src/policy";
+import { determinize, deriveView, probeViewHonesty, type Policy, type SearchStats, type ViewPolicy } from "../src/policy";
 import { fakeClock } from "./helpers";
 import { rps, type RPSMove, type RPSState } from "./fixtures/rps";
 import { tinyFog, type TinyFogMove, type TinyFogState } from "./fixtures/tiny-fog";
@@ -174,24 +174,61 @@ describe("mctsPolicy", () => {
 });
 
 describe("determinize() + mctsPolicy on a hidden-info fixture (correction C1)", () => {
-  it("probeViewHonesty passes: the SAME view yields the SAME move across different hidden worlds", () => {
+  it("probeViewHonesty passes: the SAME view yields the SAME move across different REAL hidden worlds, each with its own freshly-built policy pipeline", () => {
     const engine = tinyFog;
-    const viewPolicy = determinize(mctsPolicy<TinyFogState, TinyFogMove>());
     const stateA = engine.setup(1, rngFromSeed("fog-world-a")); // some secret
     const stateB = { ...stateA, secret: (stateA.secret === 0 ? 1 : 0) as 0 | 1 }; // the OTHER secret
-    const view = deriveView(engine, stateA, 0); // identical for both worlds pre-resolution
-    expect(deriveView(engine, stateB, 0)).toEqual(view);
+    // Sanity: these really are two DIFFERENT real states that project to the IDENTICAL view —
+    // otherwise this wouldn't be exercising anything about view-honesty at all.
+    expect(stateA.secret).not.toBe(stateB.secret);
+    expect(deriveView(engine, stateB, 0)).toEqual(deriveView(engine, stateA, 0));
+
+    // makePolicy is rebuilt fresh per world (mirroring the harness constructing the pipeline
+    // inside a live game whose true state IS that world) — an honestly-built pipeline never
+    // reads `world` at all, it only ever samples fresh worlds of its own via
+    // engine.sampleConsistentState during chooseMove.
+    const makePolicy = (): ViewPolicy<TinyFogState, TinyFogMove, TinyFogView> =>
+      determinize(mctsPolicy<TinyFogState, TinyFogMove>());
 
     probeViewHonesty({
       engine,
-      policy: viewPolicy,
-      view,
+      makePolicy,
+      worlds: [stateA, stateB],
       player: 0,
       budget: { kind: "rollouts", n: 20 },
       clock: fakeClock(),
       makeRng: () => rngFromSeed("fog-probe-seed"),
-      worldLabels: ["world-with-secret-0-ish", "world-with-secret-1-ish"],
     });
+  });
+
+  it("an omniscient cheater that reads the real secret through a closure instead of sampleConsistentState makes the probe throw (the exact C1 defect)", () => {
+    const engine = tinyFog;
+    const stateA = engine.setup(1, rngFromSeed("fog-cheat-a"));
+    const stateB = { ...stateA, secret: (stateA.secret === 0 ? 1 : 0) as 0 | 1 };
+    expect(stateA.secret).not.toBe(stateB.secret);
+    expect(deriveView(engine, stateB, 0)).toEqual(deriveView(engine, stateA, 0));
+
+    // A "ViewPolicy" that structurally satisfies the interface (its chooseMove signature has
+    // no `state: S` parameter) but smuggles the real world in through a closure instead of
+    // ever calling engine.sampleConsistentState — exactly the failure mode C1 exists to catch.
+    // It guesses tiny-fog's coin correctly 100% of the time, where honest play is a 50/50 flip.
+    const cheaterFactory = (world: TinyFogState): ViewPolicy<TinyFogState, TinyFogMove, TinyFogView> => ({
+      chooseMove(): { move: TinyFogMove; stats: SearchStats } {
+        return { move: { guess: world.secret }, stats: { elapsedMs: 0 } };
+      },
+    });
+
+    expect(() =>
+      probeViewHonesty({
+        engine,
+        makePolicy: cheaterFactory,
+        worlds: [stateA, stateB],
+        player: 0,
+        budget: { kind: "rollouts", n: 20 },
+        clock: fakeClock(),
+        makeRng: () => rngFromSeed("fog-cheat-seed"),
+      })
+    ).toThrow(/C1 violation|behaving as though it can see/i);
   });
 
   it("determinize() never hands the wrapped Policy the real state — only a sampled world", () => {
