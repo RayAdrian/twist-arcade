@@ -7,10 +7,11 @@ coverage/
 *.tsbuildinfo
 next-env.d.ts
 
-# per-worktree local env — never shared between agent teams
-.env
-.env.local
-.env.*.local
+# per-worktree local env — never shared between agent teams.
+# Ignore EVERY .env variant, then re-allow the checked-in template.
+# (The previous three-pattern list missed .env.production, .env.development, etc.)
+.env*
+!.env.example
 
 # supabase local artifacts
 supabase/.branches/

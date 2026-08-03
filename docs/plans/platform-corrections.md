@@ -136,6 +136,43 @@ stops being deferrable:
 
 ---
 
+## C5 — Animation libraries (ReactBits et al.): welcome in chrome, never as board state
+
+**Owner: shell team. Severity: standing design rule.**
+
+*User decision, 2026-08-03: component libraries like reactbits.dev are approved for richer
+animation and visual polish.*
+
+**Welcome (chrome):** result modal, library home and cards, route transitions, streak and
+share moments, empty states, hover/focus flourishes, the daily hero. Delight is the point
+and motion carries no information.
+
+**Not welcome (the board):** `ux-lens.md` §9 requires every animation to restate something
+a static encoding already shows. This is not stylistic — it is what makes
+`prefers-reduced-motion` safe. If imminent decay is communicated *by* a pulse, a
+reduced-motion player cannot see it coming and the game is unplayable for them. The
+countdown badge and opacity step are authoritative; motion narrates what they already say.
+An effect that becomes the sole carrier of a state change is a bug regardless of how good
+it looks.
+
+**Constraints, mostly inherited from `architecture-lens.md` §5:**
+
+- ReactBits is copy-in source, not a dependency — each effect's cost shows up in the diff
+  rather than hiding in a bundle. Keep it that way.
+- Its components often pull GSAP or Framer Motion. Framer (~30 kB) is acceptable in chrome
+  if it earns its weight; it must never appear inside per-cell rendering. Motion One or
+  plain CSS in the hot path.
+- The 75 kB gz per-game-route budget is a hard CI gate. Chrome-level animation lives in the
+  shared shell chunk and is therefore paid once across the whole library — an argument for
+  putting polish in the shell rather than in game code.
+- `prefers-reduced-motion` and the grayscale-screenshot test still apply to every board
+  state.
+
+A board-level effect proposal goes through the orchestrator with its backing static
+encoding named — not adopted quietly.
+
+---
+
 ## Related, already routed to their owning teams
 
 - **`firstOccurrence` becomes an array** (shell). Games have more than one teachable
