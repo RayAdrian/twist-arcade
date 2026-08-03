@@ -212,6 +212,54 @@ describe("GameShell — result modal", () => {
     });
   });
 
+  it("Describe board after game end does NOT re-fire the terminal assertive announcement (I7/describeBoard regression)", async () => {
+    // Stage-6 re-review: describeBoard() spread `...cur.announcement` forward, carrying the
+    // still-populated terminal `assertive` text ("Player 0 won.") into a brand-new announcement
+    // object. That object is AriaAnnouncer's I7 `token`, so the identity change plus identical
+    // non-empty assertive text is exactly the "repeat this verbatim" signal I7 exists to force
+    // through — re-interrupting a screen-reader user's polite readback with "You won" again,
+    // every time they press "Describe board" after the game has ended. describeBoard() is a
+    // POLITE-only readback and must never touch the assertive channel.
+    const registryEntry = makeRegistryEntry();
+    render(
+      <GameShell
+        gameId={tttManifest.id}
+        registryEntry={registryEntry}
+        manifests={[tttManifest]}
+        mode="solo-bot"
+        botDriver={scriptedBotDriver([{ cell: 3 }, { cell: 5 }])}
+      />
+    );
+    await waitFor(() => expect(screen.getAllByRole("gridcell").length).toBe(9));
+
+    async function clickCell(index: number) {
+      const cell = screen.getAllByRole("gridcell")[index]!;
+      await act(async () => {
+        cell.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+        cell.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 0, clientY: 0 }));
+      });
+    }
+
+    await clickCell(0);
+    await waitFor(() => expect(screen.getAllByRole("gridcell")[3]?.textContent).toBe("O"));
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    await clickCell(1);
+    await waitFor(() => expect(screen.getAllByRole("gridcell")[5]?.textContent).toBe("O"));
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    await clickCell(2);
+
+    // Terminal status lands: the assertive live region carries the win announcement.
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/won/i));
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /describe board/i }));
+
+    // The polite region gets the fresh boardSummary readback...
+    await waitFor(() => expect(screen.getByText(/board has \d+ marks\./i)).toBeInTheDocument());
+    // ...but the assertive region must be cleared, not re-populated with the stale "won" text.
+    expect(screen.getByRole("alert")).toBeEmptyDOMElement();
+  });
+
   it("renders 'Next twist' as a real navigable link to the suggested game's canonical route (C4)", async () => {
     const registryEntry = makeRegistryEntry();
     render(

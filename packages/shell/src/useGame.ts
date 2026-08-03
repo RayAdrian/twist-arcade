@@ -637,6 +637,14 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
         polite: composeAnnouncement(
           announcementFragments("", undefined, presentation.announce({ kind: "boardSummary", view }), turnPhraseFor(phase, actorLabel))
         ),
+        // describeBoard() is a POLITE readback only — never re-fire the assertive channel. Without
+        // this, spreading `cur.announcement` forward carries a still-populated terminal `assertive`
+        // (e.g. "You won") into a brand-new announcement object; that object is AriaAnnouncer's I7
+        // `token`, so its identity changing plus identical non-empty assertive text is exactly the
+        // "repeat this verbatim" signal I7 exists to force through (ZWSP toggle) — re-announcing
+        // "You won" assertively and interrupting the polite readback the player asked for, every
+        // time they press "Describe board" after the game has ended.
+        assertive: "",
       },
     });
   }

@@ -175,11 +175,16 @@ describe("BoardShell — pointer commit semantics (plan §7: commit on pointerup
     expect(onCellAction).not.toHaveBeenCalled();
   });
 
-  // C5: TalkBack's double-tap activation gesture dispatches a synthesized `click` (no pointer
-  // down/up pair at all — `event.detail === 0` is how a script/AT-synthesized click is told
-  // apart from a real mouse/touch click, which browsers always give `detail >= 1`). Without an
-  // onClick handler at all, Cell had no path for that activation to ever reach `commit()`.
-  it("commits on a synthesized click (detail === 0) — the TalkBack/AT activation shape", () => {
+  // C5: a script/AT-synthesized click carries `detail === 0`, which is how it's told apart from
+  // a real mouse/touch click (browsers always give those `detail >= 1`). Without an onClick
+  // handler at all, Cell had no path for a bare synthesized click to ever reach `commit()`.
+  //
+  // UNVERIFIED PREMISE, stated honestly (mirrors Cell.tsx's own onClick comment): we have NOT
+  // confirmed on a real device that Android TalkBack's double-tap activation specifically
+  // dispatches this shape rather than a pointer pair — see Cell.tsx for the full reasoning on
+  // why the fix is safe either way. This test only pins the `detail === 0` contract itself, not
+  // the TalkBack premise.
+  it("commits on a synthesized click (detail === 0) — the shape a script/AT activation may use (TalkBack premise unverified)", () => {
     const onCellAction = vi.fn();
     render(<DummyBoard onCellAction={onCellAction} />);
     const cell = screen.getAllByRole("gridcell")[0]!;
