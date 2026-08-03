@@ -43,7 +43,11 @@ export function formatCiSuiteTable(report: CiSuiteReport): string {
   const lines = [`CI suite (${report.suite}) for "${report.gameId}" — ${report.ok ? "OK" : "FAILED"}`];
   for (const gate of report.gates) {
     const label = STATUS_LABEL[gate.status] ?? gate.status;
-    const exception = gate.exceptionJustification ? ` (exception: ${gate.exceptionJustification})` : "";
+    // Keyed on PRESENCE (`!== undefined`), not truthiness — an empty-string justification must
+    // never look identical to "no exception at all" (evaluateCiGates now refuses an empty
+    // justification outright, but this formatter stays correct in its own right regardless of
+    // what validation the caller did or didn't run).
+    const exception = gate.exceptionJustification !== undefined ? ` (exception: ${gate.exceptionJustification})` : "";
     lines.push(`  [${label}] ${gate.gate}: ${gate.detail}${exception}`);
   }
   return lines.join("\n");
