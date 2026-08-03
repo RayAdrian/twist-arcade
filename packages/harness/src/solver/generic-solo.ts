@@ -153,11 +153,19 @@ export function idaStarSolver<S extends WithEffects, M extends Json>(h: SoloHeur
         path: M[],
         bestGByEncoding: Map<string, number>
       ): IdaStepResult<M> {
+        // Korf's IDA*: the cutoff check MUST happen before the goal test, not after. `f = g +
+        // h(state)` is exact (not an estimate) at a WON state only when h is admissible and
+        // tight there (h(goal) == 0) — but even then, a goal reached at g > threshold is a
+        // longer-than-permitted-this-iteration path that a DEEPER iteration (at a wider
+        // threshold) may or may not beat with something shorter found via an UNEXPLORED
+        // sibling branch. Accepting it here short-circuits the search before that sibling is
+        // ever tried, which can (and did — see this file's regression test) return a strictly
+        // non-optimal path while still labelling it `optimal: true`. A goal is only a valid
+        // answer for THIS iteration when its own f already fits under the threshold.
         const status = engine.status(state);
-        if (status.kind === "won") return { kind: "found", path, nextThreshold: g };
-
         const f = g + h(state);
         if (f > threshold) return { kind: "cutoff", nextThreshold: f };
+        if (status.kind === "won") return { kind: "found", path, nextThreshold: g };
         if (!withinBudget()) return { kind: "exhausted-budget", nextThreshold: Infinity };
 
         const encoded = engine.encode(state);
