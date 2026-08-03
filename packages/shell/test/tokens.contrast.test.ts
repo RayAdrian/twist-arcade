@@ -4,10 +4,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   AGE_OPACITY,
+  CHROME_DURATIONS,
   compositeOver,
   contrastRatio,
   DARK,
+  EASE_POP,
+  GRAIN_OPACITY,
   LIGHT,
+  STROKES,
   type ThemeTokens,
 } from "../src/design-tokens";
 
