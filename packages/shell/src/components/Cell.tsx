@@ -110,11 +110,21 @@ export function Cell({
 
   // C5: an assistive-tech activation (e.g. TalkBack's double-tap gesture) may dispatch a bare
   // `click` with no pointerdown/pointerup pair at all — `onPointerUp` alone leaves that gesture
-  // with no path to `commit()`, and the board would silently never respond to it. A REAL pointer
-  // tap already commits via `onPointerUp` above, and the browser's own follow-up synthetic
-  // `click` for that tap always carries `detail >= 1` (the OS/browser-assigned click count) —
-  // only a script/AT-synthesized click reports `detail === 0` — so gating on that is how this
-  // commits the AT gesture without ever double-committing a real tap.
+  // with no path to `commit()`, and the board would silently never respond to it.
+  //
+  // UNVERIFIED PREMISE, stated honestly: we have NOT confirmed on a real device that Android
+  // TalkBack's double-tap dispatches a synthesized `click` rather than a pointer pair. The
+  // `detail === 0` convention for non-mouse-originated dispatch (element.click(), keyboard
+  // activation) is well established; Chrome-on-Android's specific behaviour under a TalkBack
+  // accessibility action is not something we have observed. Do not cite this comment as proof.
+  //
+  // The fix is safe either way, which is why it ships unverified: a REAL pointer tap already
+  // commits via `onPointerUp` above, and a browser's follow-up synthetic click for that tap
+  // carries `detail >= 1`, so gating on `detail === 0` can only ADD an activation path — it
+  // can never suppress or double-fire a real tap. If the premise is wrong, this line is inert
+  // rather than harmful, and TalkBack activation remains an open question.
+  //
+  // TODO(phase-0-exit): confirm on a real Android device during the five-person playtest.
   function onClick(e: React.MouseEvent<HTMLDivElement>) {
     if (e.detail === 0) tryCommit(performance.now());
   }
