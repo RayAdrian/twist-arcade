@@ -46,6 +46,10 @@ export interface GameShellProps {
   botDriver?: BotDriver;
   /** Canonical share path; default `/play/{gameId}`. */
   shareUrl?: string;
+  /** Optional per-game emoji prefix for the share text's header (e.g. a daily-package caller's
+   *  GLYPH_TABLE[gameId] entry — C8: shell's frame previously had no glyph concept at all).
+   *  Omitted entirely (no leading space) when not supplied. */
+  shareGlyph?: string;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -134,6 +138,7 @@ export function GameShell(props: GameShellProps) {
       {...(props.tierId !== undefined ? { tierId: props.tierId } : {})}
       {...(props.botDriver !== undefined ? { botDriver: props.botDriver } : {})}
       shareUrl={props.shareUrl ?? `/play/${props.gameId}`}
+      {...(props.shareGlyph !== undefined ? { shareGlyph: props.shareGlyph } : {})}
     />
   );
 }
@@ -148,6 +153,7 @@ interface GameShellReadyProps {
   tierId?: TierId;
   botDriver?: BotDriver;
   shareUrl: string;
+  shareGlyph?: string;
 }
 
 function useMediaQuery(query: string): boolean {
@@ -184,7 +190,7 @@ function useAppliedTheme(): "light" | "dark" {
   return isDark ? "dark" : "light";
 }
 
-function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat, tierId, botDriver, shareUrl }: GameShellReadyProps) {
+function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat, tierId, botDriver, shareUrl, shareGlyph }: GameShellReadyProps) {
   const { manifest, engine, presentation } = definition;
   const [howOpen, setHowOpen] = useState(false);
   const [resultModalOpen, setResultModalOpen] = useState(false);
@@ -260,6 +266,7 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
     try {
       const text = composeShareArtifact({
         title: manifest.title,
+        ...(shareGlyph !== undefined ? { glyph: shareGlyph } : {}),
         resultPhrase: resultText,
         artifactBody,
         url: shareUrl,

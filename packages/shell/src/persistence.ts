@@ -6,7 +6,9 @@
 // localStorage throws (private-mode storage failure, quota exceeded, or storage disabled).
 // This module never reads any game's rules — it is pure key/value plumbing.
 
-export const STREAK_KEY = "ta:streak";
+// STREAK_KEY ("ta:streak") is deliberately GONE (platform-corrections.md C8): streak.ts owns
+// its own key ("ta:streak:v1") directly rather than routing through readVersioned/writeVersioned
+// here, since StreakRecord carries no `v` field of its own — see streak.ts's header comment.
 export const SETTINGS_KEY = "ta:settings";
 
 export function gameKey(gameId: string, mode: string): string {

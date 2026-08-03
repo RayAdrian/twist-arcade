@@ -62,19 +62,23 @@ export {
   type TurnPhraseInput,
 } from "./announcer";
 export { mapEffects, finalPulseAnimation, type AnimationPrefs, type CellAnimation, type EffectAnimationKind } from "./effects-map";
-export { composeShareArtifact, invokeShare, ShareFrameTooLongError, type ShareFrameInput, type ShareOutcome } from "./share-frame";
+export {
+  composeShareArtifact,
+  composeShareText,
+  GLYPH_TABLE,
+  invokeShare,
+  ShareFrameTooLongError,
+  ShareGrammarError,
+  timelineToBody,
+  truncateTimeline,
+  type ComposeShareTextOptions,
+  type ShareFrameInput,
+  type ShareInput,
+  type ShareOutcome,
+} from "./share-frame";
 export { pickNextTwist } from "./next-twist";
 export { buildShelves, type Shelf } from "./shelves";
-export { recordDailyCompletion, readStreak, type StreakRecord } from "./streak";
+export { applyDailyCompletion, INITIAL_STREAK, readStreak, recordDailyCompletion, writeStreak, type StreakRecord } from "./streak";
 export { vibrate, type HapticPattern } from "./haptics";
-export {
-  dailyKey,
-  firstsKey,
-  gameKey,
-  readVersioned,
-  removeVersioned,
-  writeVersioned,
-  SETTINGS_KEY,
-  STREAK_KEY,
-} from "./persistence";
+export { dailyKey, firstsKey, gameKey, readVersioned, removeVersioned, writeVersioned, SETTINGS_KEY } from "./persistence";
 export { hasPlayedFirstGame, hasShownCallout, markCalloutShown, markFirstGamePlayed } from "./callouts";

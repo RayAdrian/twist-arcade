@@ -6,6 +6,7 @@
     { "path": "./packages/bots" },
     { "path": "./packages/harness" },
     { "path": "./packages/shell" },
+    { "path": "./packages/daily" },
     { "path": "./scripts" },
     { "path": "./tsconfig.app.json" }
   ]
