@@ -30,7 +30,23 @@ export function stableStringify(value: Json): string {
 
 function stringifyValue(value: Json): string {
   if (value === null) return "null";
-  if (typeof value === "number" || typeof value === "boolean") {
+  if (typeof value === "number") {
+    // Gap G-4 (M2 entry checklist, platform-corrections.md): JSON.stringify silently maps
+    // NaN/+-Infinity to the string "null", colliding with a real `null` value in the
+    // canonical form (two states differing only by "this field is NaN" vs "this field is
+    // null" would hash identically). NaN/Infinity are outside JSON-plain semantics anyway
+    // (the Json type is meant to describe values JSON can round-trip), so throwing here
+    // cannot orphan any previously-valid replay/certificate — nothing containing NaN/
+    // Infinity was ever a legitimate JSON-plain state to begin with.
+    if (!Number.isFinite(value)) {
+      throw new TypeError(
+        `stableStringify: non-finite number ${String(value)} is not JSON-plain — encode() must ` +
+          "never silently serialize NaN/Infinity as null."
+      );
+    }
+    return JSON.stringify(value);
+  }
+  if (typeof value === "boolean") {
     return JSON.stringify(value);
   }
   if (typeof value === "string") {

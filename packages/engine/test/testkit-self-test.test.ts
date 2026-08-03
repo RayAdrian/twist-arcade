@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   checkDeterminism,
   checkEncodeDecodeAndEffects,
+  checkEncodeInjectivity,
   checkLegalityCoherence,
   checkPurity,
   checkRedaction,
@@ -22,12 +23,14 @@ import {
   fogSecretExtractor,
   mutant2PEmitsLost,
   mutantEffectsAccumulate,
+  mutantEncodeConstant,
   mutantEncodeIncludesEffects,
   mutantFogEffectsLeak,
   mutantFogLeak,
   mutantIsLegalAlwaysTrue,
   mutantMathRandomLeak,
   mutantMutatesInput,
+  mutantMutatesMovesMap,
   mutantNonTerminating,
   mutantScoreDisagreesWithTerminal,
   mutantScoredWrongLength,
@@ -162,6 +165,24 @@ describe("testkit self-test: every mutant fails exactly the property it targets"
 
   it("the healthy classic-ttt fixture passes checkLegalityCoherence in both directions", () => {
     expect(() => checkLegalityCoherence(classicTicTacToe, { maxPlies: 9, runs: 5 })).not.toThrow();
+  });
+
+  // M2 entry checklist Gap G-2: encode() injectivity was never checked, so a constant/
+  // collision-prone encode passed the whole kit (encode(decode(encode(s)))===encode(s) is
+  // trivially true for a constant, and checkDeterminism compares via encode() too).
+  it("mutantEncodeConstant fails checkEncodeInjectivity, while the healthy fixture passes it", () => {
+    expect(() => checkEncodeInjectivity(mutantEncodeConstant, { maxPlies: 9, runs: 10 })).toThrow(
+      /encode-injectivity/
+    );
+    expect(() => checkEncodeInjectivity(classicTicTacToe, { maxPlies: 9, runs: 10 })).not.toThrow();
+  });
+
+  // M2 entry checklist Gap G-9: Object.freeze(map) cannot stop map.set()/.clear() because a
+  // Map's storage lives in internal slots, not enumerable own properties — so an apply() that
+  // mutates its `moves` argument used to pass checkPurity silently.
+  it("mutantMutatesMovesMap fails checkPurity, specifically naming the `moves` argument", () => {
+    expect(() => checkPurity(mutantMutatesMovesMap, { maxPlies: 9 })).toThrow(/purity/);
+    expect(() => checkPurity(mutantMutatesMovesMap, { maxPlies: 9 })).toThrow(/moves/);
   });
 });
 
