@@ -35,6 +35,19 @@ export type { MatchupReport, RunMatchupOptions } from "./runner";
 export { runMatchup } from "./runner";
 
 export type { CiSuiteReport, GateInputs, GateResult, GateStatus, RunCiSuiteOptions } from "./suites";
-export { assertSuiteOk, evaluateCiGates, runCiSuite, SuiteFailedError } from "./suites";
+export {
+  assertSuiteOk,
+  EmptyExceptionJustificationError,
+  evaluateCiGates,
+  runCiSuite,
+  SuiteFailedError,
+  worstCapHitRate,
+} from "./suites";
 
-export { formatCiSuiteTable, formatMatchupTable, formatSolveResult, toReportJson } from "./report";
+export {
+  formatCiSuiteTable,
+  formatMatchupTable,
+  formatSolveResult,
+  toMatchupReportJson,
+  toReportJson,
+} from "./report";

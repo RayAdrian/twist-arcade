@@ -26,10 +26,13 @@ describe("@twist-arcade/harness's public barrel", () => {
     expect(typeof harness.evaluateCiGates).toBe("function");
     expect(typeof harness.runCiSuite).toBe("function");
     expect(typeof harness.assertSuiteOk).toBe("function");
+    expect(typeof harness.worstCapHitRate).toBe("function");
+    expect(typeof harness.EmptyExceptionJustificationError).toBe("function");
   });
 
   it("exports the report formatters", () => {
     expect(typeof harness.toReportJson).toBe("function");
+    expect(typeof harness.toMatchupReportJson).toBe("function");
     expect(typeof harness.formatMatchupTable).toBe("function");
     expect(typeof harness.formatCiSuiteTable).toBe("function");
     expect(typeof harness.formatSolveResult).toBe("function");
