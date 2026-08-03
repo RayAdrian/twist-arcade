@@ -163,6 +163,27 @@ function useMediaQuery(query: string): boolean {
   return matches;
 }
 
+// I9: `prefers-color-scheme` alone ignores app/layout.tsx's own theme bootstrap script, which
+// honors an EXPLICIT `ta:settings.theme` override over the OS preference and applies it as the
+// `.dark` class on `<html>` before paint (tokens.css/globals.css consume that class, not a raw
+// media query, for every other color in the app). A board built from a raw matchMedia read
+// could disagree with literally every other themed pixel on the page whenever an explicit
+// override is in effect. Reads the actual applied class instead, via a MutationObserver so it
+// stays correct if that class is ever toggled live (e.g. a future settings menu).
+function useAppliedTheme(): "light" | "dark" {
+  const [isDark, setIsDark] = useState(false);
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    const update = () => setIsDark(root.classList.contains("dark"));
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+  return isDark ? "dark" : "light";
+}
+
 function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat, tierId, botDriver, shareUrl }: GameShellReadyProps) {
   const { manifest, engine, presentation } = definition;
   const [howOpen, setHowOpen] = useState(false);
@@ -173,7 +194,7 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
   // later needs it.
   const [shareFallbackText, setShareFallbackText] = useState("");
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
-  const isDark = useMediaQuery("(prefers-color-scheme: dark)");
+  const theme = useAppliedTheme();
 
   const effectiveBotDriver = useMemo(() => botDriver ?? stubBotDriver(engine), [botDriver, engine]);
 
@@ -357,7 +378,7 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
             legal={game.legal}
             onMove={(m: Json) => handleCellAction(moveToCellId(m))}
             seat={mode === "hotseat" ? game.presentingSeat : (humanSeat ?? 0)}
-            prefs={{ reducedMotion, theme: isDark ? "dark" : "light" }}
+            prefs={{ reducedMotion, theme }}
           />
         </BoardShell>
       </div>

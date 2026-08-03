@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
-import type { RegistryEntry } from "@twist-arcade/game-spec";
+import type { BoardProps, RegistryEntry } from "@twist-arcade/game-spec";
+import type { TTTMove, TTTState } from "@twist-arcade/engine/testkit/fixtures/classic-ttt";
 import { GameShell } from "../src/components/GameShell";
 import { scriptedBotDriver, type BotDriver } from "../src/bot-driver";
 import { tttDefinition, tttManifest } from "./fixtures/ttt-definition";
@@ -408,5 +409,49 @@ describe("GameShell — hotseat, hidden-information handoff", () => {
     await user.click(confirmButton);
 
     await waitFor(() => expect(screen.queryByRole("button", { name: /show board/i })).toBeNull());
+  });
+});
+
+describe("GameShell — board prefs.theme derives from the ACTUALLY APPLIED theme (I9)", () => {
+  afterEach(() => {
+    document.documentElement.classList.remove("dark");
+  });
+
+  it("reports 'dark' when the .dark class is applied, even though prefers-color-scheme itself reports light (an explicit ta:settings.theme override — layout.tsx's own precedence, tokens.css's theme bootstrap)", async () => {
+    // Simulates layout.tsx's theme-bootstrap script having already applied an EXPLICIT
+    // ta:settings.theme override that disagrees with the OS preference — the applied .dark
+    // class is the source of truth the board must match, not a fresh, independent
+    // prefers-color-scheme read that ignores the override entirely.
+    document.documentElement.classList.add("dark");
+    const originalMatchMedia = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: false, // the OS itself prefers LIGHT — .dark above is the explicit override
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+
+    const themeProbePresentation = {
+      ...tttDefinition.presentation,
+      Board: ({ prefs }: BoardProps<TTTState, TTTMove>) => <div data-testid="theme-probe">{prefs.theme}</div>,
+    };
+    const registryEntry: RegistryEntry = {
+      manifest: tttManifest,
+      async loadEngine() {
+        return tttDefinition.engine;
+      },
+      async loadPresentation() {
+        return themeProbePresentation;
+      },
+    };
+
+    render(<GameShell gameId={tttManifest.id} registryEntry={registryEntry} manifests={[tttManifest]} mode="solo-bot" />);
+
+    await waitFor(() => expect(screen.getByTestId("theme-probe")).toHaveTextContent("dark"));
+    window.matchMedia = originalMatchMedia;
   });
 });
