@@ -239,6 +239,13 @@ describe("fadeout engine — A1+B2 vs A2+B2 equivalence (R1: 6 distinct games, n
       [...effects].map((e) => `${e.type}:${e.player}:${e.cell}`).sort();
 
     let totalPlies = 0;
+    // Self-target plays: the mover choosing their OWN current oldest cell (queue at cap, i.e. a
+    // self-overflow/rotation) rather than an empty cell or the opponent's doomed cell. These are
+    // the ONLY states where an outcome-level un-collapse between A1/A2 can manifest (see the
+    // AXIS COLLAPSE doc comment's "self-target path" note in engine-internal.ts) — counted here,
+    // before applying, so a future change that stops the walk from ever reaching one is caught
+    // rather than silently making the equivalence check below vacuous for that case.
+    let selfTargetPlies = 0;
     // Many independent games, not one long walk: a 3x3 board frequently resolves in well under
     // 20 plies (a win or a superko-exhaustion loss), so a single walk can't be relied on to
     // exercise much of the graph — summing across games gives a meaningful sample instead.
@@ -260,6 +267,8 @@ describe("fadeout engine — A1+B2 vs A2+B2 equivalence (R1: 6 distinct games, n
         expect(legal1.length).toBeGreaterThan(0); // "ongoing" guarantees at least one legal move
 
         const cell = legal1[picker.int(legal1.length)]!;
+        const moverQ = s1.toMove === 0 ? s1.queues[0] : s1.queues[1];
+        if (moverQ.length === 3 && moverQ[0] === cell) selfTargetPlies++;
         s1 = apply(engineA1, s1, s1.toMove, cell, seed, ply);
         s2 = apply(engineA2, s2, s2.toMove, cell, seed, ply);
         totalPlies++;
@@ -276,6 +285,11 @@ describe("fadeout engine — A1+B2 vs A2+B2 equivalence (R1: 6 distinct games, n
     // game ending immediately — a suite of walks that all exit on ply 0 would vacuously "pass"
     // every assertion above without ever exercising the collapse.
     expect(totalPlies).toBeGreaterThan(100);
+    // Sanity (self-target coverage): totalPlies alone doesn't guarantee any of those plies was a
+    // self-target — the one case that can actually distinguish A1 from A2 outcome-wise. Without
+    // this, a future seed/walk-length/rng change that happened to drop self-target plays to zero
+    // would leave the test silently exercising a strictly weaker claim while still passing.
+    expect(selfTargetPlies).toBeGreaterThan(0);
   });
 });
 
@@ -313,6 +327,14 @@ describe("fadeout engine — longestLife varies beyond the old {0,2,3}-confined 
 
     expect(maxObserved).toBeGreaterThan(3);
     expect([...observed].some((v) => v > 3)).toBe(true);
+    // Tight invariant, not just "beyond {0,2,3}": on a 3x3/cap-3 board, a mark is only ever
+    // removed (longestLife updated) at a cap event, whose currentPly is always 5 or 6 — and the
+    // removed mark's birthPly is always 0 or 1 relative to that (see totalPliesPlayed()/
+    // transition()'s doc comment) — so 0 (never removed), 5, and 6 are the ONLY reachable values.
+    // A wrong birthPly that still happened to land above 3 (e.g. 4 or 7) would slip past the
+    // looser "> 3" checks above but is caught here.
+    const disallowed = [...observed].filter((v) => v !== 0 && v !== 5 && v !== 6);
+    expect(disallowed).toEqual([]);
   });
 });
 
