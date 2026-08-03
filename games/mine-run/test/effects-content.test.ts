@@ -35,6 +35,34 @@ function assertEffectsCellsAreRevealed(state: MineRunState, view: MineRunView): 
   }
 }
 
+/**
+ * (should-fix 4 residual, Fable review round-2 finding 4): the two checks above only look at
+ * "revealed"/"exploded" effects. Engine.ts's PUBLIC_EFFECT_TYPES allowlist also lets "banked"
+ * effects through, and nothing here has ever inspected one — a future `{type:"banked", points,
+ * mineAt: <cell>}` (a plausible shape for a "here's what you would have hit" telemetry bug)
+ * would pass the type allowlist AND both cell-focused checks above, because neither one
+ * inspects "banked" at all. This asserts every effect of EVERY known public type carries
+ * *only* its documented keys, so an extra field on any type -- not just a cell smuggled onto
+ * "revealed"/"exploded" -- is caught structurally instead of key-by-key.
+ */
+const ALLOWED_EFFECT_KEYS: Record<string, ReadonlySet<string>> = {
+  revealed: new Set(["type", "cell", "n"]),
+  exploded: new Set(["type", "cell", "streakLost"]),
+  banked: new Set(["type", "points"]),
+};
+
+function assertEffectPayloadShape(view: MineRunView): void {
+  for (const effect of view.lastEffects) {
+    const allowed = ALLOWED_EFFECT_KEYS[effect.type];
+    // Every effect reaching a view must be one of the three known public types -- redactEffects
+    // drops anything else before it ever gets here (see PUBLIC_EFFECT_TYPES in engine.ts).
+    expect(allowed).toBeDefined();
+    for (const key of Object.keys(effect)) {
+      expect(allowed!.has(key)).toBe(true);
+    }
+  }
+}
+
 describe("effects-content: every revealed/exploded effect's cell is actually in state.revealed", () => {
   it("holds across random playouts of the shipping engine, for both the player and a spectator view", () => {
     const engine = createMineRun({ width: WIDTH, height: HEIGHT, mines: MINES, budget: BUDGET });
@@ -49,6 +77,8 @@ describe("effects-content: every revealed/exploded effect's cell is actually in 
         step++;
         assertEffectsCellsAreRevealed(state, engine.playerView(state, 0));
         assertEffectsCellsAreRevealed(state, engine.playerView(state, null));
+        assertEffectPayloadShape(engine.playerView(state, 0));
+        assertEffectPayloadShape(engine.playerView(state, null));
       }
     }
   });
@@ -107,5 +137,64 @@ describe("effects-content: every revealed/exploded effect's cell is actually in 
       step++;
       assertEffectsCellsAreRevealed(state, engine.playerView(state, 0));
     }
+  });
+});
+
+describe("effects-content: every public effect carries only its documented keys (round-2 finding 4)", () => {
+  it("the SHIPPING engine never emits an effect with an undocumented key, across random playouts", () => {
+    const engine = createMineRun({ width: WIDTH, height: HEIGHT, mines: MINES, budget: BUDGET });
+    for (let run = 0; run < 15; run++) {
+      const seed = `effects-payload-shape-${run}`;
+      let state = engine.setup(1, rngForSetup(seed));
+      let step = 0;
+      while (engine.status(state).kind === "ongoing" && step < 30) {
+        const legal = engine.legalMoves(state, 0);
+        const move = legal[step % legal.length]!;
+        state = engine.apply(state, new Map([[0, move]]), rngFor(seed, step));
+        step++;
+        assertEffectPayloadShape(engine.playerView(state, 0));
+        assertEffectPayloadShape(engine.playerView(state, null));
+      }
+    }
+  });
+
+  it('catches a planted bug that smuggles an extra "mineAt" key onto an otherwise-legitimate, ' +
+    'allowlisted "banked" effect (a shape neither assertEffectsCellsAreRevealed above nor the ' +
+    "type allowlist would notice, since \"banked\" carries no cell field at all)", () => {
+    const base = createMineRun({ width: WIDTH, height: HEIGHT, mines: MINES, budget: BUDGET });
+    const mutant: GameEngine<MineRunState, MineRunMove, MineRunView> = {
+      ...base,
+      apply(state, moves, rng) {
+        const real = base.apply(state, moves, rng);
+        const move = moves.get(0);
+        if (move && move.t === "bank" && state.mines.length > 0) {
+          // BUG: a "helpful" telemetry field bolted onto the legitimate "banked" effect,
+          // leaking an unrevealed mine's position under a new key on an allowlisted type.
+          const mineAt = state.mines[0]!;
+          return {
+            ...real,
+            lastEffects: real.lastEffects.map((e) => (e.type === "banked" ? { ...e, mineAt } : e)),
+          };
+        }
+        return real;
+      },
+    };
+
+    const seed = "effects-payload-shape-mutant";
+    let state = mutant.setup(1, rngForSetup(seed));
+    let step = 0;
+    let caught = false;
+    while (mutant.status(state).kind === "ongoing" && step < 40 && !caught) {
+      const legal = mutant.legalMoves(state, 0);
+      const move = legal.find((m) => m.t === "bank") ?? legal[step % legal.length]!;
+      state = mutant.apply(state, new Map([[0, move]]), rngFor(seed, step));
+      step++;
+      try {
+        assertEffectPayloadShape(mutant.playerView(state, 0));
+      } catch {
+        caught = true;
+      }
+    }
+    expect(caught).toBe(true);
   });
 });
