@@ -26,6 +26,37 @@ const TTT_MANIFEST: GameManifest = {
   ],
 };
 
+// A separate manifest/registry entry (not reused by the other tests above) tuned so a
+// forced-win position is greedy-dominant enough (300 mcts rollouts) that epsilon=0 always
+// finds it, and any softening away from it is unambiguously attributable to `soften` — the
+// exact pattern test/tiers.test.ts's own "soften" describe block already uses at the
+// tierPolicy level. This exercises the SAME property through the worker wire boundary.
+const SOFTEN_MANIFEST: GameManifest = {
+  id: "soften-ttt-fixture",
+  title: "Classic Tic-Tac-Toe (soften fixture)",
+  classic: "Tic-Tac-Toe",
+  ruleSentence: "Get three in a row.",
+  tags: [],
+  estMinutes: 2,
+  modes: { bot: true, hotseat: true, asyncLink: false },
+  players: { min: 2, max: 2 },
+  difficultyTiers: [
+    {
+      id: "ruthless",
+      policy: { kind: "mcts" },
+      budget: { kind: "rollouts", n: 300 },
+      minReplyMs: 600,
+      // temperature deliberately high (see softmaxSample's own doc / tiers.test.ts's soften
+      // tests: LOWER temperature is peakier/closer to argmax): at 300 rollouts on a forced-win
+      // position, the winning move's visit share is so dominant that a low-temperature softmax
+      // would essentially never escape it even at epsilon=1 — empirically verified this needs
+      // temperature ~200 for the blunder rate to be reliably observable at a practical sample
+      // size, not just theoretically nonzero.
+      blunder: { epsilon: 0, temperature: 200 }, // base play is greedy; soften is the ONLY blunder source
+    },
+  ],
+};
+
 let loadEngineCalls = 0;
 
 const FOG_MANIFEST: GameManifest = {
@@ -57,6 +88,15 @@ const registry: Registry = {
     manifest: FOG_MANIFEST,
     async loadEngine() {
       return tinyFog;
+    },
+    async loadPresentation() {
+      throw new Error("not needed for these tests");
+    },
+  },
+  "soften-ttt-fixture": {
+    manifest: SOFTEN_MANIFEST,
+    async loadEngine() {
+      return classicTicTacToe;
     },
     async loadPresentation() {
       throw new Error("not needed for these tests");
@@ -165,6 +205,57 @@ describe("handleBotRequest (worker host, plan §6 + plan §13's headline determi
       if (!response.ok) {
         expect(response.error.name).toBe(HiddenInformationUnsupportedError.name);
       }
+    });
+  });
+
+  describe("first-game softening (BotRequest.soften?) — the seam must actually be reachable through this boundary", () => {
+    // A forced-win position: X (player 0) has two in a row (cells 0,1) with cell 2 open.
+    const twoInARow: TTTState = {
+      board: [0, 0, null, 1, 1, null, null, null, null],
+      turn: 0,
+      lastEffects: [],
+    };
+    const softenRequest = (step: number, soften?: boolean): BotRequest => ({
+      requestId: `req-soften-${step}`,
+      gameId: "soften-ttt-fixture",
+      encodedState: classicTicTacToe.encode(twoInARow),
+      player: 0,
+      tierId: "ruthless",
+      seed: "worker-soften-seed",
+      step,
+      ...(soften !== undefined ? { soften } : {}),
+    });
+
+    // The predicate isn't itself JSON-plain (it's a function), so it can never travel over a
+    // real postMessage — it's supplied here exactly the way the module doc for
+    // HandleBotRequestOptions says it must be: resolved INSIDE the worker process, from the
+    // calling context's own knowledge of the game, not carried on the wire.
+    const flagCell2AsTwistExploiting = (): ((state: TTTState, move: { cell: number }) => boolean) =>
+      (_state, move) => move.cell === 2;
+
+    async function countAwayFromWin(soften: boolean | undefined, resolvePredicate: boolean): Promise<number> {
+      let away = 0;
+      const N = 60;
+      for (let step = 0; step < N; step++) {
+        const response = await handleBotRequest(registry, softenRequest(step, soften), fakeClock(), {
+          resolveIsTwistExploitingMove: resolvePredicate ? () => flagCell2AsTwistExploiting() : undefined,
+        });
+        expect(response.ok).toBe(true);
+        if (response.ok && (response.move as { cell: number }).cell !== 2) away += 1;
+      }
+      return away;
+    }
+
+    it("raises epsilon on twist-exploiting moves when the caller both sets soften:true AND supplies a resolver — blunders away from the forced win far more than the unsoftened baseline", async () => {
+      const baseline = await countAwayFromWin(undefined, true);
+      const softened = await countAwayFromWin(true, true);
+      expect(baseline).toBe(0); // unsoftened: always takes the forced win (epsilon 0 base tier)
+      expect(softened).toBeGreaterThan(baseline);
+    });
+
+    it("soften:true is a no-op when the calling context supplies no resolver — nothing crosses postMessage that could smuggle a predicate in", async () => {
+      const withoutResolver = await countAwayFromWin(true, false);
+      expect(withoutResolver).toBe(0); // no predicate available -> soften has nothing to flag -> plain greedy play
     });
   });
 });

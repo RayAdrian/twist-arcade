@@ -22,6 +22,13 @@ export interface BotRequest {
   tierId: "casual" | "standard" | "ruthless"; // DifficultyTier.id — resolved via the game's manifest
   seed: string; // matchSeed; policy rng = rngFor(seed + ":bot", step)
   step: number;
+  /** First-game-softening seam (tiers.ts's SOFTEN doc / TierPolicyOptions.soften). This flag
+   *  IS JSON-plain and safely rides the wire; the game-specific "is this move twist-exploiting"
+   *  PREDICATE it depends on is NOT (it's a function) and never travels here — the host resolves
+   *  that predicate locally, inside the worker process, via
+   *  HandleBotRequestOptions.resolveIsTwistExploitingMove (worker/host.ts). Omit or false: no
+   *  softening, the tier's ordinary blunder config (if any) applies unchanged. */
+  soften?: boolean;
 }
 
 /**

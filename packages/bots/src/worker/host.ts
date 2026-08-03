@@ -97,6 +97,23 @@ export interface HandleBotRequestOptions {
    *  CALLING CONTEXT's own knowledge of whether determinism is required, not something that
    *  needs to travel over postMessage. */
   assertDeterministic?: boolean;
+
+  /** Resolves the game-specific "is this move twist-exploiting" predicate `tierPolicy` needs
+   *  to act on `BotRequest.soften` (tiers.ts's SOFTEN doc). A function cannot cross a real
+   *  postMessage boundary, so it is never part of `BotRequest` itself — this callback runs
+   *  INSIDE the worker process (same JS realm as `handleBotRequest`), given the resolved
+   *  `gameId` and the already-loaded `engine`, and returns the predicate directly (or
+   *  `undefined` if the resolved game has none — `soften` is then correctly a no-op, per
+   *  tierPolicy's own contract). Left unset entirely (the default), `soften` is ALWAYS a no-op
+   *  — there is no predicate to raise epsilon against. The concrete bootstrap file that owns
+   *  `new Worker(...)` (shell-team scope, per this module's own doc) is the natural place to
+   *  supply this, since it already imports the bundled per-game registry this needs to consult. */
+  resolveIsTwistExploitingMove?: (
+    gameId: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    engine: GameEngine<any, any, any>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ) => ((state: any, move: any) => boolean) | undefined;
 }
 
 /**
@@ -141,7 +158,8 @@ export async function handleBotRequest(
     const state = engine.decode(request.encodedState);
 
     const policyRng = rngFor(`${request.seed}:bot`, request.step);
-    const policy = tierPolicy(tier);
+    const isTwistExploitingMove = opts.resolveIsTwistExploitingMove?.(request.gameId, engine);
+    const policy = tierPolicy(tier, { soften: request.soften, isTwistExploitingMove });
     const { move, stats } = policy.chooseMove({
       engine,
       state,
