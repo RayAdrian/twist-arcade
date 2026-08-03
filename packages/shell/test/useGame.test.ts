@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { replayTo } from "@twist-arcade/engine";
+import { replayTo, type ReplayRecord } from "@twist-arcade/engine";
 import { classicTicTacToe, type TTTMove } from "@twist-arcade/engine/testkit/fixtures/classic-ttt";
 import { scriptedBotDriver, type BotDriver, type BotMoveRequest } from "../src/bot-driver";
 import { useGame } from "../src/useGame";
-import { tttDefinition } from "./fixtures/ttt-definition";
+import { gameKey } from "../src/persistence";
+import { tttDefinition, tttManifest } from "./fixtures/ttt-definition";
 import { secretPickDefinition } from "./fixtures/secret-pick";
 import { crackstepDefinition } from "./fixtures/crackstep-definition";
 
@@ -358,6 +359,55 @@ describe("useGame — daily mode budget assertion", () => {
     );
     act(() => result.current.submitMove({ cell: 0 }));
     expect(result.current.canUndo).toBe(false);
+  });
+});
+
+describe("useGame — daily rollouts invariant is enforced beyond construction time (I1)", () => {
+  it("setTier() throws immediately when switching to a non-rollouts tier in daily mode", () => {
+    const { result } = renderHook(() =>
+      useGame({
+        definition: tttDefinition,
+        mode: "solo-bot",
+        seed: "s",
+        tierId: "ruthless", // rollouts — valid at construction
+        daily: { day: "2026-08-03", dayNumber: 1 },
+        botDriver: scriptedBotDriver([]),
+      })
+    );
+    expect(() => act(() => result.current.setTier("standard"))).toThrow(/rollouts/);
+  });
+
+  it("throws on RESUME when a persisted daily tierId is no longer a rollouts tier per the CURRENT manifest — not just the caller's opts.tierId at construction", () => {
+    // A real drift scenario: the persisted record's tierId was valid when it was written, but
+    // the manifest's tier definitions changed since (a deploy). The construction-time check
+    // must validate the RESOLVED (possibly resumed) tier, not just whatever opts.tierId the
+    // caller happens to pass on this particular render — here opts.tierId itself IS valid
+    // (rollouts); only the RESUMED "standard" tier isn't.
+    const record: ReplayRecord = {
+      gameId: tttManifest.id,
+      gameVersion: classicTicTacToe.meta.version,
+      engineVersion: "0.1.0",
+      numPlayers: 2,
+      seed: "resume-seed",
+      steps: [],
+    };
+    window.localStorage.setItem(
+      gameKey(tttManifest.id, "solo-bot:daily"),
+      JSON.stringify({ v: 1, record, tierId: "standard", restartCount: 0 })
+    );
+
+    expect(() =>
+      renderHook(() =>
+        useGame({
+          definition: tttDefinition,
+          mode: "solo-bot",
+          seed: "resume-seed",
+          tierId: "ruthless",
+          daily: { day: "2026-08-03", dayNumber: 1 },
+          botDriver: scriptedBotDriver([]),
+        })
+      )
+    ).toThrow(/rollouts/);
   });
 });
 

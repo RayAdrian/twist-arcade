@@ -176,14 +176,27 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
   const numPlayers = manifest.players.max;
   const persistEnabled = opts.persist ?? mode !== "hotseat";
 
-  // Daily budget assertion (plan §5.5): refuse to start unless the resolved tier's budget kind
-  // is `rollouts` — a deadlineMs daily bot silently destroys cross-player comparability.
-  if (opts.daily) {
-    const resolvedTierId = opts.tierId ?? "standard";
-    const tier = manifest.difficultyTiers.find((t) => t.id === resolvedTierId);
+  // Daily budget assertion (plan §5.5): refuse to run with a resolved tier whose budget kind
+  // isn't `rollouts` — a deadlineMs daily bot silently destroys cross-player comparability.
+  //
+  // I1: this must be re-checked well past construction, against the ACTUAL currently-effective
+  // tier (`tierIdRef.current`) — not just re-derived from `opts.tierId` once. Two ways the
+  // effective tier can diverge from the caller's `opts.tierId` after the hook first mounts:
+  //   1. setTier()/reset() can move `tierIdRef.current` to a different tier entirely (a UI tier
+  //      picker choosing a non-rollouts tier while in daily mode).
+  //   2. A RESUMED persisted daily record's `tierId` may no longer be a rollouts tier per the
+  //      CURRENT manifest even on the very first render — the manifest's own tier definitions
+  //      can change between deploys, and the resumed value overwrites `tierIdRef.current` inside
+  //      the useState initializer below, entirely independent of whatever `opts.tierId` this
+  //      particular render happens to pass.
+  // So this is called again, against `tierIdRef.current`, right after that resolution below —
+  // not left as a one-shot check against `opts.tierId` here.
+  function assertDailyTierIsRollouts(tierId: TierId): void {
+    if (!opts.daily) return;
+    const tier = manifest.difficultyTiers.find((t) => t.id === tierId);
     if (!tier || tier.budget.kind !== "rollouts") {
       throw new Error(
-        `useGame: daily mode requires tier "${resolvedTierId}" to have a rollouts budget, got ` +
+        `useGame: daily mode requires tier "${tierId}" to have a rollouts budget, got ` +
           (tier ? tier.budget.kind : "no such tier")
       );
     }
@@ -255,6 +268,9 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
       announcement: {},
     };
   });
+  // I1: re-validated here (every render — cheap, pure) against the RESOLVED tier, which by this
+  // point may have come from a resumed persisted daily record rather than `opts.tierId` above.
+  assertDailyTierIsRollouts(tierIdRef.current);
 
   const internalRef = useRef(internal);
   internalRef.current = internal;
@@ -311,6 +327,12 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
     if (pendingRequestIdRef.current !== null) return; // already dispatched for this state
     const driver = driverRef.current;
     if (!driver) return;
+
+    // I1: the ultimate guard — this is the actual point an invalid tier would do real harm (a
+    // deadlineMs bot search genuinely running in daily mode). Redundant with the render-time and
+    // setTier()/reset() checks in the normal case; not redundant if `tierIdRef.current` ever gets
+    // here by some path those don't cover.
+    assertDailyTierIsRollouts(tierIdRef.current);
 
     const requestId = randomSeed();
     pendingRequestIdRef.current = requestId;
@@ -540,6 +562,10 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
     cancelPendingBot();
     epochRef.current += 1;
     tierIdRef.current = pendingTierIdRef.current;
+    // I1: defense in depth — setTier() already refuses to queue an invalid pending tier while
+    // daily is set, so this should be unreachable in practice; re-checking here means it stays
+    // true even if some future path sets `pendingTierIdRef` directly.
+    assertDailyTierIsRollouts(tierIdRef.current);
     const cur = internalRef.current;
     const seed = opts.daily ? cur.record.seed : randomSeed();
     const state = engine.setup(numPlayers, rngForSetup(seed));
@@ -580,6 +606,9 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
   }
 
   function setTier(t: TierId): void {
+    // I1: fail fast — refuse to even QUEUE a non-rollouts tier while daily is set, rather than
+    // silently accepting it here and only discovering the problem later at reset()/dispatch time.
+    assertDailyTierIsRollouts(t);
     pendingTierIdRef.current = t; // takes effect at the next restart/rematch (ux-lens §6).
   }
 
