@@ -16,18 +16,16 @@ test.describe("a11y gate — light theme (default, no emulation)", () => {
     expect(critical, JSON.stringify(critical, null, 2)).toEqual([]);
   });
 
-  test("an unknown gameId renders a real 'back to library' page, no critical axe violations", async ({ page }) => {
-    // NOT asserting response.status() === 404 here, deliberately: app/play/[gameId]/loading.tsx
-    // gives this route a route-level Suspense boundary, which makes Next commit to a 200
-    // status and START STREAMING before the page component's own notFound() call (deeper in
-    // the tree) is reached — so the HTTP status can't be retroactively corrected to 404 for a
-    // streamed response (confirmed directly: temporarily removing loading.tsx made the status
-    // correctly 404, at the cost of losing the board-skeleton fallback for the common case of
-    // an existing, slow-to-resolve game). The board-skeleton UX for real games was judged more
-    // valuable than a technically-correct 404 header on the rare not-found path; the CONTENT is
-    // still correct either way, which is what actually matters for a user or a crawler
-    // rendering the page. Flagged as a known Next.js streaming/notFound() trade-off.
-    await page.goto("/play/does-not-exist");
+  test("an unknown gameId renders a real 'back to library' page, WITH a real 404 status, no critical axe violations", async ({ page }) => {
+    // Orchestrator ruling (I5): the earlier "200 + streamed content vs. real 404" trade-off this
+    // comment used to describe was a false dilemma — `app/play/[gameId]/page.tsx` now sets
+    // `export const dynamicParams = false`, which 404s any gameId NOT in generateStaticParams()
+    // at the Next.js routing layer itself, before the page function (and therefore
+    // loading.tsx's Suspense boundary, which is tied to THAT function's own async work) is ever
+    // invoked. Known ids are still statically prerendered from the registry and keep the
+    // board-skeleton loading state exactly as before — only the truly-unknown-id path changed.
+    const response = await page.goto("/play/does-not-exist");
+    expect(response?.status()).toBe(404);
     await expect(page.getByRole("heading", { name: /game not found/i })).toBeVisible();
     await expect(page.getByRole("link", { name: /back to library/i })).toBeVisible();
     const results = await new AxeBuilder({ page }).analyze();

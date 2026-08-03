@@ -34,6 +34,16 @@ export function generateStaticParams(): { gameId: string }[] {
   return Object.keys(registry).map((gameId) => ({ gameId }));
 }
 
+// I5 / orchestrator ruling: "take both" — a real 404 status AND the loading.tsx board skeleton
+// for real games, not a trade-off between them. `dynamicParams = false` makes any `gameId` NOT
+// returned by generateStaticParams() 404 at the Next.js routing layer itself, before this page's
+// own function is ever invoked — since every valid id is already enumerated above (a fully
+// static catalog, no fallback route parsing), an unknown id never reaches the `notFound()` call
+// below at all, and loading.tsx (a Suspense boundary tied to THIS page's own async work) never
+// gets a chance to force a premature 200 for it. Known ids still stream through loading.tsx
+// exactly as before; only the truly-unknown-id path changes.
+export const dynamicParams = false;
+
 export async function generateMetadata({ params }: PlayPageProps): Promise<Metadata> {
   const { gameId } = await params;
   const entry = registry[gameId];
@@ -53,6 +63,8 @@ function resolveMode(entry: (typeof registry)[string]): Mode {
 export default async function PlayPage({ params }: PlayPageProps) {
   const { gameId } = await params;
   const entry = registry[gameId];
+  // Unreachable in normal operation now that `dynamicParams = false` (above) 404s an unknown
+  // gameId before this function is ever invoked — kept as defense-in-depth, never removed.
   if (!entry) notFound();
 
   const manifests = Object.values(registry).map((e) => e.manifest);
