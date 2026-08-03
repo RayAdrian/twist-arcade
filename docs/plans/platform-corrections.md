@@ -470,3 +470,53 @@ the 77,338-node draw residue, plus a free 3× from root symmetry.
 
 Worth one bounded run. **F3 does not wait for it.** Per the plan's own standing rule: do not
 ship a claim the solve did not prove.
+
+---
+
+## C12 — Fadeout's share timeline saturates; the §8 encoding predates the freeze
+
+**Owner: Fadeout (F3/F4). Severity: the artifact is the growth engine, and this becomes the
+library's template.**
+
+*Found by the F3 stage-6 review, 2026-08-03, by executing 2,000 random games rather than
+reading the encoding.*
+
+**The measurement:** under the frozen ruleset (`remove-first`/solid), every move from ply 7
+onward decays the mover's own oldest mark. Verified `faded ≡ max(0, plies − 6)` on
+**2,000/2,000** games spanning 5–88 plies. Since 💨 *substitutes* for the seat glyph, every
+artifact is `❌⭕❌⭕❌⭕` followed by an unbroken run of 💨 — a 60-ply game renders **54
+consecutive 💨**. All seat identity is lost after ply 6.
+
+And `pieces faded: 54 · 60 plies` prints **one degree of freedom twice**: given the identity
+above, the two numbers are the same fact.
+
+**This is the fourth iteration of the same lesson** (§14 → §15 → §16 → here). The plan's §8
+encoding was written before the ruleset was frozen and was never re-run against it. §16's
+own instruction — *sweep the per-game statistic the artifact actually prints* — was applied
+to the stat line and not to the timeline.
+
+### Ruling
+
+1. **Drop `pieces faded`.** It is provably derivable from ply count under this ruleset.
+   Keep plies.
+2. **💨 marks only the first decay**, and seat glyphs are retained for every move. That
+   marks the moment the twist becomes visible — the artifact's actual hook — instead of
+   erasing the board's identity from ply 7 onward.
+3. **Accept that Fadeout is a low-variance artifact game, and say so rather than
+   over-engineering it.** Strict alternation makes the seat sequence deterministic, so the
+   timeline's genuine information is *length*, *result*, and *where the winning move fell*.
+   That is thin, and it is honest. The daily number and the result carry most of the social
+   weight; not every game in the library needs a rich artifact, and inventing variance that
+   isn't there is worse than admitting there is little.
+4. **This artifact must not be copied as the library's template** without re-running the
+   distribution sweep for that game's own ruleset. Encoding decisions made before a freeze
+   are unvalidated by construction.
+
+### Related, and due before the next daily increment
+
+Post-rebase, `main`'s C8 strict grammar (`composeShareText`, 15 glyphs per line,
+`timelineToBody` splitting into 2×14) will **reject** Fadeout's single-line timeline for any
+game over 15 plies. Nothing calls it with a game body yet, so it is not an at-merge crash —
+but the committed daily days on `main` *are* Fadeout days. Decide explicitly whether Fadeout
+chunks its own timeline or the daily adapter does, and record it, rather than discovering it
+as a thrown `ShareGrammarError` inside a live daily.
