@@ -7,7 +7,7 @@ import { randomPolicy } from "../src/random";
 import { determinize, deriveView, probeViewHonesty, type Policy, type SearchStats, type ViewPolicy } from "../src/policy";
 import { fakeClock } from "./helpers";
 import { rps, type RPSMove, type RPSState } from "./fixtures/rps";
-import { tinyFog, type TinyFogMove, type TinyFogState } from "./fixtures/tiny-fog";
+import { tinyFog, type TinyFogMove, type TinyFogState, type TinyFogView } from "./fixtures/tiny-fog";
 
 describe("mctsPolicy", () => {
   it("mcts1k beats random >= 90% over a seeded batch on classic-ttt (free oracle, plan §9)", () => {

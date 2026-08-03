@@ -35,7 +35,11 @@ describe("valueOfStatus: 'ongoing' (horizon-capped, no terminal reached) falls b
   });
 
   it("falls back to 0 when neither score() nor heuristic() exists", () => {
-    const engine = { ...classicTicTacToe, heuristic: undefined };
+    // Can't spread `{ heuristic: undefined }` — exactOptionalPropertyTypes treats a
+    // present-but-undefined property differently from an absent one. Destructure it away
+    // instead, which actually OMITS the key from the resulting object.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { heuristic: _unusedHeuristic, ...engine } = classicTicTacToe;
     const state = classicTicTacToe.setup(2, { int: () => 0, next: () => 0 } as never);
     const value = valueOfStatus(engine, { kind: "ongoing" }, state, 0);
     expect(value).toBe(0);

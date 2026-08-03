@@ -159,7 +159,13 @@ export async function handleBotRequest(
 
     const policyRng = rngFor(`${request.seed}:bot`, request.step);
     const isTwistExploitingMove = opts.resolveIsTwistExploitingMove?.(request.gameId, engine);
-    const policy = tierPolicy(tier, { soften: request.soften, isTwistExploitingMove });
+    // Built conditionally (never `key: undefined`) — exactOptionalPropertyTypes treats a
+    // present-but-undefined property differently from an absent one, and TierPolicyOptions's
+    // own fields are typed as plain optionals (soften?: boolean), not `boolean | undefined`.
+    const policy = tierPolicy(tier, {
+      ...(request.soften !== undefined ? { soften: request.soften } : {}),
+      ...(isTwistExploitingMove !== undefined ? { isTwistExploitingMove } : {}),
+    });
     const { move, stats } = policy.chooseMove({
       engine,
       state,

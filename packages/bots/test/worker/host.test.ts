@@ -280,8 +280,10 @@ describe("handleBotRequest (worker host, plan §6 + plan §13's headline determi
       let away = 0;
       const N = 60;
       for (let step = 0; step < N; step++) {
+        // Built conditionally (never `key: undefined`) — exactOptionalPropertyTypes treats a
+        // present-but-undefined property differently from an absent one.
         const response = await handleBotRequest(registry, softenRequest(step, soften), fakeClock(), {
-          resolveIsTwistExploitingMove: resolvePredicate ? () => flagCell2AsTwistExploiting() : undefined,
+          ...(resolvePredicate ? { resolveIsTwistExploitingMove: () => flagCell2AsTwistExploiting() } : {}),
         });
         expect(response.ok).toBe(true);
         if (response.ok && (response.move as { cell: number }).cell !== 2) away += 1;
