@@ -184,3 +184,182 @@ encoding named — not adopted quietly.
 - **A documented exception to the 48 px cell floor** exists for Mine Run (10×10 cannot fit
   at a 320 px viewport), conditional on mandatory two-tap commit on every platform. The
   shell team owns the floor and must know it has exactly one sanctioned violation.
+
+---
+
+## C6 — A validation yardstick must be strong enough to measure with
+
+**Milestone: M2 bots + Mine Run. Severity: high — produces both false passes and false
+failures, silently.**
+
+*Found by: the M3c solo-harness implementer, 2026-08-03. Ruled by the orchestrator.*
+
+The shipped solo `Strong` agent — `determinize(flatMonteCarloPolicy())`, one sample, a
+**uniform-random** rollout — could not reliably clear the Always-Safe gate even against a
+*healthy* Mine Run. Validating the gate's mechanism required a test-local K-sample,
+greedy-rollout Strong.
+
+**Why this is C1's problem one level deeper.** C1 guards against a policy that *peeks* —
+an omniscient bot posts a passing skill ratio on an unplayable game. C6 is a policy that is
+honest but **too weak to be a yardstick**. Every solo gate is defined relative to Strong:
+"Strong/Random median ratio < 1.5", "Always-Safe ≥ 95% of Strong". If Strong is weak, the
+ratio collapses toward 1 on a *good* game (false fail), and any threshold loosened to
+accommodate it stops catching a genuinely degenerate one (false pass). Both directions are
+silent.
+
+**Root causes, both already specified and both unbuilt:**
+
+1. `flatMonteCarloPolicy`'s rollout is uniform-random; `mine-run.md` §4.4 specifies a
+   **greedy** rollout. This is the game's own open question O1, unresolved.
+2. `games/mine-run/heuristic.ts` is specced in `mine-run.md` §4.5 and **does not exist**, so
+   `greedyOnlyPolicy` and beam's `evaluate()` fall back to bare `engine.score()` — which
+   equals `banked` and is therefore **blind to unbanked streak value**, the entire quantity
+   the press-your-luck decision turns on.
+
+**Ruling:** build both before any solo gate result is trusted. Implement the greedy rollout
+in `packages/bots` (parameterised, so a game supplies its rollout policy) and
+`games/mine-run/heuristic.ts` scoring banked **plus** unbanked-streak expectation. Then
+re-run the Always-Safe validation with the shipped Strong and confirm the separation the
+test-local Strong demonstrated. Until that holds, **no solo gate number is evidence**.
+
+**The general rule, worth applying beyond this game:** a gate defined relative to a
+reference agent is only as trustworthy as that agent. Before believing a threshold, verify
+the reference clears it on a known-good input — otherwise the gate measures the yardstick,
+not the game.
+
+**Also record:** an Always-Safe separation requires the reveal budget to be tighter than the
+cell count. Where `revealsLeft budget == totalCells` there is no reveal scarcity and the
+gate shows zero separation at any mine density. Belongs in the plan's tuning notes.
+
+---
+
+## C7 — `manifest.solo.format` literals: the code is right, the docs are wrong
+
+**Severity: documentation.**
+
+C2 and `roadmap.md` §6 say `"puzzle" | "chase"`. The shipped
+`packages/game-spec/src/manifest.ts` uses **`"daily-puzzle" | "score-chase"`**. The M3c
+implementer built against the real code, which is correct. The docs are the error and are
+corrected here; C2's *substance* (select the gate table by format, never by player count)
+is unchanged.
+
+---
+
+## C8 — One implementation of streak and share composition, in `packages/shell`
+
+**Owner: shell + daily teams. Severity: divergence that will rot silently.**
+
+*Found by: the Phase-1 daily implementer, 2026-08-03. Ruled by the orchestrator.*
+
+`packages/shell/src/streak.ts` and `share-frame.ts` shipped with the shell merge. The daily
+team, correctly told to build on the shell rather than replace it, then built plan-correct
+versions in `packages/daily` — because the shell's differ **materially**, not cosmetically:
+
+- shell's streak has no `best` field and **does not protect against a resumed old daily
+  resetting the count** — precisely the case `daily-and-share.md` §6.2 calls out;
+- shell's `composeShareArtifact` cannot reproduce the plan's binding grammar: no glyph,
+  `#37` rather than `Daily #37`, and a separate restart line instead of the inline
+  `· attempt k`.
+
+Two implementations of the same concept, both live, differing in ways a reader would not
+notice. They will drift, and the wrong one will be used in the wrong place with nothing
+erroring — the same silent-divergence shape as every other defect this build has produced.
+
+**Ruling: consolidate into `packages/shell`, correcting it to the plan-binding behaviour.**
+
+Direction matters. `shell` is the lower-level package — `useGame`, `ResultModal`, and
+`GameShell` already import these modules — and `daily` is the feature layer above it. So the
+corrected logic lives in `shell` and `daily` imports it. Moving it the other way would
+invert the dependency.
+
+Concretely: port the daily versions' behaviour into `packages/shell/src/streak.ts` and
+`share-frame.ts` (the `best` field, resumed-old-daily protection, the binding share
+grammar), update shell's existing consumers and tests, delete the duplicates in
+`packages/daily`, and have `packages/daily` import from `@twist-arcade/shell`. One
+implementation, one set of tests.
+
+**Also settled here:** `daily-and-share.md` §4.2's prose caps (stat line ≤40 chars, body
+line ≤14 glyphs) contradict its own §4.4 literal fixtures (42 and 41 chars; 15 glyphs). The
+Definition of Done requires byte-for-byte fixture reproduction, so **the fixtures win** —
+enforced caps are 42 and 15. The prose is the error. The implementer chose this and
+documented it rather than silently satisfying one and failing the other; that was right.
+
+---
+
+## C9 — `grindProbe` is structurally blind to the farming loop it exists to catch
+
+**Milestone: M3c. Severity: high — the probe cannot detect its own headline case.**
+
+*Found by: the M3c stage-6 review, 2026-08-03, with an executed counterexample.*
+
+Spine §7.4 specifies Grind as "cycle detection on `encode(S)` … score delta ≥ 0". Those two
+clauses **contradict each other**, and the implementation inherits the contradiction
+faithfully.
+
+`probes-solo.ts:94` requires `encode(next) === startEncoded`. But score (`banked`) lives
+**inside canonical state**, so encode-equality forces `delta === 0` exactly — the `>= 0`
+clause is dead code. The probe can only ever see zero-delta self-loops.
+
+**Executed proof:** a Mine Run mutant whose `bank` credits `streakValue` but never resets
+the streak is a genuine infinite zero-risk farm — banked strictly increases by `v` per bank
+across five iterations, every other field byte-identical, status ongoing. `grindProbe`
+returned `found: false`.
+
+The one shape the probe *can* see is the bank-at-`streakLen 0` delta-0 self-loop, which is
+exactly the case the M3c tests plant. So the probe passes its own test while being blind to
+the class the solo lens describes as "score grows linearly with moves".
+
+**This is a plan defect, not an implementation slip** — hence a recorded correction rather
+than a patch. Spine §7.4's mechanism must change to one of:
+
+- cycle-detect on a **score-projected key** (score fields normalised out before encoding), or
+- detect a **move sequence repeatable k times with identical positive per-iteration delta**.
+
+The second is closer to what the gate means and is harder to fool.
+
+*Verified clean in the over-fire direction:* a near-miss mutant (a legal no-op that costs a
+reveal — bounded, not a loop) correctly stays quiet, as does the healthy engine.
+
+---
+
+## C10 — `verifyCertificate` never checks the one number the certificate exists to publish
+
+**Milestone: M3d + engine testkit. Severity: high — a forged par validates.**
+
+*Found by: the M3c stage-6 review, 2026-08-03, by tampering a real certificate.*
+
+`verifyCertificate` (`packages/engine/testkit/checks.ts:743-771`) checks `gameId` and
+`gameVersion`, and replays `moveLog` to a `won` terminal. It **never compares `par` to
+`moveLog.length`**.
+
+**Executed:** tampering a freshly certified hole-walk certificate to `par: 999` passes
+verification, and the gate's par-range row passes for any in-band forged value.
+
+`par` is *the* published number — it is simultaneously the fairness proof, the difficulty
+calibration, and the share hook. A certificate whose replay is valid but whose par is wrong
+is worse than no certificate: it carries the full authority of having been verified.
+
+**Fix** (route through the orchestrator, since `checks.ts` belongs to the engine lane):
+extend `CertificateReplayInput` with an optional `par`, throwing when supplied and
+`≠ moveLog.length`; or add a harness-side verification wrapper that certify and the CI job
+both call. The same gap covers `parKind` and `guessFree` tampering.
+
+---
+
+## C11 — Fog dailies must be rejected unless deduction-only
+
+**Milestone: M3d. Severity: medium — silently omitted rather than explicitly N/A.**
+
+Spine §7.7 and solo-lens §3.3 both list "fog games — if not deduction-only" as an explicit
+rejection clause, and lens §3.8 carries a CI row for it. `certifyDay` records
+`guessFree: solveResult.guessFree ?? false` for hidden-info engines but **never rejects on
+it** — a fog daily requiring a guess gets certified with `guessFree: false` and ships.
+
+`SoloGatePuzzleInputs` has no `guessFree` field and neither gate table carries the row, so
+by C2's own standard the concern is *silently omitted* rather than reported N/A. No shipped
+game hits it today (Crackstep is perfect-information; Mine Run publishes no certificates),
+but this is the platform-wide pipeline and the next fog game inherits it.
+
+**Fix:** a rejection clause in `certifyDay` when
+`engine.meta.hiddenInformation && !solveResult.guessFree`, plus a `fogDeductionOnly` row in
+both gate tables (N/A with a reason for non-fog and for chase formats).
