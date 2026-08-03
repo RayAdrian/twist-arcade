@@ -10,6 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The DY1 guards below run `git diff origin/main...HEAD`. The default shallow
+          # clone (fetch-depth: 1) has no base history, so the diff either errors or —
+          # worse — silently produces the wrong answer. See packages/daily/CI.md trap 1.
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
         with:
@@ -48,6 +53,25 @@ jobs:
         # never by player count (platform-corrections.md C2). Exits non-zero the moment any
         # registered game fails its gate table (plan §7.5, roadmap §6). A no-op ("nothing to
         # gate yet") until the first game registers — see scripts/ci-gates.ts's own doc.
+
+      # --- DY1 daily guards -------------------------------------------------------
+      # These enforce the daily comparability contract. Without them a committed retune
+      # of a shipped manifest merges green, which is the entire thing DY1 exists to stop.
+      # `--today` is computed here rather than left to the runner's clock: a skewed or
+      # mistimed runner could free a day that has already shipped, or freeze one that
+      # has not. See packages/daily/CI.md.
+      - name: Compute today's UTC date
+        id: today
+        run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
+      - name: Guard — shipped daily manifests are immutable
+        run: pnpm --filter @twist-arcade/daily run guard:immutability -- --today ${{ steps.today.outputs.date }}
+
+      - name: Guard — era.json changes carry a CHANGELOG entry
+        run: pnpm --filter @twist-arcade/daily run guard:era-changelog
+
+      - name: Guard — manifests valid, contiguous, and buffered
+        run: pnpm --filter @twist-arcade/daily run guard:manifests -- --today ${{ steps.today.outputs.date }}
 
       - name: Build (production)
         run: pnpm build
