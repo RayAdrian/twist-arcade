@@ -15,7 +15,15 @@ import { describe, expect, it } from "vitest";
 import { classicTicTacToe } from "@twist-arcade/engine/testkit/fixtures/classic-ttt";
 import { DEFAULT_HARNESS_THRESHOLDS } from "@twist-arcade/game-spec";
 import type { GameManifest } from "@twist-arcade/game-spec";
-import { evaluateCiGates, runCiSuite, SuiteFailedError, type GateInputs } from "../src/suites";
+import {
+  EmptyExceptionJustificationError,
+  evaluateCiGates,
+  runCiSuite,
+  SuiteFailedError,
+  worstCapHitRate,
+  type GateInputs,
+} from "../src/suites";
+import type { MatchupReport } from "../src/runner";
 
 // A GateInputs value that passes EVERY gate cleanly — every planted-violation test below
 // starts from a clone of this and perturbs exactly one field, so a test failure always
@@ -108,6 +116,92 @@ describe("evaluateCiGates() — manifest exceptions (plan §7.5)", () => {
       "ci"
     );
     expect(gates.find((g) => g.gate === "draw-rate")!.status).toBe("fail");
+  });
+
+  // SHOULD FIX #2: an empty justification is currently accepted, and the report then hides the
+  // exception entirely (a bare "[WARN] draw-rate: ..." with no marker at all, indistinguishable
+  // from an ordinary warn) — defeating "visible in review, never a silent pass". Refuse it
+  // outright instead of downgrading silently.
+  it("throws EmptyExceptionJustificationError on an empty justification, even when it would " +
+    "match a real failing gate", () => {
+    expect(() =>
+      evaluateCiGates(
+        { ...HEALTHY, drawRate: 0.9 },
+        DEFAULT_HARNESS_THRESHOLDS,
+        [{ gate: "draw-rate", justification: "" }],
+        "ci"
+      )
+    ).toThrow(EmptyExceptionJustificationError);
+  });
+
+  it("throws on a WHITESPACE-only justification too (not just the exact empty string)", () => {
+    expect(() =>
+      evaluateCiGates(
+        { ...HEALTHY, drawRate: 0.9 },
+        DEFAULT_HARNESS_THRESHOLDS,
+        [{ gate: "draw-rate", justification: "   " }],
+        "ci"
+      )
+    ).toThrow(EmptyExceptionJustificationError);
+  });
+
+  it("throws even when NO gate is currently failing — validated up front, not lazily on use", () => {
+    expect(() =>
+      evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [{ gate: "draw-rate", justification: "" }], "ci")
+    ).toThrow(EmptyExceptionJustificationError);
+  });
+});
+
+describe("evaluateCiGates() — boundary near-misses probed on BOTH sides (coverage debt, not a bug)", () => {
+  // The stage-6 review probed all four of these both ways and found the implementation already
+  // correct everywhere — these are the assertions that would catch a future >=/> regression.
+  it("strong-vs-random: exactly 0.90 (the threshold itself) passes", () => {
+    expect(statusOf({ ...HEALTHY, strongVsRandomWinRate: 0.9 }, "strong-vs-random")).toBe("pass");
+  });
+
+  it("first-player-win-rate: exactly 0.65 (the upper band edge) passes", () => {
+    expect(statusOf({ ...HEALTHY, firstPlayerWinRate: 0.65 }, "first-player-win-rate")).toBe("pass");
+  });
+
+  it("mean-plies: exactly 200 (the upper band edge) passes", () => {
+    expect(statusOf({ ...HEALTHY, meanPlies: 200 }, "mean-plies")).toBe("pass");
+  });
+
+  it("ruthless-vs-standard: exactly 0.60 (the threshold itself) passes on the ci suite", () => {
+    expect(statusOf({ ...HEALTHY, ruthlessVsStandardWinRate: 0.6 }, "ruthless-vs-standard", "ci")).toBe("pass");
+  });
+});
+
+describe("worstCapHitRate() — cap-hit gating must see every matchup run, not just self-play (SHOULD FIX #3)", () => {
+  function withCapHit(capHitRate: number): Pick<MatchupReport, "metrics"> {
+    return { metrics: { ...HEALTHY_METRICS, capHitRate } };
+  }
+  const HEALTHY_METRICS: MatchupReport["metrics"] = {
+    games: 200,
+    firstPlayerWinRate: 0.5,
+    drawRate: 0.2,
+    winRateBySeat: [0.5, 0.5],
+    meanPlies: 20,
+    medianPlies: 20,
+    p95Plies: 30,
+    meanBranchingFactor: 4,
+    capHitRate: 0,
+  };
+
+  it("takes the max across matchups — a clean self-play must not hide a dirty vs-random", () => {
+    expect(worstCapHitRate([withCapHit(0.15), withCapHit(0), null])).toBe(0.15);
+  });
+
+  it("is 0 when every run matchup is clean", () => {
+    expect(worstCapHitRate([withCapHit(0), withCapHit(0), null])).toBe(0);
+  });
+
+  it("considers ruthlessVsStandard too when it was actually run (not null)", () => {
+    expect(worstCapHitRate([withCapHit(0), withCapHit(0), withCapHit(0.4)])).toBe(0.4);
+  });
+
+  it("throws rather than silently returning a degenerate value when nothing was run at all", () => {
+    expect(() => worstCapHitRate([null, null])).toThrow(RangeError);
   });
 });
 

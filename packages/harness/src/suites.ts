@@ -58,6 +58,24 @@ interface ManifestException {
   readonly justification: string;
 }
 
+/** Thrown by `evaluateCiGates` when a manifest exception's `justification` is empty (or
+ *  whitespace-only). Plan §7.5's whole point is that an exception must be "visible in review,
+ *  never a silent pass" — a blank justification defeats that at the REPORT layer, not just in
+ *  spirit: `formatCiSuiteTable` prints a bare `[WARN] gate: detail` for an exception with no
+ *  text, byte-for-byte indistinguishable from an ordinary (non-excused) warn, so a reviewer has
+ *  no way to tell "this fail was deliberately excused" from "this gate just warns". Refusing
+ *  loudly here, at the manifest boundary, is cheaper than a reviewer ever discovering the gap. */
+export class EmptyExceptionJustificationError extends Error {
+  constructor(gate: string) {
+    super(
+      `evaluateCiGates: manifest exception for gate "${gate}" has an empty justification — an ` +
+        'exception must be visible in review (plan §7.5, "never a silent pass"); a blank ' +
+        "justification is indistinguishable from an ordinary warn once downgraded."
+    );
+    this.name = "EmptyExceptionJustificationError";
+  }
+}
+
 /** Applies a manifest exception (if any) to a raw "fail" verdict: downgrades to "warn" with the
  *  justification attached. A raw "pass"/"warn"/"n/a" is returned unchanged — an exception only
  *  ever SOFTENS a fail, it can never manufacture one, and it is applied per gate name (an
@@ -80,6 +98,15 @@ export function evaluateCiGates(
   exceptions: readonly ManifestException[] = [],
   suite: "ci" | "nightly" = "ci"
 ): GateResult[] {
+  // Validated up front, before any gate runs — an exception with a blank justification is
+  // rejected regardless of whether it ends up matching a failing gate (see
+  // EmptyExceptionJustificationError's own doc for why this must never reach the report layer).
+  for (const exception of exceptions) {
+    if (exception.justification.trim() === "") {
+      throw new EmptyExceptionJustificationError(exception.gate);
+    }
+  }
+
   const results: GateResult[] = [];
 
   {
@@ -191,6 +218,28 @@ function tierAgent<S extends WithEffects, M extends Json>(name: string, tier: Di
 }
 
 /**
+ * SHOULD FIX #3: the mean-plies gate's cap-hit rule (roadmap §6: "any playout hitting the ply
+ * cap" fails; Fadeout §7 sharpens this to zero under superko, since a cap hit there is an engine
+ * bug) must see EVERY matchup this suite actually ran, not just self-play. A game that
+ * terminates briskly ruthless-vs-ruthless can still stall out against a genuinely weaker/random
+ * opponent that never finds the forcing line and runs to the cap every game — self-play alone
+ * would miss that cap hit entirely and let mean-plies pass on a real bug. Takes the max across
+ * whichever matchups were actually run (`ruthlessVsStandard` is `null` when the manifest has no
+ * "standard" tier). Exported and pure — this module's own "pure evaluation vs real wiring" split
+ * (see module doc) applies at this aggregation seam too: testable with hand-built
+ * matchup-shaped values, no real self-play required.
+ */
+export function worstCapHitRate(reports: readonly (Pick<MatchupReport, "metrics"> | null)[]): number {
+  const rates = reports
+    .filter((r): r is Pick<MatchupReport, "metrics"> => r !== null)
+    .map((r) => r.metrics.capHitRate);
+  if (rates.length === 0) {
+    throw new RangeError("worstCapHitRate: at least one non-null matchup report is required");
+  }
+  return Math.max(...rates);
+}
+
+/**
  * Runs the real self-play this gate table needs (strong-vs-random, strong self-play, and
  * ruthless-vs-standard when the manifest has a "standard" tier) and evaluates every gate
  * against the manifest's own threshold overrides (falling back to
@@ -240,8 +289,12 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
     strongVsRandomWinRate: agentWinRate(strongVsRandom.outcomes, "ruthless"),
     firstPlayerWinRate: strongSelfPlay.metrics.firstPlayerWinRate,
     drawRate: strongSelfPlay.metrics.drawRate,
+    // meanPlies deliberately stays self-play-only: it is a shape-of-game statistic (how long a
+    // BALANCED game runs), and mixing in a mismatched matchup like ruthless-vs-random would pull
+    // it toward whatever that matchup's dynamics happen to be, not the metric roadmap §6 means.
     meanPlies: strongSelfPlay.metrics.meanPlies,
-    capHitRate: strongSelfPlay.metrics.capHitRate,
+    // capHitRate does NOT stay self-play-only — see worstCapHitRate's own doc (SHOULD FIX #3).
+    capHitRate: worstCapHitRate([strongVsRandom, strongSelfPlay, ruthlessVsStandard]),
     ruthlessVsStandardWinRate: ruthlessVsStandard ? agentWinRate(ruthlessVsStandard.outcomes, "ruthless") : null,
   };
 
