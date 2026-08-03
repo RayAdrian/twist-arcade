@@ -31,7 +31,15 @@ export function valueOfStatus<S extends WithEffects, M extends Json>(
       return status.scores[player] ?? 0;
     case "ongoing":
       if (engine.score) return engine.score(state, player);
-      if (engine.heuristic) return engine.heuristic(state, player) / 9;
+      // No division/rescaling here: `heuristic()`'s doc (packages/engine/src/types.ts) promises
+      // only "positive = good for player" — no bound on its range. An earlier version of this
+      // line divided by a hardcoded 9 (classic-ttt's own open-line-count max), baking one
+      // fixture's specific range into code every search algorithm in this package shares. Any
+      // OTHER game's heuristic — with a different natural range — would have been silently
+      // (and wrongly) rescaled by that same constant. Return the raw value; callers that need
+      // it commensurate with won/lost's ±1 must supply a heuristic that is already scaled that
+      // way (a per-game concern, not this shared helper's).
+      if (engine.heuristic) return engine.heuristic(state, player);
       return 0;
   }
 }

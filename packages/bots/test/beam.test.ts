@@ -1,11 +1,75 @@
 import { describe, expect, it } from "vitest";
 import { rngFromSeed } from "@twist-arcade/engine";
+import type { ActiveSpec, GameEngine, Json, PlayerId, Rng, Status, WithEffects } from "@twist-arcade/engine";
 import { bankRun, type BankRunMove, type BankRunState } from "@twist-arcade/engine/testkit/fixtures/bank-run";
 import { miniCrackstep } from "@twist-arcade/engine/testkit/fixtures/mini-crackstep";
 import { classicTicTacToe, type TTTMove, type TTTState } from "@twist-arcade/engine/testkit/fixtures/classic-ttt";
 import { beamPolicy } from "../src/beam";
 import { randomPolicy } from "../src/random";
 import { fakeClock } from "./helpers";
+
+// A minimal solo, deterministic fixture built ONLY to exercise beam's won/lost-vs-heuristic
+// ranking: from "start", one move ends the game in an immediate win (status "won"); the other
+// move ("drift") stays "ongoing" forever with a heuristic (100) that is far larger than a
+// naively-finite won value of 1. No shipped solo fixture combines maxPlayers===1, a won/lost
+// status, AND heuristic() in one place, so this is test scaffolding only (not a shipped game).
+interface WinVsDriftState extends WithEffects {
+  readonly phase: "start" | "won" | "drift";
+}
+interface WinVsDriftMove {
+  readonly kind: "win" | "drift";
+  readonly [key: string]: Json;
+}
+const winVsDrift: GameEngine<WinVsDriftState, WinVsDriftMove, WinVsDriftState> = {
+  meta: {
+    id: "win-vs-drift-fixture",
+    name: "Win vs Drift (bots test fixture)",
+    minPlayers: 1,
+    maxPlayers: 1,
+    hiddenInformation: false,
+    simultaneous: false,
+    stochastic: false,
+    version: 1,
+  },
+  setup(_numPlayers: number, _rng: Rng): WinVsDriftState {
+    return { phase: "start", lastEffects: [] };
+  },
+  legalMoves(state, player: PlayerId): WinVsDriftMove[] {
+    if (player !== 0) return [];
+    if (state.phase === "start") return [{ kind: "win" }, { kind: "drift" }];
+    if (state.phase === "drift") return [{ kind: "drift" }]; // drift forever, budget bounds the search
+    return [];
+  },
+  isLegal(state, player, move): boolean {
+    return this.legalMoves(state, player).some((m) => m.kind === move.kind);
+  },
+  active(_state): ActiveSpec {
+    return { mode: "sequential", player: 0 };
+  },
+  apply(_state, moves, _rng): WinVsDriftState {
+    const move = moves.get(0);
+    if (!move) throw new Error("win-vs-drift: apply() called without a move for player 0");
+    return { phase: move.kind === "win" ? "won" : "drift", lastEffects: [] };
+  },
+  status(state): Status {
+    return state.phase === "won" ? { kind: "won", winner: 0 } : { kind: "ongoing" };
+  },
+  playerView(state, _player): WinVsDriftState {
+    return state;
+  },
+  encode(state): string {
+    return JSON.stringify({ phase: state.phase });
+  },
+  decode(encoded): WinVsDriftState {
+    const parsed = JSON.parse(encoded) as { phase: "start" | "won" | "drift" };
+    return { phase: parsed.phase, lastEffects: [] };
+  },
+  heuristic(state, _player): number {
+    // Deliberately much larger than a naive finite won-value of 1 — the whole point of this
+    // fixture is to prove a real win outranks ANY raw heuristic on an ongoing position.
+    return state.phase === "drift" ? 100 : 0;
+  },
+};
 
 function playOneGame(policy: { chooseMove: ReturnType<typeof beamPolicy<BankRunState, BankRunMove>>["chooseMove"] }, seed: string): number {
   const engine = bankRun;
@@ -96,6 +160,21 @@ describe("beamPolicy", () => {
         clock: fakeClock(),
       })
     ).toThrow(/solo/i);
+  });
+
+  it("takes an immediate win over a merely-higher-heuristic ongoing position (a real win beats any raw heuristic score)", () => {
+    const policy = beamPolicy<WinVsDriftState, WinVsDriftMove>();
+    const engine = winVsDrift;
+    const state = engine.setup(1, rngFromSeed("beam-win-vs-drift"));
+    const { move } = policy.chooseMove({
+      engine,
+      state,
+      player: 0,
+      rng: rngFromSeed("beam-win-vs-drift-decision"),
+      budget: { kind: "rollouts", n: 5 },
+      clock: fakeClock(),
+    });
+    expect(move.kind).toBe("win");
   });
 
   it("refuses a solo game with neither score() nor heuristic() (mini-crackstep) with a typed error", () => {

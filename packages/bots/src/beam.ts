@@ -31,14 +31,29 @@ interface BeamMember<S extends WithEffects, M extends Json> {
   alive: boolean; // false once this lineage has reached a terminal state
 }
 
+/** Descending by `.value`, via comparison rather than subtraction. `evaluate()` below can
+ *  return ±Infinity for won/lost terminals, and `Infinity - Infinity` is `NaN` — a comparator
+ *  that ever returns NaN has unspecified sort behavior, so two winning (or two losing) lineages
+ *  must be compared directly rather than by difference. */
+function byValueDescending<S extends WithEffects, M extends Json>(a: BeamMember<S, M>, b: BeamMember<S, M>): number {
+  if (a.value === b.value) return 0;
+  return a.value > b.value ? -1 : 1;
+}
+
+// `won` ranks strictly ABOVE and `lost` strictly BELOW every ongoing score()/heuristic() value
+// (±Infinity — the same convention minimax.ts's terminalValue already uses correctly, and the
+// fix for the identical bug in probes/greedy-only.ts's evaluate()): score()/heuristic() have no
+// documented range, so a finite ±1 for won/lost would let an ongoing lineage's raw value
+// outrank an actual win/avoid an actual loss, which is backwards for a search whose whole job
+// is "find the best reachable outcome".
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function evaluate<S extends WithEffects, M extends Json>(engine: GameEngine<S, M, any>, state: S, player: PlayerId): number {
   const status = engine.status(state);
   switch (status.kind) {
     case "won":
-      return status.winner === player ? 1 : -1;
+      return status.winner === player ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
     case "lost":
-      return -1;
+      return Number.NEGATIVE_INFINITY;
     case "draw":
       return 0;
     case "scored":
@@ -94,7 +109,7 @@ export function beamPolicy<S extends WithEffects, M extends Json>(opts: BeamOpti
         const nextStatus = engine.status(next);
         beam.push({ state: next, firstMove: move, value: evaluate(engine, next, player), alive: nextStatus.kind === "ongoing" });
       }
-      beam.sort((a, b) => b.value - a.value);
+      beam.sort(byValueDescending);
       beam = beam.slice(0, width);
 
       while (!budgetExhausted() && beam.some((m) => m.alive)) {
@@ -123,7 +138,7 @@ export function beamPolicy<S extends WithEffects, M extends Json>(opts: BeamOpti
             });
           }
         }
-        candidates.sort((a, b) => b.value - a.value);
+        candidates.sort(byValueDescending);
         beam = candidates.slice(0, width);
       }
 

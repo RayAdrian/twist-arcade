@@ -24,9 +24,15 @@ export class GreedyOnlyUnsupportedGameError extends Error {
   }
 }
 
-/** Value of `state` from `player`'s POV, for ranking ONE ply ahead: terminal outcomes get
- *  their natural value (win/lose/draw/scored); a still-`ongoing` state falls through to
- *  score() (preferred) or heuristic() — the two static rankings this probe is allowed to use. */
+/** Value of `state` from `player`'s POV, for ranking ONE ply ahead: a `won` terminal ranks
+ *  strictly ABOVE every ongoing value and a `lost` terminal ranks strictly BELOW every ongoing
+ *  value (±Infinity, the same convention minimax.ts's terminalValue already uses correctly) —
+ *  score()/heuristic() have no documented range (classic-ttt's heuristic alone spans roughly
+ *  ±8), so a finite ±1 for won/lost would let an ongoing position's raw score/heuristic
+ *  outrank an actual win, which is exactly backwards for a policy whose entire contract is
+ *  "take the best immediate result". draw/scored stay on the same finite scale as
+ *  score()/heuristic() since a still-`ongoing` state's score/heuristic is explicitly a stand-in
+ *  for "how this game will eventually score", not a separate incomparable scale. */
 function evaluate<S extends WithEffects, M extends Json>(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   engine: GameEngine<S, M, any>,
@@ -36,9 +42,9 @@ function evaluate<S extends WithEffects, M extends Json>(
   const status = engine.status(state);
   switch (status.kind) {
     case "won":
-      return status.winner === player ? 1 : -1;
+      return status.winner === player ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
     case "lost":
-      return -1;
+      return Number.NEGATIVE_INFINITY;
     case "draw":
       return 0;
     case "scored":

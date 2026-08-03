@@ -39,6 +39,31 @@ describe("greedyOnlyPolicy (generic degeneracy probe: 1-ply hill-climb on score(
     expect(move.cell).toBe(4);
   });
 
+  it("takes an immediate win over a merely-higher-heuristic ongoing position (a real win beats any raw heuristic score)", () => {
+    // X (player 0) has two in a row at cells 0,1 with cell 2 open for the immediate win.
+    // Playing cell 4 (center) instead leaves an ongoing position whose classic-ttt heuristic
+    // evaluates to +3 (four open-line contributions) — which is HIGHER than won's naive value
+    // of 1, so an evaluate() that doesn't rank terminal outcomes above ongoing heuristics picks
+    // cell 4 and throws away a forced win. This is the exact defect the reviewer proved: an
+    // artificially weakened greedy-only widens the gap to Strong, so the §7.4 dominant-strategy
+    // gate under-fires on a genuinely degenerate game.
+    const engine = classicTicTacToe;
+    const state: TTTState = {
+      board: [0, 0, null, 1, null, 1, null, null, null],
+      turn: 0,
+      lastEffects: [],
+    };
+    const { move } = greedyOnlyPolicy<TTTState, TTTMove>().chooseMove({
+      engine,
+      state,
+      player: 0,
+      rng: rngFromSeed("greedy-win-vs-heuristic"),
+      budget: { kind: "rollouts", n: 1 },
+      clock: fakeClock(),
+    });
+    expect(move.cell).toBe(2);
+  });
+
   it("always returns a legal move", () => {
     const engine = classicTicTacToe;
     const state = engine.setup(2, rngFromSeed("greedy-legal"));
