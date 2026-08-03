@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "."
+  },
+  "include": ["*.ts", "test/**/*.ts"],
+  "references": [{ "path": "../../packages/engine" }, { "path": "../../packages/game-spec" }]
+}
