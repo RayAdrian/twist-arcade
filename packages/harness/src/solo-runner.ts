@@ -40,6 +40,25 @@ export interface PlaySoloRunOptions {
 const DEFAULT_MOVE_CAP = 2000;
 const DEFAULT_BUDGET: SearchBudget = { kind: "rollouts", n: 1000 };
 
+/** SHOULD FIX item 5 (stage-5 fix): thrown by `playSoloRun` when `engine.meta.hiddenInformation`
+ *  is true and `agent.viewHonest` is not `true` — mirrors `runMatchup`'s
+ *  `HiddenInformationUnsupportedError` at the two-player seam, but as a brand check rather
+ *  than a blanket refusal, since the solo runner DOES support hidden-info games via
+ *  `buildAgent`/`buildViewPolicyAgent`/`buildSafeMoveAgent` (agents.ts's own doc comment on
+ *  `SoloAgent.viewHonest` has the full rationale). */
+export class UnwrappedAgentOnHiddenInformationEngineError extends Error {
+  constructor(gameId: string, agentName: string) {
+    super(
+      `playSoloRun: engine "${gameId}" has hiddenInformation===true but agent "${agentName}" ` +
+        "is not viewHonest. playSoloRun hands its `state` argument to agent.chooseMove " +
+        "verbatim regardless of hiddenInformation — build this agent with buildAgent, " +
+        "buildViewPolicyAgent, or buildSafeMoveAgent (packages/harness/src/agents.ts) so it is " +
+        "only ever given engine.playerView(...)/a sampled world, never the real canonical state."
+    );
+    this.name = "UnwrappedAgentOnHiddenInformationEngineError";
+  }
+}
+
 /** Plays one full solo run of `agent` against `engine` from `seed`, to a terminal or the move
  *  cap. Setup uses `rngForSetup(seed)` and step k's `apply` uses `rngFor(seed, k)` — the same
  *  wire-format convention `engineContract`'s own random playouts and `replay()` use, so a
@@ -51,6 +70,9 @@ export function playSoloRun<S extends WithEffects, M extends Json, V extends Wit
   seed: string,
   opts: PlaySoloRunOptions = {}
 ): SoloRunResult {
+  if (engine.meta.hiddenInformation && !agent.viewHonest) {
+    throw new UnwrappedAgentOnHiddenInformationEngineError(engine.meta.id, agent.name);
+  }
   const moveCap = opts.moveCap ?? DEFAULT_MOVE_CAP;
   const budget = opts.budget ?? DEFAULT_BUDGET;
   const clock = staticClock();

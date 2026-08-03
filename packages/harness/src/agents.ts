@@ -27,9 +27,24 @@ import {
 
 /** Uniform agent surface the runner drives — identical whether the underlying game is
  *  perfect-information (agent gets the real Policy<S,M> directly) or hidden-information
- *  (agent is wrapped through determinize()/deriveView(), never touching S beyond the view). */
+ *  (agent is wrapped through determinize()/deriveView(), never touching S beyond the view).
+ *
+ *  `viewHonest: true` is a runtime brand (SHOULD FIX item 5, stage-5 fix), set ONLY by
+ *  `buildAgent`/`buildViewPolicyAgent`/`buildSafeMoveAgent` below. `playSoloRun` hands its
+ *  `state: S` argument to `agent.chooseMove` verbatim regardless of
+ *  `engine.meta.hiddenInformation` — the C1 wall this module's own doc comment describes
+ *  exists ONLY inside these three constructors, one wrapper away from the runner seam that
+ *  actually drives a game. An agent built any other way (or a raw object literal satisfying
+ *  this interface's shape) runs silently against a hidden-information engine with no
+ *  enforcement at all — the exact hole class already found and fixed at the two-player
+ *  `runMatchup` seam. `playSoloRun` throws `UnwrappedAgentOnHiddenInformationEngineError` when
+ *  `hiddenInformation && !agent.viewHonest`, so an agent author who bypasses these
+ *  constructors and wants to claim honesty anyway (e.g. because they independently derive the
+ *  view themselves, as `probes-solo.test.ts`'s hand-rolled greedy-rollout Strong agent does)
+ *  must set it explicitly and take on the responsibility that implies. */
 export interface SoloAgent<S extends WithEffects, M extends Json> {
   readonly name: string;
+  readonly viewHonest: true;
   chooseMove(args: {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     engine: GameEngine<S, M, any>;
@@ -61,6 +76,7 @@ export function buildAgent<S extends WithEffects, M extends Json, V extends With
     const viewPolicy = determinize<S, M, V>(base, determinizeOpts);
     return {
       name,
+      viewHonest: true,
       chooseMove({ state, player, rng, budget, clock }) {
         const view = deriveView(engine, state, player);
         return viewPolicy.chooseMove({ engine, view, player, rng, budget, clock });
@@ -69,6 +85,7 @@ export function buildAgent<S extends WithEffects, M extends Json, V extends With
   }
   return {
     name,
+    viewHonest: true,
     chooseMove({ state, player, rng, budget, clock }) {
       return base.chooseMove({ engine, state, player, rng, budget, clock });
     },
@@ -89,6 +106,7 @@ export function buildViewPolicyAgent<S extends WithEffects, M extends Json, V ex
 ): SoloAgent<S, M> {
   return {
     name,
+    viewHonest: true,
     chooseMove({ state, player, rng, budget, clock }) {
       const view = deriveView(engine, state, player);
       return viewPolicy.chooseMove({ engine, view, player, rng, budget, clock });
@@ -203,6 +221,7 @@ export function buildSafeMoveAgent<S extends WithEffects, M extends Json, V exte
 ): SoloAgent<S, M> {
   return {
     name: "always-safe",
+    viewHonest: true,
     chooseMove({ state, player, clock }) {
       const start = clock.now();
       const view = engine.playerView(state, player);

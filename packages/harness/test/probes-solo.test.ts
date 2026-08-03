@@ -88,6 +88,15 @@ function buildGreedyRolloutStrongAgent(
 ): SoloAgent<MineRunState, MineRunMove> {
   return {
     name: "strong-greedy-rollout",
+    // Not built via buildAgent/buildViewPolicyAgent/buildSafeMoveAgent (this file's own
+    // top-of-suite comment explains why: none of the three sanctioned constructors give a
+    // GREEDY rollout, only this test-local one does), but genuinely view-honest by
+    // construction: `chooseMove` below never reads `state` for anything except passing it
+    // straight to `deriveView`/`sampleConsistentState` — every candidate move and rollout is
+    // evaluated against a freshly sampled world, never the real secret. Setting this by hand
+    // is exactly the documented escape hatch (agents.ts's `SoloAgent.viewHonest` doc) for an
+    // agent author who independently verified honesty outside the three constructors.
+    viewHonest: true,
     chooseMove({ engine: e, state, player, rng, clock }) {
       const start = clock.now();
       const view = deriveView(e, state, player);

@@ -5,10 +5,12 @@
 
 import { describe, expect, it } from "vitest";
 import { randomPolicy } from "@twist-arcade/bots";
-import { createBankRun } from "@twist-arcade/engine/testkit/fixtures/bank-run";
+import { createBankRun, type BankRunMove, type BankRunState } from "@twist-arcade/engine/testkit/fixtures/bank-run";
 import { miniCrackstep } from "@twist-arcade/engine/testkit/fixtures/mini-crackstep";
-import { buildAgent } from "../src/agents";
-import { pairedSeeds, playSoloRun, runSoloAgentOverSeeds } from "../src/solo-runner";
+import { createMineRun } from "@twist-arcade/mine-run";
+import type { MineRunMove, MineRunState } from "@twist-arcade/mine-run";
+import { buildAgent, type SoloAgent } from "../src/agents";
+import { pairedSeeds, playSoloRun, runSoloAgentOverSeeds, UnwrappedAgentOnHiddenInformationEngineError } from "../src/solo-runner";
 
 describe("pairedSeeds", () => {
   it("returns the same n seeds, in the same order, every call (the paired-seed-set contract)", () => {
@@ -65,6 +67,59 @@ describe("playSoloRun — mini-crackstep (a won/lost, deterministic puzzle fixtu
       expect(result.capHit).toBe(false);
       expect(result.decisions).toBeLessThanOrEqual(8);
     }
+  });
+});
+
+describe("playSoloRun — C1 runtime guard at the solo-runner seam (SHOULD FIX item 5)", () => {
+  // `playSoloRun` hands its `state: S` argument to `agent.chooseMove` verbatim, regardless of
+  // `engine.meta.hiddenInformation` — the C1 wall (never let a policy touch a hidden-info
+  // engine's canonical state) exists only INSIDE buildAgent/buildViewPolicyAgent/
+  // buildSafeMoveAgent, one wrapper away from here. A hand-rolled `SoloAgent` that bypasses
+  // those and reads the real state directly runs silently, exactly the hole class already
+  // found and fixed at the two-player runMatchup seam (main branch, runner.ts's own
+  // `HiddenInformationUnsupportedError` — reproduced here for the solo runner instead, which
+  // (unlike the two-player runner) DOES support hidden-info games via the sanctioned
+  // wrappers, so the fix here is a `viewHonest` brand check, not a blanket refusal).
+  it("throws BEFORE playing a single decision when handed an agent that isn't viewHonest, against a real hidden-information engine (Mine Run)", () => {
+    const engine = createMineRun({ width: 4, height: 4, mines: 2, budget: 16 });
+    // A genuine C1 violation: reads the canonical state's secret (`state.mines`) directly,
+    // never `engine.playerView(state, player)`. Cast through `unknown` — `viewHonest: true`
+    // is a required literal on the real interface precisely so this can't be constructed by
+    // accident; only buildAgent/buildViewPolicyAgent/buildSafeMoveAgent are meant to set it.
+    const cheatAgent = {
+      name: "cheater",
+      viewHonest: false,
+      chooseMove({ state }: { state: MineRunState }) {
+        const firstMineCell = state.mines[0]!;
+        return {
+          move: { t: "reveal", cell: firstMineCell } as unknown as MineRunMove,
+          stats: { elapsedMs: 0, rollouts: 0 },
+        };
+      },
+    } as unknown as SoloAgent<MineRunState, MineRunMove>;
+
+    expect(() => playSoloRun(engine, cheatAgent, "solo-runner-c1-cheater-seed")).toThrow(/viewHonest/);
+    try {
+      playSoloRun(engine, cheatAgent, "solo-runner-c1-cheater-seed");
+      expect.unreachable("playSoloRun should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(UnwrappedAgentOnHiddenInformationEngineError);
+    }
+  });
+
+  it("does NOT throw for a properly-built (viewHonest) agent against the same hidden-information engine", () => {
+    const engine = createMineRun({ width: 4, height: 4, mines: 2, budget: 16 });
+    const agent = buildAgent(engine, randomPolicy<MineRunState, MineRunMove>(), "random");
+    expect(() => playSoloRun(engine, agent, "solo-runner-c1-honest-seed")).not.toThrow();
+  });
+
+  it("does NOT throw for an unmarked agent against a perfect-information engine (the guard is gated on hiddenInformation, never a blanket requirement)", () => {
+    const engine = createBankRun({ successProb: 0.6 });
+    const notMarkedHonest = {
+      name: "whatever",
+      chooseMove: () => ({ move: { kind: "push" }, stats: { elapsedMs: 0, rollouts: 0 } }),
+    } as unknown as SoloAgent<BankRunState, BankRunMove>;
+    expect(() => playSoloRun(engine, notMarkedHonest, "solo-runner-perfect-info-seed")).not.toThrow();
   });
 });
 
