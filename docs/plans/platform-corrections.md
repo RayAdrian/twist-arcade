@@ -402,3 +402,71 @@ async-multiplayer feature is actually planned.
 **Local development is unchanged.** Agent teams use per-worktree local stacks per
 `CLAUDE.md` §5 and never point at this project. The remote is for deployed environments
 only.
+
+---
+
+## RULESET FREEZE — Fadeout ships `remove-first` / solid / **threefold**
+
+**Decided by the orchestrator 2026-08-03, on the F2 exact solve and its stage-6 review.
+This unblocks F3 (UI). It is a freeze: changing it later is an ADR, not an edit.**
+
+### What the solve proved
+
+The eight syntactic configs are **six distinct games**. Five of them are dead on criterion 1
+— each is a first-player forced win with the line `1→0→4→2→7`, **five plies, plainly
+quotable**. Post that sentence once and the variant is over. The line was replayed through
+the real public engine and produces a genuine win.
+
+`remove-first`/solid under **threefold** is the sole survivor: **exact draw, all nine
+openings drawn, no forced line to spoil.** Confirmed by two independent implementations.
+
+### Why not superko, which the plan defaulted to
+
+**Because a superko draw is impossible by construction, so the "unproven draw" the report
+recommended shipping was never on the table.** Under superko the engine has no draw
+terminal — positions can never repeat, and a stuck mover loses — so every superko game ends
+decisively. The open questions were only *who* wins and *how quotable* the line is.
+
+That inverts the report's own plausibility argument ("no forced-loss positions, so a hidden
+forced win seems less likely"): a forced win for someone is **certain**. And the code had
+been saying so all along — `pass2`'s draw arm is provably dead, three-valued minimax written
+for a two-valued game. Nobody noticed, which is exactly how the prose error survived.
+
+So option (b) was not a risk to weigh. It was eliminated.
+
+### What threefold costs, honestly
+
+The game-theory lens preferred superko for two reasons, and both dissolve here:
+
+- **Draw rate** — moot. The game is a 100% draw under optimal play either way.
+- **Termination** — threefold also terminates by construction: a position occurs at most
+  twice before the third occurrence ends it, and the *engine* declares it, so players track
+  nothing.
+
+One cost superko would have carried, unflagged until review: with no draw exit at all, two
+cautious humans in the 77k-node residue can grind indefinitely long decisive games.
+Threefold gives the game a natural ending.
+
+**Nothing downstream is wasted.** The engine's superko implementation stays a tested config
+axis (unshipped, not deleted), `pass2` remains research tooling, and the harness never
+depended on the repetition rule.
+
+### The two decisions that follow
+
+- **No pie rule.** It is gated on first-player advantage landing in 55–70%, and every
+  opening here is already drawn. There is no advantage to correct. F4 should confirm the
+  self-play FPA sits near 50%, but nothing in the exact values suggests otherwise.
+- **No 4×4 / cap-4 escalation at launch.** That was conditional on the 3×3 solution being
+  quotable. It has no forced win to quote at all.
+
+### The one thing that could reopen this
+
+A converged run of the reformulated superko attack showing a **P0 win with a long,
+non-quotable line**. That would pass criterion 1's second clause *and* beat threefold on
+criterion 3 (0% versus 100% optimal-play draw rate) — a genuine trade. The reformulation is
+principled rather than "more nodes": the WIN-witness shortcut is sound for a *stronger*
+unstated reason than its own doc claims, which collapses the search to vertex geography on
+the 77,338-node draw residue, plus a free 3× from root symmetry.
+
+Worth one bounded run. **F3 does not wait for it.** Per the plan's own standing rule: do not
+ship a claim the solve did not prove.
