@@ -190,6 +190,44 @@ describe("Mine Run decode() — C4 (throw on malformed input, never partial-acce
     expect(() => engine.decode(bad)).toThrow(MineRunDecodeError);
   });
 
+  it("throws on a full-clear terminal forgery (safeRevealed >= safeTotal) that still carries a " +
+    "live streak (R8's auto-bank rule fires on EITHER terminal arm -- revealsLeft:0 OR full " +
+    "clear -- but a prior fix only transcribed the revealsLeft:0 arm, leaving this the surviving " +
+    "half of the disjunction)", () => {
+    // 2x2/2-mine/budget-5 board: all 2 safe cells revealed, 0 mines exploded => full-clear
+    // terminal by the OTHER arm of `revealsLeft <= 0 || safeRevealed >= safeTotal`, while
+    // revealsLeft is still nonzero (4). apply() would auto-bank this streak identically to the
+    // revealsLeft:0 case, so a live streak here is exactly as unreachable.
+    const smallEngine = createMineRun({ width: 2, height: 2, mines: 2, budget: 5 });
+    const bad = JSON.stringify({
+      mines: [0, 1],
+      revealed: [2, 3],
+      exploded: [],
+      streakLen: 1,
+      streakValue: 1,
+      banked: 0,
+      revealsLeft: 4,
+    });
+    expect(() => smallEngine.decode(bad)).toThrow(MineRunDecodeError);
+  });
+
+  it("throws when exploded.length exceeds the number of reveal moves actually spent (every " +
+    "mine hit consumes exactly 1 unit of revealsLeft, and the opening region never contains a " +
+    "mine, so exploded.length <= budget - revealsLeft must hold)", () => {
+    // budget 8, revealsLeft 8 => zero reveal moves have been spent, so zero mines could
+    // possibly have exploded -- but this forgery claims one exploded mine anyway.
+    const bad = JSON.stringify({
+      mines: [0, 1, 2],
+      revealed: [0],
+      exploded: [0],
+      streakLen: 0,
+      streakValue: 0,
+      banked: 0,
+      revealsLeft: 8,
+    });
+    expect(() => engine.decode(bad)).toThrow(MineRunDecodeError);
+  });
+
   it("throws when revealsLeft exceeds this board's configured budget", () => {
     const bad = JSON.stringify({
       mines: [0, 1, 2],

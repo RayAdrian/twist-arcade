@@ -477,13 +477,38 @@ export function createMineRun(opts: CreateMineRunOptions = {}): GameEngine<MineR
       if (revealsLeft < 0 || revealsLeft > budget) {
         throw new MineRunDecodeError(`field "revealsLeft" (${revealsLeft}) must be within [0, ${budget}]`);
       }
-      // R8: apply() auto-banks any live streak the instant a state goes terminal (revealsLeft
-      // hits 0 or every safe cell is revealed), so revealsLeft === 0 with streakLen > 0 can
-      // never arise from real play.
+      // R8: apply() auto-banks any live streak the instant a state goes terminal. Terminal is a
+      // DISJUNCTION -- `revealsLeft <= 0 || safeRevealed >= safeTotal` (see computeStatus) --
+      // and apply()'s auto-bank fires on the combined condition, so BOTH arms must be checked
+      // here, not just the budget-exhausted one: transcribing only the named counterexample for
+      // one arm leaves the other arm's terminal-with-live-streak forgery accepted (Fable review
+      // round-2 finding 1).
       if (revealsLeft === 0 && streakLen > 0) {
         throw new MineRunDecodeError(
           `field "revealsLeft" is 0 (terminal-by-budget) but "streakLen" (${streakLen}) is > 0 -- ` +
             "R8 auto-banks any live streak at a terminal state, so this combination is unreachable"
+        );
+      }
+      if (safeRevealedCount >= safeTotal && streakLen > 0) {
+        throw new MineRunDecodeError(
+          `field "streakLen" (${streakLen}) is > 0 but every safe cell is already revealed ` +
+            "(full-clear terminal) -- R8 auto-banks any live streak at a terminal state, so this " +
+            "combination is unreachable"
+        );
+      }
+      // Every mine hit consumes exactly 1 unit of revealsLeft (apply()'s reveal branch always
+      // decrements revealsLeft before checking whether the target was a mine), and setup's
+      // opening region never contains a mine (R2), so no mine can explode "for free" -- the
+      // number of exploded mines can never exceed the number of reveal moves actually spent,
+      // (budget - revealsLeft). A forged record claiming an exploded mine with zero moves spent
+      // is exactly as unreachable as the reveal-count-vs-revealed-length check below (Fable
+      // review round-2 finding 2).
+      const movesSpent = budget - revealsLeft;
+      if (explodedArr.length > movesSpent) {
+        throw new MineRunDecodeError(
+          `field "exploded" has ${explodedArr.length} entries, but only ${movesSpent} reveal ` +
+            `move(s) have been spent (revealsLeft: ${revealsLeft}) -- a mine can only explode by ` +
+            "being the target of a spent reveal move"
         );
       }
       // Every reveal move consumes exactly 1 unit of revealsLeft and adds >=1 new revealed cell
