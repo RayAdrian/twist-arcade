@@ -1,0 +1,60 @@
+# `__GAME_ID__` (solo score chase) — build checklist
+
+Stamped by `pnpm new-game __GAME_ID__ --solo chase`. Work through this in order — it doubles
+as the CLAUDE.md §2 loop's stage-2 (Develop) TDD anchor list for this game.
+
+## Traps every new engine hits (read before you touch `engine.ts`)
+
+1. **`Move` needs an explicit index signature.** A `Move` type used as the engine's `M`
+   generic must satisfy `Json`, and TypeScript will **not** synthesize a `[key: string]: Json`
+   index signature for a plain `interface`/type-literal — you must write it yourself (see
+   `__PASCAL_ID__Move` in `engine.ts`).
+2. **`encode` must exclude `lastEffects`.** Two states identical except for effects must hash
+   identically. If effects ever leak into the canonical encoding, positions that are the same
+   in every way the rules care about will hash differently — silently, with no failing test.
+3. **If legality depends on the PATH taken, not the position reached, `encode` is NOT a valid
+   position key** (platform-corrections.md C3). This template's placeholder is path-independent
+   (`encode` = `{score, moves}` is a sound key), but check this against your REAL mechanic —
+   it changes which solver-building-blocks are safe to compose.
+4. **`decode` must throw on malformed input, never return a partial state**
+   (platform-corrections.md C4). `decode` feeds `replay()` and `verifyCertificate` — the
+   platform's trust boundary for a submitted move log or a shipped daily. Keep this property
+   no matter how much richer your real state gets.
+
+## Score-chase-specific
+
+- **`probes.ts`'s `safeMove` is MANDATORY, not optional.** `runAlwaysSafeProbe` hard-errors
+  (`MissingSafeMoveError`) without one — the Always-Safe gate ("is the risk in
+  press-your-luck real?") cannot run without it, and a chase manifest without it cannot pass
+  CI, by design. Do not delete `probes.ts`.
+- **Structural termination is mandatory.** `manifest.solo.moveCap` (default 2000) is a
+  tripwire, not your ending — your `status()` must have a real terminal condition
+  independent of it.
+- **`score()` must equal `status().scores[0]` at the scored terminal**, and if you set
+  `solo.scoreMonotone: true` in `manifest.ts`, it must never decrease (testkit-asserted once
+  your terminal is real).
+
+## Build order
+
+- [ ] `engine.ts` — replace `computeStatus`'s TODO with your real terminal condition.
+      `pnpm --filter @twist-arcade/__GAME_ID__ test` should turn the "termination" failure
+      green.
+- [ ] `engineContract` green — the solo branch (score-chase terminals only: `scored` — never
+      `won`/`lost`/`draw`) is auto-checked because `maxPlayers === 1`.
+- [ ] `probes.ts` — a REAL `safeMove` (the minimum-variance option for your mechanic).
+- [ ] `manifest.ts` — fill in `title`, `classic`, `ruleSentence` (<=90 chars — asserted for
+      real in `manifest.test.ts`), `tags`, `estMinutes`; tune `solo.moveCap` and confirm
+      `scoreMonotone`.
+- [ ] `pnpm harness suite __GAME_ID__ --suite solo-ci` green (Strong/Random ratio,
+      distribution overlap, Greedy/Random, Strong/Greedy, Strong CV, Always-Safe-vs-Strong,
+      Grind probe, run-length band, cap-hit rate, ceiling pile-up).
+- [ ] `pnpm harness suite __GAME_ID__ --suite solo-design` reviewed (tighter bands, Fable
+      stage-3/6 — CI proves not-broken, design decides good).
+- [ ] `ui/Board.tsx` + the grayscale-screenshot test (every state change must read from a
+      static, colorless render — motion may only restate it, per C5).
+- [ ] `index.ts`'s `announce()` strings — real per-event sentence fragments (ux-lens §9).
+- [ ] `shareArtifact()` — <=7 lines, emoji move-timeline body only.
+- [ ] `howSheetFrames` — three real frames.
+- [ ] Register in `games/registry.ts` (the scaffold already inserted your entry at the
+      `<new-game:insert>` marker — confirm it and delete this line once you have).
+- [ ] Open the PR — CLAUDE.md §2's loop (stage 3 onward) takes it from here.

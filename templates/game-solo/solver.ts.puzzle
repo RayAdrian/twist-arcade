@@ -1,0 +1,24 @@
+// games/__GAME_ID__/solver.ts — the puzzle-only solver `harness certify`/`harness calibrate`
+// need (plan §7.6). Wraps the generic, encode-deduped `dfsSolver` building block from
+// `@twist-arcade/harness` — sufficient for a small/simple puzzle whose `encode` is a valid
+// position key.
+//
+// TODO(you):
+//  - If your puzzle's legality depends on the PATH taken, not the position reached (superko-
+//    style rules), `encode` is NOT a valid dedup key (platform-corrections.md C3) — dfsSolver
+//    would then silently conflate genuinely different states. Compose
+//    `packages/harness/src/solver/reach.ts`/`retrograde.ts`, or write a bespoke `SoloSolver`,
+//    instead of using dfsSolver directly.
+//  - For a puzzle with richer structure (CSP-style deduction, GF(2) elimination) or one where
+//    plain DFS/BFS is too slow, replace this with `idaStarSolver(heuristic)` (an ADMISSIBLE
+//    heuristic — never overestimate true remaining cost — or its optimality guarantee breaks)
+//    or your own bespoke `SoloSolver` implementation.
+
+import type { SoloSolver } from "@twist-arcade/game-spec";
+import { dfsSolver } from "@twist-arcade/harness";
+import type { __PASCAL_ID__Move, __PASCAL_ID__State } from "./engine";
+
+export const solver: SoloSolver<__PASCAL_ID__State, __PASCAL_ID__Move> = dfsSolver<
+  __PASCAL_ID__State,
+  __PASCAL_ID__Move
+>();

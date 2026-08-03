@@ -1,0 +1,66 @@
+# `__GAME_ID__` (solo daily puzzle) — build checklist
+
+Stamped by `pnpm new-game __GAME_ID__ --solo puzzle`. Work through this in order — it doubles
+as the CLAUDE.md §2 loop's stage-2 (Develop) TDD anchor list for this game.
+
+## Traps every new engine hits (read before you touch `engine.ts`)
+
+1. **`Move` needs an explicit index signature.** A `Move` type used as the engine's `M`
+   generic must satisfy `Json`, and TypeScript will **not** synthesize a `[key: string]: Json`
+   index signature for a plain `interface`/type-literal — you must write it yourself (see
+   `__PASCAL_ID__Move` in `engine.ts`).
+2. **`encode` must exclude `lastEffects`.** Two states identical except for effects must hash
+   identically — solvers hash on `encode(S)`. If effects leak into the canonical encoding,
+   positions equal in every way the rules care about hash differently, silently.
+3. **If legality depends on the PATH taken, not the position reached, `encode` is NOT a valid
+   position key** (platform-corrections.md C3). Crackstep's own mechanic (positions can never
+   repeat) is the case where `encode` IS a sound key and `dfsSolver` (see `solver.ts`) works
+   directly — a superko-style rule is the other pattern; check which one your real mechanic is
+   before wiring `solver.ts`.
+4. **`decode` must throw on malformed input, never return a partial state**
+   (platform-corrections.md C4). `decode` feeds `replay()` AND `verifyCertificate` — the
+   platform's trust boundary for whether a shipped daily is genuine. A lenient decode here
+   means a forged certificate could validate, with no exception and no red test.
+
+## Daily-puzzle-specific
+
+- **No `score()`, no `safeMove` hook.** A puzzle has no score distribution and no risk
+  decision — the harness's puzzle gate table (`solo-gates.ts`) reports every score-chase-only
+  row as explicitly N/A for you (never a format exclusion accident).
+- **Structural termination is mandatory** — a finite board with no cycle back to an earlier
+  reachable position, not a move cap.
+- **Fog games must be deduction-only** (platform-corrections.md C11): if
+  `meta.hiddenInformation: true`, `certifyDay` REJECTS any candidate day whose solve requires
+  a guess (`guessFree: false`) rather than shipping it.
+- **`solver.ts`'s `dfsSolver` needs `encode` to be a sound position key** (see trap 3) — if it
+  isn't, do not use it as-is.
+
+## Build order
+
+- [ ] `engine.ts` — replace `computeStatus`'s TODO with your real win/lose rules.
+      `pnpm --filter @twist-arcade/__GAME_ID__ test` should turn the "termination" failure
+      green.
+- [ ] `engineContract` green — the solo branch (puzzle terminals: `won`/`lost` only — never
+      `scored`/`draw`, never a non-zero winner) is auto-checked because `maxPlayers === 1`.
+- [ ] `solver.ts` — confirm `dfsSolver` is valid for your mechanic (trap 3), or swap in
+      `idaStarSolver(heuristic)` / a bespoke solver.
+- [ ] `manifest.ts` — fill in `title`, `classic`, `ruleSentence` (<=90 chars — asserted for
+      real in `manifest.test.ts`), `tags`, `estMinutes`.
+- [ ] `pnpm harness certify __GAME_ID__ --days 90` — 90 certified days, each verified by
+      `verifyCertificate`. Budget exhaustion / unsolvable / trivial candidates are REJECTED,
+      never shipped uncertified (platform §7.7).
+- [ ] Review the certify report's rejection rate (warn > 50%, hard fail > 90% — a
+      generator/band mismatch needs a redesign, not a threshold nudge).
+- [ ] `pnpm harness suite __GAME_ID__ --suite solo-ci` green (certificate present + verified,
+      par in band, random-playout solve rate, forced-move fraction, generator rejection rate,
+      day-over-day drift, certified-buffer-days, fog-deduction-only if applicable).
+- [ ] `ui/Board.tsx` + the grayscale-screenshot test (every state change must read from a
+      static, colorless render — motion may only restate it, per C5).
+- [ ] `index.ts`'s `announce()` strings — real per-event sentence fragments (ux-lens §9).
+- [ ] `shareArtifact()` — <=7 lines; the shell hands you the certificate (par) alongside it.
+- [ ] `howSheetFrames` — three real frames.
+- [ ] Register in `games/registry.ts` (the scaffold already inserted your entry, including
+      `loadSolver`, at the `<new-game:insert>` marker — confirm it and delete this line once
+      you have).
+- [ ] Hand `par` rendering to the shell team (the certificate is now a real artifact they can
+      render); open the PR — CLAUDE.md §2's loop (stage 3 onward) takes it from here.
