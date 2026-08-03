@@ -423,12 +423,30 @@ export function createMineRun(opts: CreateMineRunOptions = {}): GameEngine<MineR
 
       const minesSet = new Set(minesArr);
       const revealedSet = new Set(revealedArr);
+      const explodedSet = new Set(explodedArr);
       for (const e of explodedArr) {
         if (!revealedSet.has(e)) {
           throw new MineRunDecodeError(`field "exploded" contains ${e}, which is not in "revealed"`);
         }
         if (!minesSet.has(e)) {
           throw new MineRunDecodeError(`field "exploded" contains ${e}, which is not a mine`);
+        }
+      }
+      // Converse of the checks above (C4 / Fable review must-fix 1): under R7, a mine can only
+      // ever enter `revealed` BY exploding, so revealed ∩ mines ⊆ exploded must hold for every
+      // reachable state. `exploded ⊆ revealed` and `exploded ⊆ mines` alone let a forged record
+      // through with a mine sitting in `revealed` but never marked exploded -- structurally
+      // plausible (every array is individually well-formed) but internally inconsistent, and
+      // exactly the shape `replay()`/certificate verification must reject rather than silently
+      // accept (a `playerView` built from such a state would render a safe-looking `{"n":...}`
+      // ON a mine, and `computeStatus`'s `safeRevealed` count would count the unexploded mine as
+      // a safe reveal, potentially fabricating a terminal `scored` result early).
+      for (const m of minesArr) {
+        if (revealedSet.has(m) && !explodedSet.has(m)) {
+          throw new MineRunDecodeError(
+            `field "revealed" contains mine ${m}, which is not in "exploded" (a mine can only ` +
+              "be revealed by exploding, R7)"
+          );
         }
       }
       const safeTotal = totalCells - minesArr.length;
@@ -439,6 +457,12 @@ export function createMineRun(opts: CreateMineRunOptions = {}): GameEngine<MineR
 
       const streakLen = assertInt(obj.streakLen, "streakLen");
       if (streakLen < 0) throw new MineRunDecodeError("field \"streakLen\" must be >= 0");
+      if (streakLen > safeRevealedCount) {
+        throw new MineRunDecodeError(
+          `field "streakLen" (${streakLen}) cannot exceed the total number of safe revealed cells ` +
+            `(${safeRevealedCount}) -- a streak is built entirely from safe reveals`
+        );
+      }
       const streakValue = assertInt(obj.streakValue, "streakValue");
       const expectedStreakValue = (streakLen * (streakLen + 1)) / 2;
       if (streakValue !== expectedStreakValue) {
@@ -452,6 +476,25 @@ export function createMineRun(opts: CreateMineRunOptions = {}): GameEngine<MineR
       const revealsLeft = assertInt(obj.revealsLeft, "revealsLeft");
       if (revealsLeft < 0 || revealsLeft > budget) {
         throw new MineRunDecodeError(`field "revealsLeft" (${revealsLeft}) must be within [0, ${budget}]`);
+      }
+      // R8: apply() auto-banks any live streak the instant a state goes terminal (revealsLeft
+      // hits 0 or every safe cell is revealed), so revealsLeft === 0 with streakLen > 0 can
+      // never arise from real play.
+      if (revealsLeft === 0 && streakLen > 0) {
+        throw new MineRunDecodeError(
+          `field "revealsLeft" is 0 (terminal-by-budget) but "streakLen" (${streakLen}) is > 0 -- ` +
+            "R8 auto-banks any live streak at a terminal state, so this combination is unreachable"
+        );
+      }
+      // Every reveal move consumes exactly 1 unit of revealsLeft and adds >=1 new revealed cell
+      // (the target cell itself, at minimum); setup's own opening region is itself >=1 cell. So
+      // revealed.length must be at least (budget - revealsLeft) + 1.
+      const minReveals = budget - revealsLeft + 1;
+      if (revealedArr.length < minReveals) {
+        throw new MineRunDecodeError(
+          `field "revealed" has only ${revealedArr.length} entries, but "revealsLeft" (${revealsLeft}) ` +
+            `implies at least ${minReveals} revealed cells (the opening region plus one per reveal move)`
+        );
       }
 
       return {

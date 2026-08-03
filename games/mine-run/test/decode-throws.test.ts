@@ -13,9 +13,13 @@ describe("Mine Run decode() — C4 (throw on malformed input, never partial-acce
   const engine = createMineRun({ width: 5, height: 5, mines: 3, budget: 8 });
 
   it("round-trips a real encoded state", () => {
+    // Must itself satisfy the reachability invariants decode() now enforces (must-fix 6 below):
+    // revealsLeft: 7 out of an 8-budget means exactly 1 reveal move has happened, so revealed
+    // must carry the opening region (>=1 cell) PLUS that one move's own contribution (>=1
+    // cell) -- 2 cells at minimum, hence `revealed: [1, 2]` rather than a single cell.
     const state = {
       mines: [0, 12, 24],
-      revealed: [1],
+      revealed: [1, 2],
       exploded: [],
       streakLen: 1,
       streakValue: 1,
@@ -98,6 +102,62 @@ describe("Mine Run decode() — C4 (throw on malformed input, never partial-acce
       exploded: [5], // 5 is revealed but is not a mine
       streakLen: 0,
       streakValue: 0,
+      banked: 0,
+      revealsLeft: 8,
+    });
+    expect(() => engine.decode(bad)).toThrow(MineRunDecodeError);
+  });
+
+  it("throws when revealed contains a mine that is NOT in exploded (C4: a mine can only enter " +
+    "`revealed` by exploding, R7 -- the converse of the exploded-subset checks above)", () => {
+    const bad = JSON.stringify({
+      mines: [0, 1, 2],
+      revealed: [1], // 1 is a mine, revealed, but never marked exploded
+      exploded: [],
+      streakLen: 0,
+      streakValue: 0,
+      banked: 0,
+      revealsLeft: 8,
+    });
+    expect(() => engine.decode(bad)).toThrow(MineRunDecodeError);
+  });
+
+  it("throws on a terminal-budget forgery (revealsLeft: 0) that still carries a live streak " +
+    "(impossible under R8's auto-bank-at-terminal rule)", () => {
+    const bad = JSON.stringify({
+      mines: [0, 1, 2],
+      revealed: [5],
+      exploded: [],
+      streakLen: 2,
+      streakValue: 3,
+      banked: 0,
+      revealsLeft: 0,
+    });
+    expect(() => engine.decode(bad)).toThrow(MineRunDecodeError);
+  });
+
+  it("throws when revealed.length is too small for the claimed revealsLeft (every reveal move " +
+    "adds >=1 revealed cell, and setup's opening region is itself >=1 cell)", () => {
+    const bad = JSON.stringify({
+      mines: [0, 1, 2],
+      revealed: [], // budget is 8; revealsLeft:5 implies 3 reveal moves happened, plus >=1 opening cell
+      exploded: [],
+      streakLen: 0,
+      streakValue: 0,
+      banked: 0,
+      revealsLeft: 5,
+    });
+    expect(() => engine.decode(bad)).toThrow(MineRunDecodeError);
+  });
+
+  it("throws when streakLen exceeds the total number of safe revealed cells (a streak cannot " +
+    "be longer than the count of safe reveals it was built from)", () => {
+    const bad = JSON.stringify({
+      mines: [0, 1, 2],
+      revealed: [5], // only 1 safe revealed cell
+      exploded: [],
+      streakLen: 3, // claims a streak longer than any possible safe-reveal history
+      streakValue: 6,
       banked: 0,
       revealsLeft: 8,
     });
