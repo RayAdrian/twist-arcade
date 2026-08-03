@@ -592,3 +592,44 @@ locally over `positionKey`. The orchestrator is carrying this to the platform te
 generic solver ships with that caveat documented rather than a broken promise; any other
 future game with path-dependent legality (repetition rules, move-history constraints) inherits
 the same pattern.
+
+---
+
+## §15 — Orchestrator correction, 2026-08-03: `longestLife` is a bad share stat
+
+**Ruling 2 in §14 was wrong, and the implementer disproved it with measurement rather than
+accepting it. Recording the correction, because the reasoning generalizes.**
+
+I ruled that `longestLife` be redefined from "own placements survived" (confined to
+{0, 2, 3}) to "plies survived on the board", expecting real variance. It was implemented
+exactly as derived. A 3,200-game sweep across all 8 variants then showed the redefined
+field is confined to **{0, 5, 6}** — the same cardinality as the metric it replaced, with
+`6` in roughly 74% of observations.
+
+**Why, structurally:** once a mark becomes doomed (oldest, owner's queue at cap), there is
+exactly *one* ply in which anyone but its owner can evict it early — the opponent's
+immediate next turn, giving lifespan `2·cap − 1 = 5`. If that does not happen, the owner's
+own next placement forces eviction unconditionally at exactly `2·cap = 6`, because a player
+can never skip a turn. Every eviction in every game is therefore 5 or 6. My derivation
+stopped at "lifespan is computable" and never asked what values it could actually take.
+
+**The correction:**
+
+1. **Keep the field as implemented.** It is semantically honest, cheap, and correct. This
+   is not a rollback — the new definition is strictly better than the old one and the
+   `encode` freeze question is settled.
+2. **The share artifact must not use it as its variance stat.** `max(removed, survivor)`
+   does not rescue it either: any game long enough to contain one natural eviction yields
+   6, which is most games.
+3. **For a "longest-lived" flavour line, use the survivor-at-game-end computation** — marks
+   still alive when the game ends. The same sweep shows a genuine spread across all of
+   {1..6} with median 3, because a game-ending win catches marks mid-lifecycle rather than
+   at the forced-eviction boundary. The helpers are already exported for this.
+4. **`pieces faded: N` remains the primary stat.** It varies naturally with game length and
+   needed no rescuing.
+
+**The generalizable lesson, worth citing in future game plans:** a metric derived from a
+fixed-cap FIFO under strict alternation is near-constant by construction. Before a number
+goes on a share artifact — whose entire purpose is per-game variance — *sweep it and look
+at the distribution*. "It is computable and it means something" is not the bar; "it differs
+between two players' games" is.
