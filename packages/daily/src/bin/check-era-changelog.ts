@@ -31,7 +31,10 @@ function parseArgs(argv: readonly string[]): { base: string } {
 
 function readEraAtRef(ref: string): EraFile {
   try {
-    const content = execFileSync("git", ["show", `${ref}:${ERA_PATH}`], { encoding: "utf8" });
+    // `ref:path` in `git show` is always repo-root-relative regardless of cwd (unlike a bare
+    // pathspec — see the cwd:REPO_ROOT comment on changelogChanged below), so no cwd override is
+    // needed here specifically. Kept for `--` calls to be consistent with the pathspec ones.
+    const content = execFileSync("git", ["show", `${ref}:${ERA_PATH}`], { encoding: "utf8", cwd: REPO_ROOT });
     return JSON.parse(content) as EraFile;
   } catch {
     return {}; // the file didn't exist at that ref yet — every entry in the new file is "new."
@@ -47,7 +50,10 @@ function readEraNow(): EraFile {
 }
 
 function changelogChanged(base: string): boolean {
-  const out = execFileSync("git", ["diff", "--name-only", `${base}...HEAD`, "--", CHANGELOG_PATH], { encoding: "utf8" });
+  // See REPO_ROOT's comment: a bare pathspec like CHANGELOG_PATH is resolved relative to cwd by
+  // git, not the repo root — must pin cwd or this silently matches nothing when invoked from a
+  // package subdirectory (as `pnpm --filter ... run guard:era-changelog` does).
+  const out = execFileSync("git", ["diff", "--name-only", `${base}...HEAD`, "--", CHANGELOG_PATH], { encoding: "utf8", cwd: REPO_ROOT });
   return out.trim().length > 0;
 }
 

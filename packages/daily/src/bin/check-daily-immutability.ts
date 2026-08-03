@@ -15,8 +15,17 @@
 //            supplied date rather than trusting its own `Date.now()`.
 
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { todayUTC } from "../day";
 import { assertNoShippedManifestChanged } from "../immutability";
+
+// git resolves a bare pathspec like "data/daily" RELATIVE TO CWD, not the repo root — running
+// this script from packages/daily (as `pnpm --filter @twist-arcade/daily run guard:...` does)
+// would otherwise silently match nothing (packages/daily/data/daily doesn't exist) and report a
+// false "0 manifests changed" every time. Pinning `cwd` to the repo root makes the pathspec mean
+// what it says regardless of where this script is invoked from.
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
 function parseArgs(argv: readonly string[]): { base: string; today: string } {
   let base = "origin/main";
@@ -36,7 +45,7 @@ function parseArgs(argv: readonly string[]): { base: string; today: string } {
 function changedManifestDays(base: string): string[] {
   let out: string;
   try {
-    out = execFileSync("git", ["diff", "--name-only", `${base}...HEAD`, "--", "data/daily"], { encoding: "utf8" });
+    out = execFileSync("git", ["diff", "--name-only", `${base}...HEAD`, "--", "data/daily"], { encoding: "utf8", cwd: REPO_ROOT });
   } catch (err) {
     throw new Error(`check-daily-immutability: \`git diff\` against "${base}" failed — is the base ref fetched? (${(err as Error).message})`);
   }
