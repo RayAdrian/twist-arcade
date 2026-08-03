@@ -242,3 +242,44 @@ C2 and `roadmap.md` §6 say `"puzzle" | "chase"`. The shipped
 implementer built against the real code, which is correct. The docs are the error and are
 corrected here; C2's *substance* (select the gate table by format, never by player count)
 is unchanged.
+
+---
+
+## C8 — One implementation of streak and share composition, in `packages/shell`
+
+**Owner: shell + daily teams. Severity: divergence that will rot silently.**
+
+*Found by: the Phase-1 daily implementer, 2026-08-03. Ruled by the orchestrator.*
+
+`packages/shell/src/streak.ts` and `share-frame.ts` shipped with the shell merge. The daily
+team, correctly told to build on the shell rather than replace it, then built plan-correct
+versions in `packages/daily` — because the shell's differ **materially**, not cosmetically:
+
+- shell's streak has no `best` field and **does not protect against a resumed old daily
+  resetting the count** — precisely the case `daily-and-share.md` §6.2 calls out;
+- shell's `composeShareArtifact` cannot reproduce the plan's binding grammar: no glyph,
+  `#37` rather than `Daily #37`, and a separate restart line instead of the inline
+  `· attempt k`.
+
+Two implementations of the same concept, both live, differing in ways a reader would not
+notice. They will drift, and the wrong one will be used in the wrong place with nothing
+erroring — the same silent-divergence shape as every other defect this build has produced.
+
+**Ruling: consolidate into `packages/shell`, correcting it to the plan-binding behaviour.**
+
+Direction matters. `shell` is the lower-level package — `useGame`, `ResultModal`, and
+`GameShell` already import these modules — and `daily` is the feature layer above it. So the
+corrected logic lives in `shell` and `daily` imports it. Moving it the other way would
+invert the dependency.
+
+Concretely: port the daily versions' behaviour into `packages/shell/src/streak.ts` and
+`share-frame.ts` (the `best` field, resumed-old-daily protection, the binding share
+grammar), update shell's existing consumers and tests, delete the duplicates in
+`packages/daily`, and have `packages/daily` import from `@twist-arcade/shell`. One
+implementation, one set of tests.
+
+**Also settled here:** `daily-and-share.md` §4.2's prose caps (stat line ≤40 chars, body
+line ≤14 glyphs) contradict its own §4.4 literal fixtures (42 and 41 chars; 15 glyphs). The
+Definition of Done requires byte-for-byte fixture reproduction, so **the fixtures win** —
+enforced caps are 42 and 15. The prose is the error. The implementer chose this and
+documented it rather than silently satisfying one and failing the other; that was right.
