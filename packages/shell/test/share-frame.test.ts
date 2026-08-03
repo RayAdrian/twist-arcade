@@ -134,8 +134,8 @@ describe("invokeShare — native share sheet where available, else clipboard, el
     expect(outcome).toBe("failed");
   });
 
-  it("falls back to clipboard when navigator.share rejects (plan §4.10: 'clipboard fallback then error text')", async () => {
-    const share = vi.fn().mockRejectedValue(new Error("user cancelled"));
+  it("falls back to clipboard when navigator.share rejects for a non-cancel reason (plan §4.10: 'clipboard fallback then error text')", async () => {
+    const share = vi.fn().mockRejectedValue(new Error("share() refused"));
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { share, clipboard: { writeText } });
     const outcome = await invokeShare("hello world");
@@ -143,8 +143,8 @@ describe("invokeShare — native share sheet where available, else clipboard, el
     expect(outcome).toBe("copied");
   });
 
-  it("reports 'failed' (never throws) when BOTH share and the clipboard fallback fail", async () => {
-    const share = vi.fn().mockRejectedValue(new Error("user cancelled"));
+  it("reports 'failed' (never throws) when BOTH a non-cancel share failure AND the clipboard fallback fail", async () => {
+    const share = vi.fn().mockRejectedValue(new Error("share() refused"));
     const writeText = vi.fn().mockRejectedValue(new Error("clipboard denied"));
     vi.stubGlobal("navigator", { share, clipboard: { writeText } });
     const outcome = await invokeShare("hello world");
@@ -156,5 +156,19 @@ describe("invokeShare — native share sheet where available, else clipboard, el
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     const outcome = await invokeShare("hello world");
     expect(outcome).toBe("failed");
+  });
+
+  it("reports 'dismissed' (never falls through to clipboard) when navigator.share rejects with AbortError — a user-dismissed share sheet (stage-6 must-fix 1)", async () => {
+    // navigator.share's real rejection for a user-dismissed sheet is a DOMException named
+    // "AbortError" — NOT a generic Error. Before the fix, invokeShare caught ANY rejection
+    // (including this one) and fell through to clipboard.writeText, which silently succeeds on
+    // desktop Chrome — so a dismissal was reported as "copied" and inflated share_done.
+    const abortError = new DOMException("The user aborted a request.", "AbortError");
+    const share = vi.fn().mockRejectedValue(abortError);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { share, clipboard: { writeText } });
+    const outcome = await invokeShare("hello world");
+    expect(outcome).toBe("dismissed");
+    expect(writeText).not.toHaveBeenCalled();
   });
 });

@@ -3,7 +3,7 @@
 // decoration; the game owns `artifactBody` (its emoji move-timeline, via
 // `presentation.shareArtifact()`). Never renders a board snapshot (ux-lens §5).
 
-export type ShareOutcome = "shared" | "copied" | "failed";
+export type ShareOutcome = "shared" | "copied" | "dismissed" | "failed";
 
 export class ShareFrameTooLongError extends Error {
   constructor(totalLines: number) {
@@ -51,10 +51,20 @@ export function composeShareArtifact(input: ShareFrameInput): string {
 
 /**
  * Invokes the share: `navigator.share` where available (mobile — reports "shared"), else
- * clipboard + confirmation ("copied"). If `share()` itself rejects (user cancelled, or the
- * API refuses), falls back to clipboard rather than giving up immediately (plan §4.10:
- * "share-failed (clipboard fallback then error text...)"). Only reports "failed" when
- * neither path succeeds — never throws.
+ * clipboard + confirmation ("copied"). If `share()` rejects for a reason OTHER than the user
+ * dismissing the sheet, falls back to clipboard rather than giving up immediately (plan §4.10:
+ * "share-failed (clipboard fallback then error text...)"). Only reports "failed" when neither
+ * path succeeds — never throws.
+ *
+ * Stage-6 must-fix 1: a rejected `navigator.share()` promise is not one uniform failure —
+ * `AbortError` is the browser's own name for "the user dismissed the sheet without sharing,"
+ * distinct from the API genuinely refusing (permission denied, no share target, etc.). The
+ * previous version caught every rejection identically and fell through to
+ * `clipboard.writeText`, which succeeds silently on desktop Chrome — so dismissing the sheet
+ * was indistinguishable from actually sharing, and `shareOutcomeToPath("copied")` fired
+ * `share_done` for a share nobody sent. An explicit cancel must report "dismissed" and must
+ * NOT fall through to the clipboard at all: silently copying the artifact after someone
+ * deliberately backed out is also surprising, unwanted UX, not just a metrics problem.
  */
 export async function invokeShare(text: string): Promise<ShareOutcome> {
   const nav = typeof navigator === "undefined" ? undefined : navigator;
@@ -63,8 +73,16 @@ export async function invokeShare(text: string): Promise<ShareOutcome> {
     try {
       await nav.share({ text });
       return "shared";
-    } catch {
-      // Fall through to the clipboard fallback below.
+    } catch (err) {
+      // Deliberately NOT `err instanceof Error` — a real `navigator.share()` rejection is a
+      // DOMException, and DOMException is not reliably `instanceof Error` across environments
+      // (confirmed false under jsdom here, true in real Chrome) despite always carrying a
+      // `.name`. Duck-typing on `.name` is what actually works everywhere `invokeShare` runs.
+      const name = typeof err === "object" && err !== null && "name" in err ? (err as { name: unknown }).name : undefined;
+      if (name === "AbortError") {
+        return "dismissed"; // explicit cancel — never silently copy on the player's behalf.
+      }
+      // Some other rejection (the API genuinely refusing) — fall through to clipboard below.
     }
   }
 
