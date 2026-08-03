@@ -78,6 +78,11 @@ export interface SuperkoBudget {
    *  speed — a slow CI runner shouldn't silently get a different (worse) answer than a fast one
    *  just because it hits the wall-clock budget sooner. */
   maxNodesVisited?: number;
+  /** Optional observability hook, called every `progressEveryNodes` visits (default 200,000) —
+   *  the hard playThrough=false configs can run for minutes with zero output otherwise, which
+   *  is indistinguishable from a hang without this. Never affects the result. */
+  onProgress?: (info: { nodesVisited: number; elapsedMs: number }) => void;
+  progressEveryNodes?: number;
 }
 
 export function resolvedSuperkoConfig(config: RawConfig): ResolvedRulesetConfig {
@@ -140,6 +145,8 @@ export function solveSuperko(
   // different concern (non-deterministic game state), so no repo-wide config change is needed.
   const startedAt = performance.now();
   const deadline = startedAt + wallClockMs;
+  const onProgress = budget.onProgress;
+  const progressEveryNodes = budget.progressEveryNodes ?? 200_000;
 
   let nodesVisited = 0;
 
@@ -161,6 +168,9 @@ export function solveSuperko(
    *  PRE-move key on the way OUT of a position, not on the way in). */
   function value(queues: Queues, toMove: PlayerId, historyBefore: ReadonlySet<string>): PositionValue {
     nodesVisited++;
+    if (onProgress && nodesVisited % progressEveryNodes === 0) {
+      onProgress({ nodesVisited, elapsedMs: performance.now() - startedAt });
+    }
     if (nodesVisited > maxNodesVisited || performance.now() > deadline) {
       throw new SuperkoBudgetExceededError();
     }

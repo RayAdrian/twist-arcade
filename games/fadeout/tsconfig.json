@@ -4,7 +4,7 @@
     "outDir": "./dist",
     "rootDir": "."
   },
-  "include": ["*.ts", "solver/**/*.ts"],
+  "include": ["*.ts", "*.mts", "solver/**/*.ts", "solver/**/*.mts"],
   "references": [
     { "path": "../../packages/engine" },
     { "path": "../../packages/game-spec" },
