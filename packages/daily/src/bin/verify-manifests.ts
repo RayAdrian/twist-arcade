@@ -15,9 +15,10 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { classifyBuffer } from "../buffer";
+import { classifyBuffer, findFirstMissingDay } from "../buffer";
 import { todayUTC } from "../day";
 import { assertManifestBotMatchesEra } from "../era-guard";
+import { assertValidEraFile } from "../era";
 import type { EraFile } from "../era";
 import { assertValidManifest, type DailyManifest } from "../manifest";
 
@@ -58,6 +59,17 @@ async function main(): Promise<void> {
   const era = readEra();
 
   let failedCount = 0;
+
+  // Should-fix 7: era.json itself was never validated by this script — only manifests that
+  // EMBED a bot record got their copy cross-checked against it (assertManifestBotMatchesEra
+  // below). A malformed era.json entry with no manifest currently referencing it (e.g. a future
+  // game's record staged ahead of its first scheduled day) would sail through silently.
+  try {
+    assertValidEraFile(era);
+  } catch (err) {
+    console.error(`FAIL data/daily/era.json: ${(err as Error).message}`);
+    failedCount++;
+  }
   for (const file of dayFiles) {
     const filenameDay = file.match(DAY_FILE_RE)?.[1];
     if (!filenameDay) continue;
@@ -83,12 +95,24 @@ async function main(): Promise<void> {
     }
   }
 
-  const upcoming = dayFiles.filter((f) => (f.match(DAY_FILE_RE)?.[1] ?? "") >= today).length;
+  const days = dayFiles.map((f) => f.match(DAY_FILE_RE)?.[1]).filter((d): d is string => Boolean(d));
+  const upcoming = days.filter((d) => d >= today).length;
   const level = classifyBuffer(upcoming);
   console.log(`verify-manifests: ${dayFiles.length} manifest(s) on disk, ${upcoming} upcoming (>= ${today}), buffer=${level}`);
 
+  // Should-fix 7: a COUNT of upcoming manifests cannot see a hole in the MIDDLE of the range —
+  // "90 files over 200 days with a hole next Tuesday" reads buffer=ok. Walk the actual calendar
+  // days instead and name the first gap explicitly; this is a hard failure regardless of the
+  // count-based buffer level, since a missing day is precisely the 6am incident plan §1.2
+  // promises can't happen.
+  const missingDay = findFirstMissingDay(days, today);
+  if (missingDay) {
+    console.error(`verify-manifests: day ${missingDay} has no committed manifest — a HOLE inside the otherwise-committed buffer, not just a low count`);
+    failedCount++;
+  }
+
   if (failedCount > 0) {
-    console.error(`verify-manifests: ${failedCount} manifest(s) failed validation`);
+    console.error(`verify-manifests: ${failedCount} manifest(s)/file(s) failed validation`);
     process.exitCode = 1;
     return;
   }
