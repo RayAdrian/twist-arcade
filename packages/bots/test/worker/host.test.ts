@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { rngFromSeed } from "@twist-arcade/engine";
 import { classicTicTacToe, type TTTState } from "@twist-arcade/engine/testkit/fixtures/classic-ttt";
+import { tinyFog } from "../fixtures/tiny-fog";
 import type { GameManifest, Registry } from "@twist-arcade/game-spec";
-import { handleBotRequest, UnknownGameError, UnknownTierError } from "../../src/worker/host";
+import { HiddenInformationUnsupportedError, handleBotRequest, UnknownGameError, UnknownTierError } from "../../src/worker/host";
 import type { BotRequest } from "../../src/worker/protocol";
 import { fakeClock } from "../helpers";
 
@@ -26,12 +28,35 @@ const TTT_MANIFEST: GameManifest = {
 
 let loadEngineCalls = 0;
 
+const FOG_MANIFEST: GameManifest = {
+  id: "tiny-fog-fixture",
+  title: "Tiny Fog (fixture)",
+  classic: "Guess",
+  ruleSentence: "Guess the secretly-flipped coin.",
+  tags: [],
+  estMinutes: 1,
+  modes: { bot: false, hotseat: false, asyncLink: false },
+  players: { min: 1, max: 1 },
+  difficultyTiers: [
+    { id: "standard", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 20 }, minReplyMs: 400 },
+  ],
+};
+
 const registry: Registry = {
   "classic-ttt-fixture": {
     manifest: TTT_MANIFEST,
     async loadEngine() {
       loadEngineCalls += 1;
       return classicTicTacToe;
+    },
+    async loadPresentation() {
+      throw new Error("not needed for these tests");
+    },
+  },
+  "tiny-fog-fixture": {
+    manifest: FOG_MANIFEST,
+    async loadEngine() {
+      return tinyFog;
     },
     async loadPresentation() {
       throw new Error("not needed for these tests");
@@ -121,5 +146,25 @@ describe("handleBotRequest (worker host, plan §6 + plan §13's headline determi
     expect(ok.requestId).toBe("id-ok");
     const fail = await handleBotRequest(registry, baseRequest({ requestId: "id-fail", gameId: "nope" }), fakeClock());
     expect(fail.requestId).toBe("id-fail");
+  });
+
+  describe("correction C1 (platform-corrections.md): hidden-information games must never reach a state-space Policy through this seam", () => {
+    it("refuses a hiddenInformation:true game with a typed error rather than handing tierPolicy the canonical (secret-bearing) state", async () => {
+      const fogState = tinyFog.setup(1, rngFromSeed("worker-fog-setup"));
+      const request: BotRequest = {
+        requestId: "req-fog",
+        gameId: "tiny-fog-fixture",
+        encodedState: tinyFog.encode(fogState),
+        player: 0,
+        tierId: "standard",
+        seed: "worker-fog-seed",
+        step: 0,
+      };
+      const response = await handleBotRequest(registry, request, fakeClock());
+      expect(response.ok).toBe(false);
+      if (!response.ok) {
+        expect(response.error.name).toBe(HiddenInformationUnsupportedError.name);
+      }
+    });
   });
 });

@@ -59,6 +59,35 @@ export class UnknownTierError extends Error {
   }
 }
 
+/**
+ * Thrown when a request targets a `hiddenInformation: true` game. This is correction C1 made
+ * concrete at the exact seam its own text warns about: "the harness cannot use a single
+ * policy-invocation signature across perfect- and hidden-information games without care —
+ * that seam is where the bug would come back." `tierPolicy` (tiers.ts) only ever builds a
+ * state-space `Policy<S,M>` (its PolicySpec union has no "determinized"/ViewPolicy variant
+ * yet), and this host decodes and hands over the REAL canonical state — safe for a
+ * perfect-info game (where playerView is the identity), a silent C1 violation for a
+ * hidden-info one (a "Strong" tier would read unrevealed secrets and post a passing gate on a
+ * game no human could play blind). Refusing loudly here is deliberate scoping, not an
+ * oversight: wiring a determinized (view-honest) tier through this path is real future work
+ * (plan's own note: "Determinized Strong lives in packages/bots... reused by every hidden-info
+ * game and becomes the shipped hint feature") that has no consumer yet in M2 — no shipped game
+ * needs it today, and this refusal is what stands in for that work until it exists, so the gap
+ * fails loud instead of shipping broken.
+ */
+export class HiddenInformationUnsupportedError extends Error {
+  constructor(gameId: string) {
+    super(
+      `worker host: game "${gameId}" has hiddenInformation===true — tierPolicy has no ` +
+        "view-honest (determinized) search variant yet, and handing this seam the canonical " +
+        "state would violate correction C1 (a policy that can read unrevealed secrets posts a " +
+        "passing gate on a game that is unplayable blind). Refusing rather than silently " +
+        "leaking secrets."
+    );
+    this.name = "HiddenInformationUnsupportedError";
+  }
+}
+
 export interface HandleBotRequestOptions {
   /** When true, refuse (typed error, never a silent accept) any resolved tier whose budget is
    *  `deadlineMs` — the caller is asserting this response must be reproducible (a pinned daily
@@ -98,6 +127,14 @@ export async function handleBotRequest(
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const engine = (await entry.loadEngine()) as GameEngine<any, any, any>;
+
+    // Correction C1's seam, guarded BEFORE decode/search ever touches the canonical state —
+    // see HiddenInformationUnsupportedError's doc for why this is a refusal, not a routing
+    // decision made silently.
+    if (engine.meta.hiddenInformation) {
+      throw new HiddenInformationUnsupportedError(request.gameId);
+    }
+
     // C4: decode() throws a typed error on malformed input rather than returning a partial
     // state — that throw propagates out of this try and becomes a typed ok:false below,
     // never a silently-accepted forged state.
