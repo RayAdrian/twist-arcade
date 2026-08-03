@@ -108,7 +108,11 @@ export function Cell({ id, row, col, occupant, ageStep = 0, countdown, ghost, st
     }
   }
 
-  const opacity = ageStep === 1 ? AGE_OPACITY[1] : ageStep === 2 ? AGE_OPACITY[2] : AGE_OPACITY[0];
+  // I8: this inline `style.opacity` value ALWAYS wins over the `opacity-50` utility CLASS below
+  // (inline style beats any class at the same element, full stop) — so `staged` previously had
+  // a class that could never actually take visual effect. `staged` must be accounted for HERE,
+  // in the computed value itself, not just as a class alongside it.
+  const opacity = staged ? 0.5 : ageStep === 1 ? AGE_OPACITY[1] : ageStep === 2 ? AGE_OPACITY[2] : AGE_OPACITY[0];
   const transitionClass = board.reducedMotion ? "" : "transition-opacity duration-age ease-arcade";
 
   return (
@@ -129,9 +133,7 @@ export function Cell({ id, row, col, occupant, ageStep = 0, countdown, ghost, st
       onClick={onClick}
       onKeyDown={onKeyDown}
       style={{ opacity, aspectRatio: "1 / 1" }}
-      className={`relative flex min-h-[48px] min-w-[48px] items-center justify-center border border-ink-muted ${transitionClass} ${
-        staged ? "opacity-50" : ""
-      } focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring`}
+      className={`relative flex min-h-[48px] min-w-[48px] items-center justify-center border border-ink-muted ${transitionClass} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring`}
     >
       {ghost && (
         <span aria-hidden="true" className="absolute inset-2 border border-dashed border-ink-muted">

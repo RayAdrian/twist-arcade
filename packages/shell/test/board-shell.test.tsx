@@ -13,11 +13,15 @@ function DummyBoard({
   disabled = false,
   lockedUntil = 0,
   cellDisabled,
+  stagedCell,
+  ageStep,
 }: {
   onCellAction(cellId: string): void;
   disabled?: boolean;
   lockedUntil?: number;
   cellDisabled?: string;
+  stagedCell?: string;
+  ageStep?: 0 | 1 | 2;
 }) {
   return (
     <BoardShell rows={3} cols={3} disabled={disabled} onCellAction={onCellAction} boardLabel="Dummy board" lockedUntil={lockedUntil}>
@@ -32,6 +36,8 @@ function DummyBoard({
               col={col}
               accessibleName={`Row ${row + 1}, column ${col + 1}. Empty.`}
               disabled={cellDisabled === id}
+              staged={stagedCell === id}
+              {...(ageStep !== undefined ? { ageStep } : {})}
             />
           );
         })
@@ -258,5 +264,28 @@ describe("BoardShell — 320px viewport cell-size floor (dev-mode assertion)", (
     expect(errorSpy).toHaveBeenCalledWith(expect.stringMatching(/48/));
     errorSpy.mockRestore();
     vi.unstubAllGlobals();
+  });
+});
+
+describe("Cell — staged visual (I8)", () => {
+  it("actually renders at reduced opacity when staged=true — the inline style must reflect it, not just the CSS class", () => {
+    // Cell's inline `style={{ opacity }}` always wins over the `opacity-50` utility CLASS at
+    // the same element (inline style beats any class, full stop) — so `staged` had a class that
+    // could never actually apply. The computed `opacity` value itself must account for `staged`.
+    render(<DummyBoard onCellAction={() => {}} stagedCell="0-0" />);
+    const cell = screen.getAllByRole("gridcell")[0]!;
+    expect(cell.style.opacity).toBe("0.5");
+  });
+
+  it("staged overrides the ageStep-derived opacity (staged takes priority)", () => {
+    render(<DummyBoard onCellAction={() => {}} stagedCell="0-0" ageStep={2} />);
+    const cell = screen.getAllByRole("gridcell")[0]!;
+    expect(cell.style.opacity).toBe("0.5");
+  });
+
+  it("an unstaged cell still uses the ageStep-derived opacity, unaffected", () => {
+    render(<DummyBoard onCellAction={() => {}} ageStep={2} />);
+    const cell = screen.getAllByRole("gridcell")[0]!;
+    expect(cell.style.opacity).toBe("0.6"); // AGE_OPACITY[2]
   });
 });
