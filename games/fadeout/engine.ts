@@ -23,6 +23,7 @@ import {
   checkWinner,
   computeLegalCells,
   positionKeyOf,
+  totalPliesPlayed,
   transition,
   type ResolvedRulesetConfig,
   type RulesetConfig,
@@ -91,9 +92,14 @@ function resolveConfig(config: RulesetConfig): ResolvedRulesetConfig {
   };
 }
 
-/** All 8 combinations of the three ruleset axes (plan §1) — used by engine.test.ts to run
- *  engineContract() against every variant, and reusable by F2's solve script and the harness
- *  so nobody hand-enumerates this list a second time and lets it drift out of sync with §1. */
+/** All 8 SYNTACTIC combinations of the three ruleset axes (plan §1) — used by engine.test.ts to
+ *  run engineContract() against every variant, and reusable by F2's solve script and the
+ *  harness so nobody hand-enumerates this list a second time and lets it drift out of sync
+ *  with §1. Still 8 entries deliberately, even though only 6 are distinct GAMES once
+ *  playThrough=true (see RulesetConfig's AXIS COLLAPSE doc comment in engine-internal.ts): this
+ *  function enumerates the config SPACE, and F2's solve is exactly what's expected to notice
+ *  and exploit the collapse (as a free cross-check), not something this enumeration should
+ *  pre-collapse on its behalf. */
 export function allRulesetConfigs(): RulesetConfig[] {
   const out: RulesetConfig[] = [];
   for (const decayTiming of ["remove-first", "place-first"] as const) {
@@ -123,6 +129,14 @@ export function createFadeoutEngine(config: RulesetConfig): GameEngine<FadeoutSt
   const resolved = resolveConfig(config);
   const totalCells = resolved.boardSize * resolved.boardSize;
 
+  // PERF NOTE, not a correctness issue at 3x3/141k reachable positions: legalMoves() below
+  // calls computeStatus() (which, under superko, runs computeLegalCells()'s full transition()
+  // simulation once to check the no-legal-moves corner) and THEN calls computeLegalCells()
+  // again itself — two full simulations per legalMoves() call. apply() -> isLegal() ->
+  // legalMoves() stacks a third on top just to check one move's legality before apply() re-runs
+  // transition() a fourth time to actually perform it. F2's hot loops (solve, self-play sweeps)
+  // should call transition()/positionKeyOf() directly rather than legalMoves()/apply()/
+  // isLegal(), which pay for this redundancy on every call.
   function computeStatus(state: FadeoutState): Status {
     const winner = checkWinner(state.queues, resolved.boardSize);
     if (winner !== null) return { kind: "won", winner };
@@ -300,13 +314,39 @@ export function createFadeoutEngine(config: RulesetConfig): GameEngine<FadeoutSt
       if (!isNonNegativeIntegerPair(obj.longestLife)) {
         throw new FadeoutDecodeError("`longestLife` must be a pair of non-negative integers");
       }
+      // C4 (platform-corrections.md): reject STRUCTURALLY IMPOSSIBLE states, not just
+      // malformed ones. Deliberately NOT attempting full turn-parity/reachability validation of
+      // `queues` vs `faded`, or well-formedness of `history` entries — that's replay()'s job at
+      // the real trust boundary, and shape checks buy nothing against a forger who can stuff
+      // syntactically valid position keys. These two are cheap, general invariants that fall
+      // straight out of longestLife's definition (engine-internal.ts's transition() doc
+      // comment), not a reachability check:
+      const faded = obj.faded as [number, number];
+      const longestLife = obj.longestLife as [number, number];
+      const totalPliesSoFar = totalPliesPlayed(faded, [q0, q1]);
+      for (const p of [0, 1] as const) {
+        // longestLife[p] is only ever written by transition()'s removeOldest, which always
+        // increments faded[p] in the same step — it can never be nonzero while faded[p] is 0.
+        if (faded[p] === 0 && longestLife[p] !== 0) {
+          throw new FadeoutDecodeError(
+            `\`longestLife[${p}]\` must be 0 when \`faded[${p}]\` is 0 (no mark has ever decayed)`
+          );
+        }
+        // A lifespan recorded at some past removal is at most that removal's ply number, which
+        // is at most the CURRENT total plies played — it can only be smaller, never larger.
+        if (longestLife[p] > totalPliesSoFar) {
+          throw new FadeoutDecodeError(
+            `\`longestLife[${p}]\` (${longestLife[p]}) cannot exceed the total plies played so far (${totalPliesSoFar})`
+          );
+        }
+      }
 
       return {
         queues: [q0, q1],
         toMove: obj.toMove,
         history: historyRaw as string[],
-        faded: obj.faded as [number, number],
-        longestLife: obj.longestLife as [number, number],
+        faded,
+        longestLife,
         lastEffects: [],
       };
     },

@@ -503,6 +503,37 @@ describe("fadeout engine — encode/decode", () => {
       "negative faded",
       JSON.stringify({ queues: [[], []], toMove: 0, history: [], faded: [-1, 0], longestLife: [0, 0] }),
     ],
+    // C4: decode must reject structurally IMPOSSIBLE states, not merely malformed ones — these
+    // two are syntactically well-typed (right shapes, non-negative integers) but violate the
+    // engine's own invariants (platform-corrections.md C4).
+    [
+      "longestLife set for a player who has never had a mark removed (faded=0)",
+      // longestLife[p] is only ever written by transition()'s removeOldest, which always
+      // increments faded[p] in the same step — faded[0]=0 with longestLife[0]=3 can never
+      // arise from real play. (totalPliesSoFar here is 5, well above 3, so this is NOT just
+      // the exceeds-total-plies case below in disguise — only the faded=0 rule catches it.)
+      JSON.stringify({
+        queues: [[0, 1, 2], [3, 4]],
+        toMove: 0,
+        history: [],
+        faded: [0, 0],
+        longestLife: [3, 0],
+      }),
+    ],
+    [
+      "longestLife exceeds the total plies played so far",
+      // A lifespan recorded at some past removal can be at most the ply count AT THAT TIME,
+      // which is at most the CURRENT total plies played (faded+queued, both players) — it can
+      // only be smaller. faded[0]=1 here so the faded=0 rule above does not fire; only the
+      // plies-played bound does.
+      JSON.stringify({
+        queues: [[0], []],
+        toMove: 0,
+        history: [],
+        faded: [1, 0],
+        longestLife: [99, 0],
+      }),
+    ],
   ])("throws on malformed input: %s", (_label, encoded) => {
     expect(() => engine.decode(encoded)).toThrow();
   });
