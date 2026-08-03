@@ -227,13 +227,19 @@ function createSuperkoSearch(
     // WIN-witness shortcut — see the module doc's "Pass-1 WIN values ALSO transfer
     // unconditionally" argument for why this is sound regardless of `historyBefore`'s contents.
     // Checked before even enumerating legal moves: if it fires, none of that work is needed.
-    try {
-      if (raw.valueAt(currentKeyEarly) === "win") {
-        const witness = witnessOf(currentKeyEarly);
-        if (witness.every((k) => !historyBefore.has(k))) return "win";
-      }
-    } catch {
-      // currentKeyEarly not in the raw graph — fall through to full search.
+    //
+    // Membership check, NOT a try/catch around raw.valueAt(): this position is always ongoing
+    // by construction (the caller never invokes `value()` on a state whose checkWinner already
+    // fired — see the call sites below), so the only reason raw.valueAt would ever throw here is
+    // "key not in the raw graph," which `raw.graph.nodes.has()` answers directly. A try/catch
+    // used to wrap this AND the `witnessOf()` call below, which also silently swallowed
+    // winWitnessPositionKeys' own "found a repeated position while following a WIN proof —
+    // structurally impossible" bug-detection throw (raw-engine.ts) as if it were the same
+    // expected "not in graph" case. That real-bug signal must propagate, not be masked as a
+    // routine fallback.
+    if (raw.graph.nodes.has(currentKeyEarly) && raw.valueAt(currentKeyEarly) === "win") {
+      const witness = witnessOf(currentKeyEarly);
+      if (witness.every((k) => !historyBefore.has(k))) return "win";
     }
 
     const moves = legalSuperkoCells(queues, toMove, historyBefore, resolved);
@@ -261,17 +267,15 @@ function createSuperkoSearch(
         if (winner === toMove) return "win";
         continue; // defensive; structurally shouldn't happen for the mover's own move
       }
-      let rawValue: PositionValue;
-      try {
-        rawValue = raw.valueAt(positionKey({ queues: move.childQueues, toMove: move.childToMove }));
-      } catch {
+      const childKey = positionKey({ queues: move.childQueues, toMove: move.childToMove });
+      if (!raw.graph.nodes.has(childKey)) {
         // The child isn't in the raw graph (can happen if superko allowed a queues/toMove
         // combination the raw BFS never visits due to a difference in reachability framing) —
         // fall back to full search for this child rather than trusting an unavailable oracle.
         deferred.push(move);
         continue;
       }
-      if (rawValue === "loss") return "win"; // unconditional shortcut, see module doc
+      if (raw.valueAt(childKey) === "loss") return "win"; // unconditional shortcut, see module doc
       deferred.push(move);
     }
 
@@ -314,11 +318,7 @@ function createSuperkoSearch(
     if (winner !== null) return winner === mover ? "win" : "loss";
 
     const childKey = positionKey({ queues: result.queues, toMove: result.toMove });
-    try {
-      if (raw.valueAt(childKey) === "loss") return "win"; // unconditional shortcut
-    } catch {
-      // not in the raw graph — fall through to full search
-    }
+    if (raw.graph.nodes.has(childKey) && raw.valueAt(childKey) === "loss") return "win"; // unconditional shortcut
 
     const historyAfter = new Set(historyBeforeMove);
     historyAfter.add(positionKey({ queues, toMove: mover }));
@@ -355,24 +355,46 @@ export function solveSuperko(
   const totalCells = search.resolved.boardSize * search.resolved.boardSize;
   const rootQueues: Queues = [[], []];
   const rootMover: PlayerId = 0;
+  const rawOpeningByCell = new Map(raw.openings.map((o) => [o.cell, o.value]));
 
+  // Root and each of the 9 openings are proven ONE AT A TIME below, each in its own try/catch,
+  // rather than the whole root+openings sequence sharing one try/catch around it. That used to
+  // mean a budget exhausted PARTWAY THROUGH the openings loop discarded an already-proven
+  // rootValue (and any openings already proven before the cutoff) in favor of the blanket C2
+  // fallback for everything — silently downgrading a genuine C1 proof to "unproven" the instant
+  // ANY later, harder opening ran out of budget. `search`'s node/wall-clock budget is shared
+  // globally across root+all openings (by design — see createSuperkoSearch's doc), so a value
+  // already returned by `search.value()`/`search.valueOfMove()` before the budget was exceeded IS
+  // a real proof and must be kept, not rederived or reset just because a sibling call later
+  // failed.
+  let rootValue: PositionValue;
+  let budgetExceeded = false;
   try {
-    const rootValue = search.value(rootQueues, rootMover, new Set());
-    const openings: SuperkoOpeningValue[] = [];
-    for (let cell = 0; cell < totalCells; cell++) {
-      openings.push({ cell, value: search.valueOfMove(rootQueues, rootMover, cell, new Set()) });
-    }
-    return { rootValue, openings, budgetExceeded: false, ...search.stats() };
+    rootValue = search.value(rootQueues, rootMover, new Set());
   } catch (err) {
-    if (err instanceof SuperkoBudgetExceededError) {
-      // Fallback per plan §2.3: report the C2 (pass-1) value rather than an unproven C1 claim.
-      // (This fallback value CAN legitimately be "draw" — it's the THREEFOLD/raw value, which
-      // does have a draw terminal; only the true C1 search above cannot produce one.)
-      const openings: SuperkoOpeningValue[] = raw.openings.map((o) => ({ cell: o.cell, value: o.value }));
-      return { rootValue: raw.rootValue, openings, budgetExceeded: true, ...search.stats() };
-    }
-    throw err;
+    if (!(err instanceof SuperkoBudgetExceededError)) throw err;
+    rootValue = raw.rootValue; // C2 fallback (plan §2.3) — legitimately can be "draw" here.
+    budgetExceeded = true;
   }
+
+  const openings: SuperkoOpeningValue[] = [];
+  for (let cell = 0; cell < totalCells; cell++) {
+    if (budgetExceeded) {
+      // Once the shared budget is gone, every remaining opening falls back too — no point
+      // attempting them (they would immediately throw again) or reporting them inconsistently.
+      openings.push({ cell, value: rawOpeningByCell.get(cell) ?? raw.rootValue });
+      continue;
+    }
+    try {
+      openings.push({ cell, value: search.valueOfMove(rootQueues, rootMover, cell, new Set()) });
+    } catch (err) {
+      if (!(err instanceof SuperkoBudgetExceededError)) throw err;
+      budgetExceeded = true;
+      openings.push({ cell, value: rawOpeningByCell.get(cell) ?? raw.rootValue });
+    }
+  }
+
+  return { rootValue, openings, budgetExceeded, ...search.stats() };
 }
 
 /**
