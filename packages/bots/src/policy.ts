@@ -49,6 +49,7 @@
 // rebuilding the pipeline per world is what makes a closure-smuggled world observable at all.
 
 import type { GameEngine, Json, PlayerId, Rng, WithEffects } from "@twist-arcade/engine";
+import { stableStringify } from "@twist-arcade/engine";
 import type { SearchBudget } from "@twist-arcade/game-spec";
 
 /**
@@ -276,6 +277,14 @@ export function determinize<S extends WithEffects, M extends Json, V extends Wit
  * `makeRng` must build a FRESH Rng from the same seed for each call (e.g. `() =>
  * rngFromSeed(seed)`) — reusing one stateful Rng instance across invocations would make later
  * calls see a different (already-advanced) stream and invalidate the probe.
+ *
+ * CALLER RECOMMENDATION (not enforced by this function — a harness/CI concern, not a defect
+ * here): invoke this probe across SEVERAL different rng seeds, and with MORE than 2 worlds
+ * when the game's hidden-information space allows it, rather than relying on one seed and the
+ * minimum of 2. An rng-gated intermittent leak (a cheater that only reads the real world on
+ * some fraction of calls, e.g. gated by its own internal coin flip) was observed to surface on
+ * only 7/20 single-seed runs in practice — a single invocation of this probe is a real check,
+ * but it is not a proof of honesty; it is closer to a fuzzer with one input.
  */
 export function probeViewHonesty<S extends WithEffects, M extends Json, V extends WithEffects>(args: {
   engine: GameEngine<S, M, V>;
@@ -300,7 +309,12 @@ export function probeViewHonesty<S extends WithEffects, M extends Json, V extend
   const moves: { world: S; move: M }[] = [];
   for (const world of worlds) {
     const worldView = deriveView(engine, world, player);
-    if (JSON.stringify(worldView) !== JSON.stringify(view)) {
+    // stableStringify (NOT JSON.stringify — key-order-sensitive) for the actual equality
+    // check: two views that are deep-equal but built with different object key insertion
+    // order must compare equal here, or this probe would reject perfectly valid hidden-world
+    // fixtures as though they didn't share a view at all (review finding, post-M2).
+    // JSON.stringify below is display-only, in the thrown message.
+    if (stableStringify(worldView as unknown as Json) !== stableStringify(view as unknown as Json)) {
       throw new RangeError(
         `probeViewHonesty: world ${JSON.stringify(world)} does not project to the same view as ` +
           `the first world (${JSON.stringify(worldView)} vs ${JSON.stringify(view)}) — these are ` +
@@ -311,14 +325,14 @@ export function probeViewHonesty<S extends WithEffects, M extends Json, V extend
     const { move } = policy.chooseMove({ engine, view, player, rng: makeRng(), budget, clock });
     moves.push({ world, move });
   }
-  const first = JSON.stringify(moves[0]!.move);
+  const first = stableStringify(moves[0]!.move as unknown as Json);
   for (const entry of moves.slice(1)) {
-    if (JSON.stringify(entry.move) !== first) {
+    if (stableStringify(entry.move as unknown as Json) !== first) {
       throw new Error(
         `probeViewHonesty: the SAME view produced DIFFERENT moves across hidden worlds ` +
-          `(${JSON.stringify(moves[0]!.world)} -> ${first}, ${JSON.stringify(entry.world)} -> ` +
-          `${JSON.stringify(entry.move)}) — the policy is behaving as though it can see ` +
-          "something beyond the view (C1 violation)."
+          `(${JSON.stringify(moves[0]!.world)} -> ${JSON.stringify(moves[0]!.move)}, ` +
+          `${JSON.stringify(entry.world)} -> ${JSON.stringify(entry.move)}) — the policy is ` +
+          "behaving as though it can see something beyond the view (C1 violation)."
       );
     }
   }
