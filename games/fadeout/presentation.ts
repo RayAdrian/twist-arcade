@@ -223,6 +223,16 @@ function outWaited(finalView: FadeoutState, loser: PlayerId): string {
   return `Patience wore down ${glyphOf(loser)}'s marks`;
 }
 
+// Minor (stage-6 F3 review): plan §8's trigger table has a SECOND row this module does not
+// implement at all — "Win where `placed` cell had a ghost (opponent decayed there previous
+// turn)" -> "You struck the moment their {glyph} vanished." Silently absent, not merely dead
+// code like trappedByRepetition below. This is deliberate, not an oversight: detecting it needs
+// to know whether the winning move's cell had a ghost on the PREVIOUS ply — one apply before
+// `finalView.lastEffects`, which only ever exposes the FINAL apply's own effects. Plan §8's own
+// text states the exact escape clause this falls under: "Anything requiring more history than
+// the final apply exposes is out of scope for v1 — note the limitation in code." This comment
+// is that note; the trigger is not implemented in v1.
+
 /** Trigger 4 from plan §8's table ("Superko-forced loss (mover had no legal move)"). Under
  *  THIS shipped config (threefold, not superko) this is structurally unreachable — occupancy
  *  alone always leaves >= 3 empty cells, so the no-legal-moves corner in engine.ts's
@@ -288,6 +298,15 @@ export const fadeoutPresentation: GamePresentation<FadeoutState, FadeoutMove, Fa
       trigger(ev: GameEvent<FadeoutState>): boolean {
         return ev.kind === "moved" && decayedEffect(ev.effects) !== undefined;
       },
+      // Minor (stage-6 F3 review): "Your X" hardcodes the glyph. Verified safe under everything
+      // that actually ships today: useGame.ts's firstOccurrence loop only ever runs `if
+      // (byHuman)`, and app/play/[gameId]/PlayClient.tsx never passes `humanSeat` to GameShell
+      // (it defaults to 0) — so for THIS game, "Your" mark is always X's, every time this fires.
+      // `GamePresentation.firstOccurrence[].text` is a plain `string` (game-spec's frozen
+      // contract), not a function of the event, so this can't be made glyph-dynamic without a
+      // platform type change — out of scope for this pass. If Fadeout is ever registered with
+      // `humanSeat !== 0` (e.g. a future series/alternating-seat mode), this text will say the
+      // wrong letter and must be revisited then, not silently trusted.
       text: "Your X faded — pieces last 3 turns.",
       anchor: firstDecayAnchor,
     },
@@ -301,3 +320,13 @@ export const fadeoutPresentation: GamePresentation<FadeoutState, FadeoutMove, Fa
 // ./ui/board-view directly (it's a UI-path module per eslint's board-path animation boundary —
 // harmless to import from a test, but this keeps presentation.ts's own public surface complete).
 export { boardCellNamePlain };
+
+// Re-exported for testing in isolation (minor, stage-6 F3 review): the ONLY prior test that
+// exercised this branch built a hand-crafted FadeoutState whose queues ACCIDENTALLY contained a
+// real winning line (`[0, 3, 6]` is a column), so `checkWinner` found it and `textureLine` never
+// reached this function at all — the test only proved textureLine doesn't throw, not that this
+// template's own text is correct. `trappedByRepetition` cannot be exercised through
+// `engine.status()` under the shipped (non-superko) config no matter what state is constructed
+// (see its own comment) — direct export + a direct test is the only non-vacuous way to check its
+// literal output.
+export { trappedByRepetition };

@@ -75,6 +75,33 @@ const boardPathAnimationBoundary = {
   ],
 };
 
+// Dynamic import() closes two gaps `boardPathAnimationBoundary` above left open (stage-6 F3
+// review, C5 scope gaps, probed live):
+//   1. `no-restricted-imports`'s `paths`/`patterns` options only ever match a STATIC import
+//      specifier (`import ... from "..."` / bare `import "..."`) — a dynamic `import("gsap")`
+//      expression is a different AST node entirely (`ImportExpression`, not `ImportDeclaration`)
+//      and is invisible to that rule no matter how the patterns are written. `() =>
+//      import("gsap")` inside a board-path file lints completely clean today.
+//   2. `boardPathAnimationBoundary`'s own `files` glob was `games/**/ui/**` only — a banned
+//      library imported from a game file OUTSIDE `ui/**` (e.g. `presentation.ts`, one directory
+//      up) also lints clean, even though that code still ships in the same route bundle.
+// This `no-restricted-syntax` rule closes gap 1 via an AST selector on `ImportExpression`, keyed
+// off the same three banned specifier roots; the `files` glob it's applied to (below, alongside
+// a WIDENED `boardPathAnimationBoundary` file list) closes gap 2 by covering every game file,
+// not just `ui/**`.
+const dynamicImportBoardPathBan = {
+  "no-restricted-syntax": [
+    "error",
+    {
+      selector: "ImportExpression[source.value=/^(framer-motion|gsap|motion\\/react)(\\/.*)?$/]",
+      message:
+        "A dynamic import() of a board-path-banned animation library (framer-motion, gsap, or motion/react) evades " +
+        "no-restricted-imports — banned here for the same reason as a static import (architecture-lens §5). Use " +
+        "Motion One (bare `motion`/`motion/mini`) or plain CSS instead.",
+    },
+  ],
+};
+
 // Registry-driven code splitting (plan §3.2.3): "App code may statically import only
 // games/registry.ts re-exported manifests... Engines and presentations load exclusively
 // through registry[id].loadEngine()/loadPresentation()." Manifests are eager (the catalog
@@ -168,11 +195,14 @@ export default tseslint.config(
     },
   },
   {
-    // Games' own `ui/**` only here — the six shell board-path files get BOTH boundaries via
-    // the explicitly-merged block below (declared after registrySplittingBoundary), not this
-    // one, per the BOARD_PATH_FILES comment above (stage-6 review C1, part 1).
-    files: ["games/**/ui/**/*.tsx", "games/**/ui/**/*.ts"],
-    rules: boardPathAnimationBoundary,
+    // WIDENED (stage-6 F3 review, C5 gap 2): every game file, not just `ui/**` — a game's
+    // presentation.ts, engine.ts, etc. all ship in the same route bundle as its ui/** files, and
+    // `import "framer-motion"` from `presentation.ts` previously lint-passed cleanly because this
+    // glob didn't reach it. The six shell board-path files get BOTH boundaries via the
+    // explicitly-merged block below (declared after registrySplittingBoundary), not this one,
+    // per the BOARD_PATH_FILES comment above (stage-6 review C1, part 1).
+    files: ["games/**/*.ts", "games/**/*.tsx"],
+    rules: { ...boardPathAnimationBoundary, ...dynamicImportBoardPathBan },
   },
   {
     // Purity boundary: the engine package and every game package.
@@ -189,6 +219,7 @@ export default tseslint.config(
     // value — the union of both boundaries' patterns — the one that actually applies to them.
     files: BOARD_PATH_FILES,
     rules: {
+      ...dynamicImportBoardPathBan,
       "no-restricted-imports": [
         "error",
         {

@@ -100,6 +100,34 @@ describe("eslint.config.mjs — board-path import boundaries (C1)", () => {
     expect(ruleIds(result)).toContain("no-restricted-imports");
   });
 
+  it("bans framer-motion via a STATIC import in a game file OUTSIDE ui/** (C5 gap 2, stage-6 F3 review) — this used to lint clean", async () => {
+    // Before this fix, `boardPathAnimationBoundary`'s files glob was `games/**/ui/**` only, so a
+    // game's presentation.ts (one directory up from ui/**, but shipping in the same route
+    // bundle) could `import "framer-motion"` and lint completely clean.
+    const result = await lint(
+      "games/fadeout/__lint_probe__.ts",
+      'import { motion } from "framer-motion";\nexport function probe() { return motion; }\n'
+    );
+    expect(ruleIds(result)).toContain("no-restricted-imports");
+  });
+
+  it("bans a DYNAMIC import() of gsap on a game's ui/** file (C5 gap 1, stage-6 F3 review) — no-restricted-imports never caught import() at all", async () => {
+    // `no-restricted-imports`'s patterns only ever match a static ImportDeclaration; a dynamic
+    // `import()` expression is a different AST node entirely and evaded the ban regardless of
+    // how the patterns were written. `no-restricted-syntax` (an AST selector on
+    // `ImportExpression`) is what actually closes this gap.
+    const result = await lint("games/fadeout/ui/__lint_probe__.tsx", 'export const load = () => import("gsap");\n');
+    expect(ruleIds(result)).toContain("no-restricted-syntax");
+  });
+
+  it("bans a DYNAMIC import() of framer-motion on a BOARD_PATH_FILES entry (Cell.tsx)", async () => {
+    const result = await lint(
+      "packages/shell/src/components/Cell.tsx",
+      'export const load = () => import("framer-motion");\n'
+    );
+    expect(ruleIds(result)).toContain("no-restricted-syntax");
+  });
+
   it("does NOT ban bare 'motion' or motion/mini on a board-path file — motion/mini is the sanctioned API", async () => {
     const result = await lint(
       "packages/shell/src/components/Cell.tsx",

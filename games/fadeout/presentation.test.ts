@@ -9,7 +9,7 @@ import { appendStep, replayTo, rngFor, rngForSetup, type ReplayRecord } from "@t
 import { createFadeoutEngine } from "./engine";
 import type { FadeoutState } from "./engine";
 import { FADEOUT_RULESET_CONFIG } from "./manifest";
-import { fadeoutPresentation } from "./presentation";
+import { fadeoutPresentation, trappedByRepetition } from "./presentation";
 
 const engine = createFadeoutEngine(FADEOUT_RULESET_CONFIG);
 
@@ -308,14 +308,23 @@ describe("textureLine — the one-line end-screen story (ux-lens §5, plan §8)"
     // so the out-waited template (checked above) is the one that fires, not this one.
   });
 
-  it("never throws for a status the frozen config cannot structurally produce (no-legal-moves win under threefold)", () => {
-    // Under the SHIPPED threefold config this branch is structurally unreachable (occupancy
-    // alone always leaves empty cells — see engine-internal.ts's own comment on
-    // computeStatus's no-legal-moves corner). Verified here on a hand-built STATE OBJECT
-    // (not reachable via real play under threefold) purely to prove textureLine's own logic
-    // doesn't crash if it were ever handed one — forward-compatible with a future superko
-    // registration, dead code under this one.
-    const trapped: FadeoutState = {
+  it("trappedByRepetition() returns the exact plan §8 template text", () => {
+    // Minor (stage-6 F3 review): this used to be a "never throws" test whose OWN fixture
+    // defeated its stated purpose — queues [0,3,6] IS a real winning column, so `checkWinner`
+    // finds it and `textureLine` takes the winnerCell-not-null branch, never reaching
+    // `trappedByRepetition` at all. The test passed for a reason that had nothing to do with
+    // what its title claimed. `trappedByRepetition` is structurally unreachable through
+    // `engine.status()` under the shipped (non-superko) config no matter what state is
+    // constructed (see its own comment in presentation.ts) — calling it directly is the only
+    // non-vacuous way to verify its literal output.
+    expect(trappedByRepetition()).toBe("Trapped — every move repeated the past");
+  });
+
+  it("textureLine itself never throws on a hand-built state whose winner IS resolvable via a real winning line but carries no decay effects", () => {
+    // What the OLD "never throws" test actually exercised, honestly retitled: a state with a
+    // genuine winning line and empty lastEffects. textureLine correctly finds no self-vacate/
+    // out-waited story to tell and falls through to "" (the fallback row of plan §8's table).
+    const noStoryYet: FadeoutState = {
       queues: [
         [0, 3, 6],
         [1, 4, 7],
@@ -326,7 +335,7 @@ describe("textureLine — the one-line end-screen story (ux-lens §5, plan §8)"
       longestLife: [0, 0],
       lastEffects: [],
     };
-    expect(() => fadeoutPresentation.textureLine!(trapped)).not.toThrow();
+    expect(fadeoutPresentation.textureLine!(noStoryYet)).toBe("");
   });
 });
 
