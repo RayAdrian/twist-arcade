@@ -124,15 +124,15 @@ describe("manifest.ts — DailyManifest validation (CI guard: plan §2.3.3, §11
     await expect(assertValidManifest(manifest)).rejects.toThrow(/puzzle/i);
   });
 
-  it("accepts a well-formed solo-chase manifest (Mine Run — no certificate, just a move budget)", async () => {
+  it("accepts a well-formed solo-chase manifest whose seed is a CERTIFIED derivative of the formula (should-fix 4: Mine Run chase days require a certificate exactly like solo-puzzle days — rotation.ts's hasCertificate() already enforces this to SCHEDULE one)", async () => {
     const day = "2026-09-03";
-    const seed = await dailySeed("mine-run", "0.1.0", day);
+    const formula = await dailySeed("mine-run", "0.1.0", day);
     const manifest: DailyManifest = {
       day,
       n: 3,
       gameId: "mine-run",
       kind: "solo-chase",
-      seed,
+      seed: `${formula}:7`,
       engineVersion: "0.1.0",
       gameVersion: 1,
       chase: { moveBudget: 250 },
@@ -140,15 +140,47 @@ describe("manifest.ts — DailyManifest validation (CI guard: plan §2.3.3, §11
     await expect(assertValidManifest(manifest)).resolves.not.toThrow();
   });
 
-  it("rejects a solo-chase manifest with no chase block", async () => {
+  it("rejects a solo-chase manifest whose seed is the RAW (uncertified) formula — a chase day is never shipped uncertified, same rule as solo-puzzle", async () => {
     const day = "2026-09-03";
-    const seed = await dailySeed("mine-run", "0.1.0", day);
+    const rawFormula = await dailySeed("mine-run", "0.1.0", day);
     const manifest: DailyManifest = {
       day,
       n: 3,
       gameId: "mine-run",
       kind: "solo-chase",
-      seed,
+      seed: rawFormula, // NOT "formula:nonce" — exactly what a pre-should-fix-4 manifest shipped
+      engineVersion: "0.1.0",
+      gameVersion: 1,
+      chase: { moveBudget: 250 },
+    };
+    await expect(assertValidManifest(manifest)).rejects.toThrow(/certified/i);
+  });
+
+  it("rejects a solo-chase manifest whose seed is NOT a certified derivative of the formula (wrong day baked in)", async () => {
+    const day = "2026-09-03";
+    const wrongFormula = await dailySeed("mine-run", "0.1.0", "2026-09-04");
+    const manifest: DailyManifest = {
+      day,
+      n: 3,
+      gameId: "mine-run",
+      kind: "solo-chase",
+      seed: `${wrongFormula}:0`,
+      engineVersion: "0.1.0",
+      gameVersion: 1,
+      chase: { moveBudget: 250 },
+    };
+    await expect(assertValidManifest(manifest)).rejects.toThrow(/certified/i);
+  });
+
+  it("rejects a solo-chase manifest with no chase block", async () => {
+    const day = "2026-09-03";
+    const formula = await dailySeed("mine-run", "0.1.0", day);
+    const manifest: DailyManifest = {
+      day,
+      n: 3,
+      gameId: "mine-run",
+      kind: "solo-chase",
+      seed: `${formula}:0`,
       engineVersion: "0.1.0",
       gameVersion: 1,
     };

@@ -98,9 +98,20 @@ export async function assertValidManifest(manifest: DailyManifest, opts: AssertV
       if (!Number.isInteger(manifest.chase.moveBudget) || manifest.chase.moveBudget < 1) {
         throw new Error(`manifest.ts: chase.moveBudget must be a positive integer, got ${manifest.chase.moveBudget}`);
       }
-      const expectedSeed = await dailySeed(manifest.gameId, manifest.engineVersion, manifest.day);
-      if (manifest.seed !== expectedSeed) {
-        throw new Error("manifest.ts: solo-chase manifest.seed does not match dailySeed(gameId, engineVersion, day).");
+      // Should-fix 4 (stage-6 review): a chase day is a SOLO kind exactly like solo-puzzle —
+      // rotation.ts's hasCertificate() already refuses to SCHEDULE a chase day without a
+      // certificate (SOLO_KINDS includes "solo-chase"), and this field's own doc (line 17-18
+      // above) says "solo: the CERTIFIED seed" without carving chase out as an exception. This
+      // branch previously demanded the RAW formula match exactly, which would reject a
+      // plan-correct certified chase manifest the moment Mine Run certificates carry real
+      // "formula:nonce" seeds — aligned here with the solo-puzzle branch below.
+      const formula = await dailySeed(manifest.gameId, manifest.engineVersion, manifest.day);
+      if (!isCertifiedSeedOf(manifest.seed, formula)) {
+        throw new Error(
+          "manifest.ts: solo-chase manifest.seed is not a certified derivative " +
+            '("formula:nonce") of dailySeed(gameId, engineVersion, day) — a chase day is never ' +
+            "shipped uncertified, same rule as solo-puzzle."
+        );
       }
       break;
     }
