@@ -15,6 +15,7 @@ import type { ActiveSpec, Effect, GameEngine, Json, PlayerId, Rng, Status, WithE
 import { stableStringify } from "@twist-arcade/engine";
 import { countAdjacentMines, floodFrom, neighbors } from "./board";
 import { sampleConsistentState as sampleConsistentStateImpl } from "./csp";
+import { createMineRunHeuristic } from "./heuristic";
 
 export const DEFAULT_WIDTH = 10;
 export const DEFAULT_HEIGHT = 10;
@@ -537,6 +538,12 @@ export function createMineRun(opts: CreateMineRunOptions = {}): GameEngine<MineR
     score(state: MineRunState, _player: PlayerId): number {
       return state.banked;
     },
+
+    // platform-corrections.md C6 / mine-run.md §4.5: Greedy's brain — banked plus the live
+    // streak's continuation value, so a 1-ply candidate ranking (packages/bots's
+    // rankingValueOf, which prefers heuristic() over score()) is not blind to the entire
+    // press-your-luck decision the way bare score() (== banked) is.
+    heuristic: createMineRunHeuristic(width, height),
 
     /**
      * View-honest by construction (csp.ts never touches MineRunState/mines — it operates

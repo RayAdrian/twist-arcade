@@ -13,7 +13,7 @@
 
 import { describe, expect, it } from "vitest";
 import { countAdjacentMines } from "../board";
-import { chooseSafeMove, safeMove } from "../probes";
+import { assertRevealBudgetScarcity, chooseSafeMove, RevealBudgetNotScarceError, safeMove } from "../probes";
 import type { FrontierAnalysis } from "../csp";
 import type { MineRunCellView, MineRunView } from "../engine";
 
@@ -151,5 +151,19 @@ describe("safeMove — end-to-end (analyzeFrontier + chooseSafeMove)", () => {
     const view = makeView(width, height, revealed, 1, { streakLen: 2, streakValue: 3 });
     const move = safeMove(view);
     expect(move).toEqual({ t: "bank" });
+  });
+});
+
+describe("assertRevealBudgetScarcity (mine-run.md §4.2's tuning note, platform-corrections.md C6)", () => {
+  it("throws RevealBudgetNotScarceError when budget == totalCells (no reveal scarcity at all)", () => {
+    expect(() => assertRevealBudgetScarcity(36, 36)).toThrow(RevealBudgetNotScarceError);
+  });
+
+  it("throws when budget exceeds totalCells (a nonsensical but still-caught configuration)", () => {
+    expect(() => assertRevealBudgetScarcity(40, 36)).toThrow(RevealBudgetNotScarceError);
+  });
+
+  it("passes silently when budget is strictly tighter than totalCells", () => {
+    expect(() => assertRevealBudgetScarcity(24, 36)).not.toThrow();
   });
 });
