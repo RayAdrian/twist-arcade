@@ -23,6 +23,24 @@ export function formatSolveResult(result: SolveResult): string {
   return lines.join("\n");
 }
 
+/** Same as `toReportJson`, but drops `throughputGamesPerSec` — the single field a `MatchupReport`
+ *  carries that is NOT decision-derived (runner.ts's own doc: search budgets are always
+ *  `{kind:"rollouts"}`, so every DECISION is deterministic under a fixed seed; only the elapsed-
+ *  time measurement varies run to run with a real Clock). Plan §9's anchor is a byte-identical
+ *  JSON artifact under a fixed seed — three identical CLI invocations previously measured
+ *  952.38 / 869.57 / 888.89 games/sec, breaking that anchor. JSON-only: `formatMatchupTable`
+ *  (the human-readable form) still prints throughput; only the machine-readable artifact drops
+ *  it. */
+export function toMatchupReportJson(report: MatchupReport): string {
+  const deterministic: Omit<MatchupReport, "throughputGamesPerSec"> = {
+    agentA: report.agentA,
+    agentB: report.agentB,
+    metrics: report.metrics,
+    outcomes: report.outcomes,
+  };
+  return JSON.stringify(deterministic, null, 2);
+}
+
 export function formatMatchupTable(report: MatchupReport): string {
   const m = report.metrics;
   return [

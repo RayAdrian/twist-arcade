@@ -21,7 +21,7 @@ import { classicTicTacToe } from "@twist-arcade/engine/testkit/fixtures/classic-
 import { solveTwoPlayerGame } from "./solver/solve";
 import { runMatchup } from "./runner";
 import { resolveNamedAgent } from "./roster";
-import { formatMatchupTable, formatSolveResult, toReportJson } from "./report";
+import { formatMatchupTable, formatSolveResult, toMatchupReportJson, toReportJson } from "./report";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const KNOWN_FIXTURES: Record<string, GameEngine<any, any, any>> = {
@@ -114,7 +114,10 @@ export function dispatch(argv: readonly string[]): DispatchResult {
     const games = parsed.flags.games !== undefined ? Number(parsed.flags.games) : 200;
     const seed = parsed.flags.seed ?? "harness-cli";
     const report = runMatchup(engine, resolveNamedAgent(nameA), resolveNamedAgent(nameB), { games, seed });
-    return { exitCode: 0, output: asJson ? toReportJson(report) : formatMatchupTable(report) };
+    // SHOULD FIX #5: --json uses toMatchupReportJson (drops throughputGamesPerSec, the one
+    // non-deterministic field) so the JSON artifact is byte-identical across runs under a fixed
+    // seed (plan §9's anchor) — the human table still prints throughput via formatMatchupTable.
+    return { exitCode: 0, output: asJson ? toMatchupReportJson(report) : formatMatchupTable(report) };
   }
 
   // "suite" needs a GameManifest (runCiSuite's second argument) — built-in testkit fixtures
