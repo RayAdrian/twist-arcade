@@ -4,27 +4,45 @@
 // shell needs: announce() strings, the first-occurrence callout, the share artifact, the
 // texture line, and the "How?" sheet frames.
 //
-// `announce({kind:"imminent"})` — a real platform-shape constraint worth recording here: this
-// event's payload is ONLY `{effects}` (the SAME effects array as the "moved" event, per
-// useGame.ts's call site: `presentation.announce({kind:"imminent", effects})`), never the full
-// state. That looks like too little information to predict "which mark is about to vanish" —
-// but one fact IS structurally derivable from `effects` alone, and it is exactly what makes
-// this genuinely useful rather than vacuous: under a fixed cap (3), popping the oldest of a
-// FULL queue always leaves the new front-of-queue mark at exactly `remaining === 1` (one of the
-// owner's own placements away from vanishing) — this is a property of FIFO-under-cap, not of
-// any particular cell, so it needs no state lookup at all. See presentation.test.ts's "reports
-// the mover's NEXT mark is now on its final turn" case, which proves this against the real
-// engine rather than asserting it from the derivation alone.
+// `announce({kind:"imminent"})` — MUST FIX 1 (stage-6 F3 review): this event's payload used to
+// be ONLY `{effects}` (the SAME effects array as the "moved" event), and this module derived
+// "a mark is now on its final turn" from the presence of a `decayed` effect. That is correct in
+// the STEADY STATE (once a queue is at cap, popping its front always leaves the new front at
+// `remaining === 1`) — but a mark FIRST enters its final turn on its owner's 3rd placement,
+// which fills the queue to cap WITHOUT popping anything, so `effects` carries no `decayed` entry
+// at all on that ply. The old implementation was silent at exactly the teaching-critical moment
+// (plies 5/6 — the onset of each player's first-ever vanish) a blind player most needs the
+// warning, and it could never name a cell either (it had no view to read one from).
+//
+// Fixed by widening the platform event (packages/game-spec's GameEvent — additive, mirroring
+// `boardSummary`, which already carries `view`) to `{effects, view}`. `announceImminent` below
+// now reads the STANDING set of marks at `remaining === 1` straight off `view`, via the exact
+// same `buildCellPresentations`/`remainingLife` formula board-view.ts already uses for the
+// badge (plan §5.1: "the badge, announce(), and the heuristic never drift apart") — this is
+// correct on the onset ply (no decay effect needed) AND in the steady state (where it now also
+// correctly names the NON-mover's standing final-turn mark, which the old effects-only check
+// silently dropped), and it can name every affected cell. `effects` is kept on the event shape
+// for symmetry with "moved" and because other games may still want it, but this game's
+// announceImminent no longer needs it.
 
 import type { Effect, PlayerId } from "@twist-arcade/engine";
 import type { ReplayRecord } from "@twist-arcade/engine";
 import type { GameEvent, GamePresentation } from "@twist-arcade/game-spec";
+import { moveToCellId, timelineToBody } from "@twist-arcade/shell";
 import { checkWinner, DEFAULT_BOARD_SIZE, get2, LINES } from "./engine-internal";
 import { createFadeoutEngine } from "./engine";
 import type { FadeoutMove, FadeoutState } from "./engine";
 import { FADEOUT_RULESET_CONFIG } from "./manifest";
 import { Board } from "./ui/Board";
-import { boardCellNamePlain, boardPositionName, boardSummaryText, emojiFor, glyphFor } from "./ui/board-view";
+import {
+  boardCellNamePlain,
+  boardPositionName,
+  boardSummaryText,
+  buildCellPresentations,
+  emojiFor,
+  glyphFor,
+  type CellPresentation,
+} from "./ui/board-view";
 
 const engine = createFadeoutEngine(FADEOUT_RULESET_CONFIG);
 
@@ -59,12 +77,16 @@ function announceMoved(ev: Extract<GameEvent<FadeoutState>, { kind: "moved" }>):
 }
 
 function announceImminent(ev: Extract<GameEvent<FadeoutState>, { kind: "imminent" }>): string {
-  // See this module's header comment: a decay THIS ply structurally guarantees the mover now
-  // has a fresh "final turn" mark (the new front of their own, now-full, queue) — derivable
-  // from `effects` alone, with no cell name available (that would require the full queue).
-  const decayed = ev.effects.find((e) => e.type === "decayed");
-  if (!decayed || (decayed.player !== 0 && decayed.player !== 1)) return "";
-  return `${glyphOf(decayed.player)}'s next mark is now on its final turn.`;
+  // See this module's header comment (MUST FIX 1): the standing set of marks at remaining=1,
+  // read straight off the view — correct on the onset ply (no decay effect exists yet) and in
+  // the steady state (names BOTH players' standing final-turn marks, not just the mover's own
+  // overflow). `ev.effects` is intentionally unused here now (kept on the event shape for
+  // symmetry with "moved").
+  const finalTurn = buildCellPresentations(ev.view).filter(
+    (c): c is CellPresentation & { occupant: PlayerId } => c.occupant !== null && c.countdown === 1
+  );
+  if (finalTurn.length === 0) return "";
+  return finalTurn.map((c) => `${glyphOf(c.occupant)} fades next turn, ${boardPositionName(c.cell)}.`).join(" ");
 }
 
 function announceStatus(ev: Extract<GameEvent<FadeoutState>, { kind: "status" }>): string {
@@ -92,7 +114,11 @@ function firstDecayAnchor(ev: GameEvent<FadeoutState>): string {
   if (ev.kind !== "moved") return "";
   const decayed = decayedEffect(ev.effects);
   const cell = cellOfEffect(decayed);
-  return cell === undefined ? "" : JSON.stringify({ cell } satisfies FadeoutMove);
+  // Minor (stage-6 F3 review): use the shell's own moveToCellId (stableStringify) rather than
+  // bare JSON.stringify — identical output today ({cell} has one key), but this stays correct
+  // if FadeoutMove ever grows a second field with non-canonical key order, matching every other
+  // cellId in the app (Board.tsx's own `id` prop is built the same way).
+  return cell === undefined ? "" : moveToCellId({ cell } satisfies FadeoutMove);
 }
 
 // --- shareArtifact — the emoji move-timeline (ux-lens §5/§8) -----------------------------
@@ -114,25 +140,50 @@ function replayEffects(record: ReplayRecord): readonly Effect[][] {
   return perStep;
 }
 
+/**
+ * C12 ruling (platform-corrections.md, 2026-08-03 — the fourth iteration of the §14->§15->§16
+ * lesson, found by executing 2,000 random games under the frozen ruleset rather than reading
+ * the encoding): `faded === max(0, plies - 6)` on 2,000/2,000 measured games, so a stat line
+ * naming both faded-count and plies prints one fact twice, and marking EVERY decay with 💨
+ * (which substitutes for the seat glyph) erases all board identity from ply 7 onward — a
+ * 60-ply game would render 54 consecutive 💨. Fix, both binding on this function:
+ *   1. Drop "pieces faded" from the stat line — provably derivable from plies under this
+ *      ruleset. Keep plies; it is the real, non-redundant fact.
+ *   2. 💨 marks ONLY the first decay in the whole game (the moment the twist becomes visible —
+ *      the artifact's actual hook); every later decay keeps its normal seat glyph, so seat
+ *      identity survives the whole timeline. 🎯 (the winning move) still takes priority over
+ *      both, unchanged.
+ * Also owns chunking its own timeline into a grammar-legal body via the shell's
+ * `timelineToBody()` (must-fix per C12's "related" note): main's C8 composeShareText grammar
+ * caps a body at 2 lines / 15 glyphs each, and nothing reconstructs a per-game emoji alphabet
+ * from an already-joined opaque string after the fact — the game's own presentation module,
+ * which already knows its seat glyphs and built the raw glyph array, is the only place that
+ * can chunk it correctly. This makes Fadeout's shareArtifact() output already grammar-legal
+ * for ANY game length, so a future daily caller feeding it through composeShareText() never
+ * hits ShareGrammarError.
+ */
 function shareArtifact(record: ReplayRecord, finalView: FadeoutState): string {
   const perStepEffects = replayEffects(record);
   const finalStatus = engine.status(finalView);
   const winningStepIndex = finalStatus.kind === "won" ? perStepEffects.length - 1 : -1;
 
+  let firstDecaySeen = false;
   const symbols = record.steps.map((step, i) => {
     const [player] = step.moves[0]!;
     const effects = perStepEffects[i]!;
     const decayedThis = decayedEffect(effects, player as PlayerId) !== undefined;
-    if (i === winningStepIndex) return "🎯"; // winning move — takes priority over 💨
-    if (decayedThis) return "💨";
+    if (i === winningStepIndex) return "🎯"; // winning move — takes priority over 💨/seat glyph
+    if (decayedThis && !firstDecaySeen) {
+      firstDecaySeen = true;
+      return "💨";
+    }
     return emojiFor(player as PlayerId);
   });
 
-  const faded = finalView.faded[0] + finalView.faded[1];
   const plies = record.steps.length;
-  const statLine = `pieces faded: ${faded} · ${plies} plies`;
+  const statLine = `${plies} plies`;
 
-  return `${symbols.join("")}\n${statLine}`;
+  return `${timelineToBody(symbols)}\n${statLine}`;
 }
 
 // --- textureLine — the one-line end-screen story (ux-lens §5, plan §8) -------------------

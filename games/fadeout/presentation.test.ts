@@ -65,20 +65,62 @@ describe("announce() — moved", () => {
 });
 
 describe("announce() — imminent (screen-reader legibility of decay, per the task's explicit ask)", () => {
-  it("is empty when this move's effects contain no decay", () => {
+  it("is empty when no mark is at remaining=1 yet (early game, well before any queue is full)", () => {
     const state = engine.setup(2, rngForSetup("s"));
     const next = applyOne(state, 4, 0);
-    expect(fadeoutPresentation.announce({ kind: "imminent", effects: next.lastEffects })).toBe("");
+    expect(fadeoutPresentation.announce({ kind: "imminent", effects: next.lastEffects, view: next })).toBe("");
   });
 
-  it("reports the mover's NEXT mark is now on its final turn — a structural guarantee, not a guess: popping the oldest of a full (cap=3) queue always leaves the new front at remaining=1", () => {
+  // MUST FIX 1 (stage-6 F3 review): the onset case. A mark FIRST enters its final turn on its
+  // owner's 3rd placement — the queue fills to cap WITHOUT popping anything, so `effects`
+  // carries no `decayed` entry at all. The old effects-only implementation was silent here,
+  // exactly the teaching-critical moment (a player's very first vanish is now one placement
+  // away) where the warning matters most. Computing from `view` (this event's widened payload)
+  // catches this because `remainingLife` is a pure function of queue occupancy, not of whether
+  // a pop happened THIS ply.
+  it("announces on the ONSET ply — the 3rd placement, no decay effect at all — not just the steady-state decay ply", () => {
+    let state = engine.setup(2, rngForSetup("s"));
+    const cells = [0, 1]; // P0 at 0 (1st), P1 at 1 (1st)
+    for (let i = 0; i < cells.length; i++) state = applyOne(state, cells[i]!, i);
+    state = applyOne(state, 3, 2); // P0's 2nd placement (cell 3)
+    const next = applyOne(state, 5, 3); // P1's 2nd placement (cell 5) -- still no one at cap
+    // Confirm the premise: no decay has happened yet.
+    expect(next.lastEffects.some((e) => e.type === "decayed")).toBe(false);
+    // Now P0's 3rd placement fills P0's queue to cap (0,3,+1 more) with NO pop.
+    const onset = applyOne(next, 4, 4); // P0's 3rd placement (cell 4) — queue [0,3,4] full
+    expect(onset.lastEffects.some((e) => e.type === "decayed")).toBe(false); // still no decay this ply
+    expect(fadeoutPresentation.announce({ kind: "imminent", effects: onset.lastEffects, view: onset })).toBe(
+      "X fades next turn, top left."
+    );
+  });
+
+  it("in the steady state (both queues already at cap), names BOTH players' standing final-turn marks, WITH cell names — not just the mover's own overflow", () => {
+    // Once both queues have reached cap (both players have placed 3+ times), EVERY subsequent
+    // ply leaves BOTH fronts at remaining=1 permanently — the old effects-only implementation
+    // only ever surfaced the CURRENT mover's overflow, silently dropping the other player's
+    // equally-real standing final-turn mark. queues after this move: [[2,4,7],[1,3,5]] — P0's
+    // front (cell 2) AND P1's front (cell 1) are both remaining=1.
     let state = engine.setup(2, rngForSetup("s"));
     const cells = [0, 1, 2, 3, 4, 5];
     for (let i = 0; i < cells.length; i++) state = applyOne(state, cells[i]!, i);
-    const next = applyOne(state, 7, cells.length); // P0 (X) overflows
-    expect(fadeoutPresentation.announce({ kind: "imminent", effects: next.lastEffects })).toBe(
-      "X's next mark is now on its final turn."
+    const next = applyOne(state, 7, cells.length); // P0 (X) overflows, popping cell 0
+    expect(fadeoutPresentation.announce({ kind: "imminent", effects: next.lastEffects, view: next })).toBe(
+      "O fades next turn, top center. X fades next turn, top right."
     );
+  });
+
+  it("names every mark currently at remaining=1, not just the mover's own — e.g. after the mover's overflow, the OTHER player may also already have a standing final-turn mark", () => {
+    // Build a position where BOTH players have a mark at remaining=1 simultaneously: P0
+    // fills to cap first (cell 4 is P0's 3rd placement, onset, no pop), then P1 also reaches
+    // its 3rd placement (cell 8, onset, no pop) one ply later — both queues now read
+    // remaining=1 at their own front.
+    let state = engine.setup(2, rngForSetup("s"));
+    const moves = [0, 1, 3, 5]; // P0:0,3 (1st,2nd) / P1:1,5 (1st,2nd)
+    for (let i = 0; i < moves.length; i++) state = applyOne(state, moves[i]!, i);
+    state = applyOne(state, 4, moves.length); // P0's 3rd (cell 4) -> P0 front (cell 0) is remaining=1
+    const both = applyOne(state, 8, moves.length + 1); // P1's 3rd (cell 8) -> P1 front (cell 1) is remaining=1
+    const text = fadeoutPresentation.announce({ kind: "imminent", effects: both.lastEffects, view: both });
+    expect(text).toBe("X fades next turn, top left. O fades next turn, top center.");
   });
 });
 
@@ -160,12 +202,55 @@ describe("shareArtifact — the emoji move-timeline (ux-lens §5/§8)", () => {
     expect(lines[0]).toBe("❌⭕❌⭕🎯");
   });
 
-  it("the stat line reports pieces faded and game length in plies (NOT longestLife — platform-corrections.md's §15/§16 ruling)", () => {
+  // C12 (platform-corrections.md, 2026-08-03 ruling — the fourth iteration of the §14->§15->§16
+  // lesson): under the frozen ruleset, `faded === max(0, plies - 6)` on 2,000/2,000 measured
+  // games, so a stat line naming BOTH faded-count and plies prints one fact twice. Drop
+  // "pieces faded" — plies alone is the real, non-redundant fact.
+  it("the stat line reports ONLY the game length in plies (C12 — 'pieces faded' is dropped: it is provably derivable from plies under this ruleset)", () => {
     const record = playRecord([0, 1, 2, 3, 4, 5, 7]);
     const final = finalState(record);
     const body = fadeoutPresentation.shareArtifact(record, final);
     const lines = body.split("\n");
-    expect(lines[1]).toBe("pieces faded: 1 · 7 plies");
+    expect(lines[lines.length - 1]).toBe("7 plies");
+  });
+
+  // C12 point 2: 💨 substitutes for the seat glyph — under strict alternation every move from
+  // ply 7 onward decays, so marking EVERY decay with 💨 erases all board/seat identity from
+  // ply 7 on (a 60-ply game would render 54 consecutive 💨, per the review's measurement).
+  // Ruling: 💨 marks only the FIRST decay in the whole game; every later decay keeps its
+  // normal seat glyph.
+  it("marks ONLY the first decay with 💨 — a second decay-causing move later in the same game keeps its seat glyph (C12)", () => {
+    const record = playRecord([0, 1, 2, 3, 4, 5, 7, 8]); // ply 6 (P0) and ply 7 (P1) both decay
+    const final = finalState(record);
+    const body = fadeoutPresentation.shareArtifact(record, final);
+    const lines = body.split("\n");
+    expect(lines[0]).toBe("❌⭕❌⭕❌⭕💨⭕"); // ply 7 (P1) decayed too, but is NOT the first -> ⭕, not 💨
+    expect(lines[lines.length - 1]).toBe("8 plies");
+  });
+
+  // C12's "related, due before the next daily increment" note: main's C8 strict grammar
+  // (composeShareText/timelineToBody: <=2 body lines, <=15 glyphs/line) will reject a
+  // single-line timeline for any game over 15 plies. Fadeout owns chunking its OWN timeline
+  // via timelineToBody() (it already knows its own seat glyphs and emoji array) rather than
+  // leaving a generic daily adapter to reverse-engineer a per-game emoji alphabet from an
+  // opaque joined string — see this module's shareArtifact() for the implementation.
+  it("a long game's timeline is pre-chunked via timelineToBody (2 lines, each <=15 glyphs) — never a single line over 15 glyphs long", () => {
+    // A real, verified-legal 19-ply fixture (see textureLine's OUT_WAITED_MOVES below) whose
+    // decay pattern repeats every ply from ply 7 onward and ends in a P0 win on the final move.
+    const record = playRecord([0, 1, 2, 3, 4, 8, 0, 1, 2, 3, 4, 8, 0, 1, 2, 3, 4, 7, 6]);
+    const final = finalState(record);
+    expect(engine.status(final)).toEqual({ kind: "won", winner: 0 });
+    const body = fadeoutPresentation.shareArtifact(record, final);
+    const lines = body.split("\n");
+    // timeline (2 lines) + stat line.
+    expect(lines).toHaveLength(3);
+    expect(lines[0]!.length).toBeLessThanOrEqual(15 * 2); // glyph count, not UTF-16 length, but a safe upper bound
+    expect(lines[1]!.length).toBeLessThanOrEqual(15 * 2);
+    expect(lines[2]).toBe("19 plies");
+    // The winning move (the very last ply) is 🎯 even though it is ALSO a decay-causing move —
+    // 🎯 keeps its documented priority over 💨/seat-glyph regardless of how far into the
+    // game's decay run it falls.
+    expect(lines[1]!.endsWith("🎯")).toBe(true);
   });
 
   it("body is <= 7 lines total on its own and leaves room for the shell's frame (share-frame.ts caps the FULL composed text at 7)", () => {
