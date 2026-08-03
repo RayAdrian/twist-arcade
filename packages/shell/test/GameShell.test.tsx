@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
-import type { BoardProps, RegistryEntry } from "@twist-arcade/game-spec";
+import type { BoardProps, GameDefinition, RegistryEntry } from "@twist-arcade/game-spec";
 import type { TTTMove, TTTState } from "@twist-arcade/engine/testkit/fixtures/classic-ttt";
 import { GameShell } from "../src/components/GameShell";
 import { scriptedBotDriver, type BotDriver } from "../src/bot-driver";
@@ -661,5 +661,76 @@ describe("GameShell — restart count in the share text is gated to daily/solo c
     // plan-binding grammar (packages/daily's composeShareText) rather than shell's old format.
     expect(writeText.mock.calls[0]?.[0]).toMatch(/attempt 2/i);
     expect(writeText.mock.calls[0]?.[0]).not.toMatch(/restart/i);
+  });
+});
+
+describe("GameShell — extraControls (Mine Run's BankBar seam: a game-owned control block below the grid)", () => {
+  // mine-run.md §8.1: "directly below [the grid] the BankBar — the game's one custom control."
+  // BoardShell's CSS grid cannot safely host a non-cell child (it would become an 11th grid
+  // item and risk an ARIA "row" violation), so this is a NEW, additive, optional presentation
+  // slot rendered as a SIBLING immediately after BoardShell and before ControlsRow — never
+  // inside it. Every existing game (ttt fixture, Fadeout, Crackstep) simply omits it.
+  function ExtraControls({ view, onMove }: BoardProps<TTTState, TTTMove>) {
+    return (
+      <button type="button" onClick={() => onMove({ cell: 0 })}>
+        Extra control ({view.board.filter((c) => c !== null).length} marks)
+      </button>
+    );
+  }
+
+  function withExtraControls(): GameDefinition<TTTState, TTTMove, TTTState> {
+    return {
+      ...tttDefinition,
+      presentation: { ...tttDefinition.presentation, extraControls: ExtraControls },
+    };
+  }
+
+  function registryEntryWithExtraControls(): RegistryEntry {
+    const definition = withExtraControls();
+    return {
+      manifest: definition.manifest,
+      async loadEngine() {
+        return definition.engine;
+      },
+      async loadPresentation() {
+        return definition.presentation;
+      },
+    };
+  }
+
+  it("renders the game's extraControls block once the game is ready", async () => {
+    render(
+      <GameShell
+        gameId={tttManifest.id}
+        registryEntry={registryEntryWithExtraControls()}
+        manifests={[tttManifest]}
+        mode="solo-bot"
+      />
+    );
+    await waitFor(() => expect(screen.getAllByRole("gridcell").length).toBe(9));
+    expect(screen.getByRole("button", { name: /extra control \(0 marks\)/i })).toBeInTheDocument();
+  });
+
+  it("extraControls' onMove submits a real move through the same path a Board cell would", async () => {
+    const user = userEvent.setup();
+    render(
+      <GameShell
+        gameId={tttManifest.id}
+        registryEntry={registryEntryWithExtraControls()}
+        manifests={[tttManifest]}
+        mode="solo-bot"
+        botDriver={scriptedBotDriver([{ cell: 4 }])}
+      />
+    );
+    await waitFor(() => expect(screen.getAllByRole("gridcell").length).toBe(9));
+    await user.click(screen.getByRole("button", { name: /extra control/i }));
+    await waitFor(() => expect(screen.getAllByRole("gridcell")[0]?.textContent).toBe("X"));
+  });
+
+  it("omitting extraControls (every other game) renders nothing extra and never throws", async () => {
+    const registryEntry = makeRegistryEntry();
+    render(<GameShell gameId={tttManifest.id} registryEntry={registryEntry} manifests={[tttManifest]} mode="solo-bot" />);
+    await waitFor(() => expect(screen.getAllByRole("gridcell").length).toBe(9));
+    expect(screen.queryByRole("button", { name: /extra control/i })).toBeNull();
   });
 });
