@@ -6,6 +6,7 @@ import type { RegistryEntry } from "@twist-arcade/game-spec";
 import { GameShell } from "../src/components/GameShell";
 import { scriptedBotDriver } from "../src/bot-driver";
 import { tttDefinition, tttManifest } from "./fixtures/ttt-definition";
+import { secretPickDefinition, secretPickManifest } from "./fixtures/secret-pick";
 
 // plan §4.1: GameShell composed. Loads manifest sync, engine+presentation async (dynamic
 // import behind the registry seam). States: loading (skeleton) / load-error (Retry / Back to
@@ -195,5 +196,48 @@ describe("GameShell — result modal", () => {
       const cells = screen.getAllByRole("gridcell");
       expect(cells.every((c) => c.textContent === "")).toBe(true);
     });
+  });
+});
+
+describe("GameShell — hotseat, hidden-information handoff", () => {
+  function secretRegistryEntry(): RegistryEntry {
+    return {
+      manifest: secretPickManifest,
+      async loadEngine() {
+        return secretPickDefinition.engine;
+      },
+      async loadPresentation() {
+        return secretPickDefinition.presentation;
+      },
+    };
+  }
+
+  it("shows the blocking PassDeviceInterstitial after a move, and confirming it hands control to the next seat", async () => {
+    const registryEntry = secretRegistryEntry();
+    const user = userEvent.setup();
+    render(
+      <GameShell
+        gameId={secretPickManifest.id}
+        registryEntry={registryEntry}
+        manifests={[secretPickManifest]}
+        mode="hotseat"
+      />
+    );
+    await waitFor(() => expect(screen.getAllByRole("gridcell").length).toBe(1));
+
+    const passCell = screen.getAllByRole("gridcell")[0]!;
+    await act(async () => {
+      passCell.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      passCell.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 0, clientY: 0 }));
+    });
+
+    // secretPickEngine is hiddenInformation: true, so the handoff blocks until confirmed —
+    // the board must not be actionable again until the next player says "show board".
+    const confirmButton = await screen.findByRole("button", { name: /player 2 — show board/i });
+    expect(confirmButton).toBeInTheDocument();
+
+    await user.click(confirmButton);
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: /show board/i })).toBeNull());
   });
 });

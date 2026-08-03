@@ -17,7 +17,9 @@ import type {
   WithEffects,
 } from "@twist-arcade/engine";
 import { stableStringify } from "@twist-arcade/engine";
-import type { GameDefinition, GameEvent, GameManifest } from "@twist-arcade/game-spec";
+import type { BoardProps, GameDefinition, GameEvent, GameManifest } from "@twist-arcade/game-spec";
+import { moveToCellId } from "../../src/cell-id";
+import { Cell } from "../../src/components/Cell";
 
 export interface SecretState extends WithEffects {
   readonly secrets: readonly [number, number];
@@ -122,13 +124,25 @@ export const secretPickManifest: GameManifest = {
   ],
 };
 
+function TestSecretBoard({ legal }: BoardProps<SecretView, SecretMove>) {
+  // A single "pass" cell — the only move this fixture's rules ever offer.
+  const move: SecretMove = { pass: true };
+  return (
+    <Cell
+      id={moveToCellId(move)}
+      row={0}
+      col={0}
+      accessibleName="Pass"
+      disabled={!legal.some((m) => m.pass === true)}
+    />
+  );
+}
+
 export const secretPickDefinition: GameDefinition<SecretState, SecretMove, SecretView> = {
   manifest: secretPickManifest,
   engine: secretPickEngine,
   presentation: {
-    Board: function TestSecretBoard() {
-      return null;
-    },
+    Board: TestSecretBoard,
     announce(ev: GameEvent<SecretView>): string {
       if (ev.kind === "moved") return `Player ${ev.player} passed.`;
       if (ev.kind === "status") return ev.status.kind === "draw" ? "Draw." : "";
