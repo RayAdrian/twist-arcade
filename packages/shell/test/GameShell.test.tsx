@@ -608,7 +608,7 @@ describe("GameShell — restart count in the share text is gated to daily/solo c
     expect(writeText.mock.calls[0]?.[0]).not.toMatch(/restart/i);
   });
 
-  it("still includes the restart line for a daily game (orchestrator addendum §15.3 — comparability is sacred, even in a casual-shaped mode)", async () => {
+  it("still includes the attempt count (inline on the header, C8) for a daily game (orchestrator addendum §15.3 — comparability is sacred, even in a casual-shaped mode)", async () => {
     // See the identical note in the test above: userEvent.setup() must run BEFORE
     // vi.stubGlobal("navigator", ...) or its own clipboard stub silently wins.
     const user = userEvent.setup();
@@ -656,6 +656,10 @@ describe("GameShell — restart count in the share text is gated to daily/solo c
     await user.click(screen.getByRole("button", { name: /share/i }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalled());
-    expect(writeText.mock.calls[0]?.[0]).toMatch(/1 restart/i);
+    // C8: the restart count is no longer a separate "N restart(s)" line — it's inline on the
+    // header as "· attempt {restarts + 1}" (restartCount 1 -> attempt 2), matching the
+    // plan-binding grammar (packages/daily's composeShareText) rather than shell's old format.
+    expect(writeText.mock.calls[0]?.[0]).toMatch(/attempt 2/i);
+    expect(writeText.mock.calls[0]?.[0]).not.toMatch(/restart/i);
   });
 });

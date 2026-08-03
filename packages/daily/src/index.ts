@@ -28,9 +28,19 @@ export type { AssertValidManifestOptions, DailyManifest } from "./manifest";
 // why the direction is daily-imports-shell, not the reverse).
 export { applyDailyCompletion, INITIAL_STREAK, readStreak, recordDailyCompletion, writeStreak, type StreakRecord } from "@twist-arcade/shell";
 
-// The share artifact composer + grammar validator (plan §4).
-export { composeShareText, GLYPH_TABLE, ShareGrammarError, truncateTimeline } from "./share";
-export type { ComposeShareTextOptions, ShareInput } from "./share";
+// The share artifact composer + grammar validator (plan §4). Consolidated into
+// @twist-arcade/shell per platform-corrections.md C8 (2026-08-03) — see that file's header for
+// why this package no longer ships its own copy (packages/shell also gains composeShareArtifact,
+// the outer frame GameShell calls, and invokeShare — see that package's share-frame.ts).
+export {
+  composeShareText,
+  GLYPH_TABLE,
+  ShareGrammarError,
+  timelineToBody,
+  truncateTimeline,
+  type ComposeShareTextOptions,
+  type ShareInput,
+} from "@twist-arcade/shell";
 
 // The provider-agnostic metrics facade (plan §10, orchestrator addendum §12 Q1).
 export {
