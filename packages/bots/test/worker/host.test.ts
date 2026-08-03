@@ -46,13 +46,14 @@ const SOFTEN_MANIFEST: GameManifest = {
       policy: { kind: "mcts" },
       budget: { kind: "rollouts", n: 300 },
       minReplyMs: 600,
-      // temperature deliberately high (see softmaxSample's own doc / tiers.test.ts's soften
-      // tests: LOWER temperature is peakier/closer to argmax): at 300 rollouts on a forced-win
-      // position, the winning move's visit share is so dominant that a low-temperature softmax
-      // would essentially never escape it even at epsilon=1 — empirically verified this needs
-      // temperature ~200 for the blunder rate to be reliably observable at a practical sample
-      // size, not just theoretically nonzero.
-      blunder: { epsilon: 0, temperature: 200 }, // base play is greedy; soften is the ONLY blunder source
+      // Deliberately NO `blunder` field at all — `soften`'s resample is now structural (it
+      // excludes the flagged move from the candidate set outright, see tiers.ts's module doc),
+      // not a temperature-scaled softmax, so it no longer needs (or should be tested with) a
+      // hand-tuned temperature to be reliably observable. `tier.blunder?.temperature` falls
+      // back to its documented default (1) here — a review finding on an earlier version of
+      // this fixture found temperature 200 was needed to make the OLD softmax-based resample's
+      // effect observable at all at this rollout count, which was itself the defect: it meant
+      // `soften` was silently inert at the default temperature every other tier uses.
     },
   ],
 };

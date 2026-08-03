@@ -306,12 +306,15 @@ describe("tierPolicy: soften — raises epsilon on twist-exploiting moves specif
       policy: { kind: "mcts" },
       budget: { kind: "rollouts", n: 300 },
       minReplyMs: 600,
-      // temperature is deliberately high: at 300 rollouts a forced-win move accumulates a
-      // visit share so dominant that a LOW-temperature softmax would almost never move off
-      // it even with epsilon=1 — this is the same softmax-over-raw-visit-counts behavior
-      // pinned by the softmaxSample unit tests above, just at a scale where the blunder is
-      // actually observable in a reasonable sample size.
-      blunder: { epsilon: 0, temperature: 60 }, // base play is greedy — soften is the ONLY source of blunders here
+      // Pinned at the DEFAULT temperature (blunder.temperature: 1 — no hand-tuning). An
+      // earlier version of this test used temperature 60, "needed to make the effect reliably
+      // observable" per its own comment — that was itself the review finding: soften's
+      // resample used to be a temperature-scaled softmax over root visits, which is inert at
+      // realistic search budgets unless a game's manifest happens to tune temperature to
+      // visit-count scale. soften's resample is now structural (excludes the flagged move from
+      // the candidate set outright — see tiers.ts's module doc), so temperature no longer
+      // matters to whether it has an effect at all.
+      blunder: { epsilon: 0, temperature: 1 }, // base play is greedy — soften is the ONLY source of blunders here
     };
     // Tag the winning move (cell 2) as "twist-exploiting" for this test.
     const isTwistExploitingMove = (_s: TTTState, m: TTTMove): boolean => m.cell === 2;
@@ -344,6 +347,102 @@ describe("tierPolicy: soften — raises epsilon on twist-exploiting moves specif
     }
     expect(baseAwayFromWin).toBe(0); // unsoftened: always takes the forced win
     expect(softenedAwayFromWin).toBeGreaterThan(baseAwayFromWin);
+  });
+
+  it("reliably steers away from the flagged move even with NO blunder config at all — temperature then falls back to its documented default (1), which review found gives a 0% effect under a softmax-over-raw-visits resample at 300 rollouts; the resample must not depend on a hand-tuned temperature to be observable", () => {
+    const engine = classicTicTacToe;
+    const state: TTTState = { board: [0, 0, null, 1, 1, null, null, null, null], turn: 0, lastEffects: [] };
+    const tier: DifficultyTier = {
+      id: "ruthless",
+      policy: { kind: "mcts" },
+      budget: { kind: "rollouts", n: 300 },
+      minReplyMs: 600,
+      // Deliberately NO `blunder` field — soften supplies its own epsilon
+      // (SOFTEN_TWIST_EPSILON) unconditionally, and `tier.blunder?.temperature` falls back to
+      // its documented default of 1, exactly the "1 (the `?? 1` default)" row the review
+      // measured at 0% effect against the OLD implementation.
+    };
+    const isTwistExploitingMove = (_s: TTTState, m: TTTMove): boolean => m.cell === 2;
+
+    const softenedPolicy = tierPolicy<TTTState, TTTMove>(tier, { soften: true, isTwistExploitingMove });
+    const basePolicy = tierPolicy<TTTState, TTTMove>(tier); // soften off — should stay greedy
+
+    let softenedAwayFromWin = 0;
+    let baseAwayFromWin = 0;
+    const N = 40;
+    for (let i = 0; i < N; i++) {
+      const s = softenedPolicy.chooseMove({
+        engine,
+        state,
+        player: 0,
+        rng: rngFromSeed(`soften-default-temp-${i}`),
+        budget: { kind: "rollouts", n: 1 },
+        clock: fakeClock(),
+      });
+      if (s.move.cell !== 2) softenedAwayFromWin += 1;
+      const b = basePolicy.chooseMove({
+        engine,
+        state,
+        player: 0,
+        rng: rngFromSeed(`soften-default-temp-${i}`),
+        budget: { kind: "rollouts", n: 1 },
+        clock: fakeClock(),
+      });
+      if (b.move.cell !== 2) baseAwayFromWin += 1;
+    }
+    expect(baseAwayFromWin).toBe(0); // no soften, no blunder config at all: always the forced win
+    expect(softenedAwayFromWin).toBeGreaterThan(baseAwayFromWin);
+    // Structural guarantee, not merely "some observable effect": excluding the flagged move
+    // from the resample candidates outright means EVERY activation of soften's raised epsilon
+    // (0.6) lands away from cell 2, so the away-from-win rate should approximate 0.6 itself —
+    // not some temperature-dependent fraction of it that a game's manifest could tune toward
+    // zero without anyone noticing.
+    expect(softenedAwayFromWin / N).toBeGreaterThan(0.35);
+  });
+
+  it("does NOT silently no-op for a policy that reports no rootVisits (minimax) — falls back to a uniform pick among the OTHER legal moves", () => {
+    // minimax reports no `stats.rootVisits` at all (see tiers.ts's module doc: "random/minimax
+    // mostly don't produce a meaningful visit distribution"). Before this fix, tiers.ts:134
+    // returned the greedy move whenever `!stats.rootVisits`, so `soften: true` plus a working
+    // predicate was a silent no-op for a ruthless (minimax) tier — soften would just never do
+    // anything, with nothing to indicate why.
+    const engine = classicTicTacToe;
+    const state: TTTState = { board: [0, 0, null, 1, 1, null, null, null, null], turn: 0, lastEffects: [] };
+    const tier: DifficultyTier = {
+      id: "ruthless",
+      policy: { kind: "minimax", maxDepth: 9 },
+      budget: { kind: "rollouts", n: 50000 },
+      minReplyMs: 600,
+    };
+    const isTwistExploitingMove = (_s: TTTState, m: TTTMove): boolean => m.cell === 2;
+    const softenedPolicy = tierPolicy<TTTState, TTTMove>(tier, { soften: true, isTwistExploitingMove });
+    const basePolicy = tierPolicy<TTTState, TTTMove>(tier);
+
+    let softenedAway = 0;
+    let baseAway = 0;
+    const N = 60;
+    for (let i = 0; i < N; i++) {
+      const s = softenedPolicy.chooseMove({
+        engine,
+        state,
+        player: 0,
+        rng: rngFromSeed(`soften-minimax-${i}`),
+        budget: { kind: "rollouts", n: 1 },
+        clock: fakeClock(),
+      });
+      if (s.move.cell !== 2) softenedAway += 1;
+      const b = basePolicy.chooseMove({
+        engine,
+        state,
+        player: 0,
+        rng: rngFromSeed(`soften-minimax-${i}`),
+        budget: { kind: "rollouts", n: 1 },
+        clock: fakeClock(),
+      });
+      if (b.move.cell !== 2) baseAway += 1;
+    }
+    expect(baseAway).toBe(0); // minimax, no blunder config at all: always the forced win
+    expect(softenedAway).toBeGreaterThan(0); // soften must not be a silent no-op here
   });
 
   it("soften does NOT touch decisions where the greedy move is not twist-exploiting (still plays the base game well)", () => {
