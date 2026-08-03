@@ -74,4 +74,39 @@ describe("verifyCertificate — rejection paths (INV-007)", () => {
     };
     expect(() => verifyCertificate(miniCrackstep, cert)).toThrow(IllegalReplayMoveError);
   });
+
+  // Correction C10 (stage-5 fix): verifyCertificate replayed a certificate's moveLog to `won`
+  // but never checked `par` against it at all. `par` is THE published number — fairness proof,
+  // difficulty calibration, and share hook at once — so a certificate that replays correctly
+  // but carries a forged par is worse than none: it carries the authority of "verified" while
+  // lying about the one number everything downstream trusts. A tampered cert (par: 999) used
+  // to verify clean; it must not.
+  it("(e) throws when a tampered `par` no longer matches moveLog.length", () => {
+    const cert: CertificateReplayInput = { ...baseCert(), par: 999 };
+    expect(() => verifyCertificate(miniCrackstep, cert)).toThrow(/par/);
+  });
+
+  it("(f) does NOT throw when `par` correctly matches moveLog.length (par is optional, but must be honest when present)", () => {
+    const cert: CertificateReplayInput = { ...baseCert(), par: MINI_CRACKSTEP_KNOWN_SOLUTION.length };
+    expect(() => verifyCertificate(miniCrackstep, cert)).not.toThrow();
+  });
+
+  it("(g) throws when `parKind` is present but not one of the two contractual values (JSON-boundary corruption)", () => {
+    const cert = { ...baseCert(), parKind: "definitely-not-a-real-parKind" } as unknown as CertificateReplayInput;
+    expect(() => verifyCertificate(miniCrackstep, cert)).toThrow(/parKind/);
+  });
+
+  it("(h) does NOT throw for either real parKind value", () => {
+    expect(() =>
+      verifyCertificate(miniCrackstep, { ...baseCert(), parKind: "optimal" })
+    ).not.toThrow();
+    expect(() =>
+      verifyCertificate(miniCrackstep, { ...baseCert(), parKind: "best-in-budget" })
+    ).not.toThrow();
+  });
+
+  it("(i) throws when `guessFree` is present but not a boolean (a JSON-parsed certificate has no compile-time type safety)", () => {
+    const cert = { ...baseCert(), guessFree: "yes" } as unknown as CertificateReplayInput;
+    expect(() => verifyCertificate(miniCrackstep, cert)).toThrow(/guessFree/);
+  });
 });
