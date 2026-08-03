@@ -64,8 +64,11 @@ export {
 
 export {
   formatCiSuiteTable,
+  formatGameCiGateReport,
   formatMatchupTable,
   formatSolveResult,
+  formatSoloGateTable,
+  toGameCiGateReportJson,
   toMatchupReportJson,
   toReportJson,
 } from "./report";
@@ -137,3 +140,28 @@ export {
 
 export type { CalibrateOptions, CalibrationResult, FeatureStats } from "./calibrate";
 export { calibrate, dayOverDayDriftSigma, withinBand, zScore } from "./calibrate";
+
+// M4 CI wiring (ci-gates.ts): the per-game dispatcher selected by manifest.solo.format
+// (platform-corrections.md C2), enforced at runtime rather than left to caller convention —
+// see ci-gates.ts's own module doc for the full rationale.
+export type {
+  GameCiGateKind,
+  GameCiGateOptions,
+  GameCiGateReport,
+  SoloChaseCiGateOptions,
+  SoloChaseGateReport,
+  SoloPuzzleCiGateOptions,
+  SoloPuzzleGateReport,
+  TwoPlayerCiGateOptions,
+} from "./ci-gates";
+export {
+  DEFAULT_CI_GATE_GAMES,
+  DEFAULT_SOLO_SEED_COUNT,
+  GateKindMismatchError,
+  runGameCiGate,
+  runSoloChaseCiGate,
+  runSoloPuzzleCiGate,
+  runTwoPlayerCiGate,
+  selectGateKind,
+  UnrecognizedSoloFormatError,
+} from "./ci-gates";
