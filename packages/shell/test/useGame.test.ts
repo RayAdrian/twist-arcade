@@ -164,7 +164,7 @@ describe("useGame — first-occurrence callout (once per device)", () => {
 
     act(() => result.current.submitMove({ cell: 0 }));
     await waitFor(() => expect(result.current.moveCount).toBe(2));
-    expect(result.current.firstOccurrence).toEqual({ text: "First move callout.", anchor: "cell-0" });
+    expect(result.current.firstOccurrence).toEqual({ text: "First move callout.", anchor: '{"cell":0}' });
 
     act(() => result.current.submitMove({ cell: 1 }));
     await waitFor(() => expect(result.current.moveCount).toBe(4));

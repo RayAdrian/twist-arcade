@@ -5,7 +5,9 @@
 // (§11.1: "useGame (renderHook + classic-ttt fixture + scripted driver)").
 
 import { classicTicTacToe, type TTTMove, type TTTState } from "@twist-arcade/engine/testkit/fixtures/classic-ttt";
-import type { GameDefinition, GameEvent, GameManifest } from "@twist-arcade/game-spec";
+import type { BoardProps, GameDefinition, GameEvent, GameManifest } from "@twist-arcade/game-spec";
+import { moveToCellId } from "../../src/cell-id";
+import { Cell } from "../../src/components/Cell";
 
 export const tttManifest: GameManifest = {
   id: classicTicTacToe.meta.id,
@@ -27,13 +29,35 @@ function moveOf(ev: GameEvent<TTTState>): TTTMove | null {
   return ev.kind === "moved" ? (ev.move as TTTMove) : null;
 }
 
+function TestTTTBoard({ view, legal, seat }: BoardProps<TTTState, TTTMove>) {
+  return (
+    <>
+      {view.board.map((mark, i) => {
+        const move: TTTMove = { cell: i };
+        const row = Math.floor(i / 3);
+        const col = i % 3;
+        const contents = mark === null ? "Empty." : mark === 0 ? "X." : "O.";
+        return (
+          <Cell
+            key={i}
+            id={moveToCellId(move)}
+            row={row}
+            col={col}
+            occupant={mark === null ? undefined : mark === 0 ? "X" : "O"}
+            accessibleName={`Row ${row + 1}, column ${col + 1}. ${contents}`}
+            disabled={typeof seat === "number" ? !legal.some((m) => m.cell === i) : true}
+          />
+        );
+      })}
+    </>
+  );
+}
+
 export const tttDefinition: GameDefinition<TTTState, TTTMove, TTTState> = {
   manifest: tttManifest,
   engine: classicTicTacToe,
   presentation: {
-    Board: function TestTTTBoard() {
-      return null;
-    },
+    Board: TestTTTBoard,
     announce(ev: GameEvent<TTTState>): string {
       switch (ev.kind) {
         case "moved": {
@@ -55,7 +79,7 @@ export const tttDefinition: GameDefinition<TTTState, TTTMove, TTTState> = {
         flagKey: "first-move",
         trigger: (ev) => ev.kind === "moved",
         text: "First move callout.",
-        anchor: (ev) => (ev.kind === "moved" ? `cell-${moveOf(ev)?.cell}` : ""),
+        anchor: (ev) => (ev.kind === "moved" ? moveToCellId({ cell: moveOf(ev)?.cell ?? 0 }) : ""),
       },
     ],
     shareArtifact(): string {
