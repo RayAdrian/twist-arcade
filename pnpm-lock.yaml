@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@twist-arcade/bots':
+        specifier: workspace:*
+        version: link:packages/bots
       '@twist-arcade/engine':
         specifier: workspace:*
         version: link:packages/engine
@@ -39,9 +42,6 @@ importers:
       '@size-limit/file':
         specifier: ^13.0.3
         version: 13.0.3(size-limit@13.0.3)
-      '@twist-arcade/bots':
-        specifier: workspace:*
-        version: link:packages/bots
       '@twist-arcade/harness':
         specifier: workspace:*
         version: link:packages/harness
@@ -267,6 +267,9 @@ importers:
       '@radix-ui/react-popover':
         specifier: ^1.1.15
         version: 1.1.23(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@twist-arcade/bots':
+        specifier: workspace:*
+        version: link:../bots
       '@twist-arcade/engine':
         specifier: workspace:*
         version: link:../engine

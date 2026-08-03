@@ -588,6 +588,90 @@ describe("useGame — cancels the in-flight bot request on undo", () => {
   });
 });
 
+describe("useGame — bot reply-delay floor (S2, plan §5.2.4: minReplyMs enforced in the shell, not the worker)", () => {
+  it("keeps botThinking true and the bot's move unlanded until the resolved tier's minReplyMs has elapsed, even when the driver resolves instantly", async () => {
+    // Fixture manifest's "standard" tier (ttt-definition.tsx) declares minReplyMs: 250. A
+    // driver that resolves essentially immediately (scriptedBotDriver's default delayMs is 0)
+    // isolates the FLOOR's own effect from any driver-side "thinking" delay.
+    const { result } = renderHook(() =>
+      useGame({
+        definition: tttDefinition,
+        mode: "solo-bot",
+        seed: "floor-seed",
+        humanSeat: 0,
+        persist: false,
+        tierId: "standard",
+        botDriver: scriptedBotDriver([{ cell: 4 }], 0),
+      })
+    );
+
+    const dispatchedAt = performance.now();
+    act(() => result.current.submitMove({ cell: 0 }));
+
+    // Give the driver's promise a macrotask to actually settle, then assert we are still
+    // WELL inside the floor window — the bot's move must not have landed yet.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(result.current.moveCount).toBe(1);
+    expect(result.current.botThinking).toBe(true);
+
+    await waitFor(() => expect(result.current.moveCount).toBe(2));
+    expect(performance.now() - dispatchedAt).toBeGreaterThanOrEqual(240); // 250ms floor, small slack
+    expect(result.current.botThinking).toBe(false);
+    expect(result.current.view.board[4]).toBe(1);
+  });
+
+  it("does not add any delay beyond the driver's own when the driver itself already takes longer than minReplyMs", async () => {
+    // "casual" tier's fixture minReplyMs is 100 — a driver that itself takes ~180ms must not be
+    // held up an ADDITIONAL 100ms on top; the floor is a minimum, not an added delay.
+    const { result } = renderHook(() =>
+      useGame({
+        definition: tttDefinition,
+        mode: "solo-bot",
+        seed: "floor-seed-2",
+        humanSeat: 0,
+        persist: false,
+        tierId: "casual",
+        botDriver: scriptedBotDriver([{ cell: 4 }], 180),
+      })
+    );
+
+    const dispatchedAt = performance.now();
+    act(() => result.current.submitMove({ cell: 0 }));
+
+    await waitFor(() => expect(result.current.moveCount).toBe(2));
+    const elapsed = performance.now() - dispatchedAt;
+    expect(elapsed).toBeGreaterThanOrEqual(170);
+    expect(elapsed).toBeLessThan(400); // well under 180 (driver) + 100 (floor) if they wrongly stacked
+  });
+
+  it("cancels the pending floor timer on undo, so a stale bot move never lands after a rewind", async () => {
+    const { result } = renderHook(() =>
+      useGame({
+        definition: tttDefinition,
+        mode: "solo-bot",
+        seed: "floor-cancel-seed",
+        humanSeat: 0,
+        persist: false,
+        tierId: "standard", // 250ms floor
+        botDriver: scriptedBotDriver([{ cell: 4 }], 0),
+      })
+    );
+
+    act(() => result.current.submitMove({ cell: 0 }));
+    // Still inside the floor window (driver already resolved, but the 250ms floor has not).
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(result.current.moveCount).toBe(1);
+
+    act(() => result.current.undo());
+    expect(result.current.moveCount).toBe(0);
+
+    // Wait past where the floor timer WOULD have landed the bot's move, and confirm it never
+    // does — the undo must have cancelled it, not just hidden it for a moment.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(result.current.moveCount).toBe(0);
+  });
+});
+
 describe("useGame — solo-single mode", () => {
   it("never dispatches a bot and reflects the single seat's own moves", () => {
     const { result } = renderHook(() =>

@@ -1,39 +1,26 @@
-// packages/shell/src/bot-driver.ts — the BotDriver seam + the M2 stub (plan §5.4).
+// packages/shell/src/bot-driver.ts — the BotDriver seam + the M2 stub + the real S2 worker
+// driver (plan §5.4).
 //
-// `BotMoveRequest` mirrors platform M2's `BotRequest` wire shape by field-name convention
-// (gameId, encodedState, player, tierId, seed, step) plus `soften?: boolean` (§5.2.10), so the
-// post-M2 `workerBotDriver` is a thin postMessage adapter over `packages/bots`'s worker host
-// with zero changes to `useGame`. `packages/bots` does not exist in this worktree yet (M2 is a
-// later milestone) — this file is the shell-owned seam type, not a copy of a real upstream
-// type; when M2 lands, `BotMoveRequest`'s shape should be reconciled against the real
-// `BotRequest` (a 1-line import fix if they already match, per the shim-drift pattern S0 used
-// for engine/game-spec).
+// RECONCILED (S2 — M2 has landed in this worktree): `BotMoveRequest`/`TierId`/`SearchStats`
+// were originally a hand-copied shim (this file's own prior header said so verbatim: "when M2
+// lands, BotMoveRequest's shape should be reconciled against the real BotRequest — a 1-line
+// import fix if they already match"). They did match field-for-field, so these are now type
+// ALIASES of `@twist-arcade/bots`'s real wire types, not a second hand-maintained copy — exactly
+// the C8 lesson (platform-corrections.md: two implementations of the same concept silently
+// drift) applied before any drift had a chance to happen.
 //
 // `requestId` (not in the plan's illustrative interface sketch) is added here because
 // `cancel(requestId)` is meaningless without a way to correlate it to a specific in-flight
 // `chooseMove` call — `useGame` generates one per bot turn and uses it for both.
 
-import type { GameEngine, Json, PlayerId, WithEffects } from "@twist-arcade/engine";
+import type { Json, WithEffects, GameEngine } from "@twist-arcade/engine";
 import { rngFor } from "@twist-arcade/engine";
+import type { SearchStats } from "@twist-arcade/bots";
+import type { BotRequest, BotResponse } from "@twist-arcade/bots/worker/protocol";
 
-export type TierId = "casual" | "standard" | "ruthless";
-
-/** Provisional — platform M2 owns the real shape once the worker host exists. */
-export interface SearchStats {
-  nodesVisited?: number;
-}
-
-export interface BotMoveRequest {
-  requestId: string;
-  gameId: string;
-  encodedState: string;
-  player: PlayerId;
-  tierId: TierId;
-  seed: string;
-  step: number;
-  /** Never sent in daily mode (§5.2.10) — that assertion is `useGame`'s job, not the driver's. */
-  soften?: boolean;
-}
+export type { SearchStats };
+export type TierId = BotRequest["tierId"];
+export type BotMoveRequest = BotRequest;
 
 export interface BotMoveResponse {
   move: Json;
@@ -175,6 +162,112 @@ export function scriptedBotDriver(moves: readonly Json[], delayMs = 0): BotDrive
     },
     dispose(): void {
       registry.dispose();
+    },
+  };
+}
+
+/**
+ * workerBotDriver — the S2 real bot, a thin postMessage adapter over
+ * `packages/bots/src/worker/host.ts`'s `handleBotRequest` (plan §5.4/§10). This is a pure
+ * ADAPTER: it knows nothing about `new Worker(...)` construction, `games/registry.ts`, or which
+ * concrete game is loaded — it just speaks the wire protocol (`BotRequest`/`BotResponse`,
+ * `@twist-arcade/bots/worker/protocol`) over whatever `WorkerLike` it is handed.
+ *
+ * WHY THE CONCRETE `new Worker(...)` IS NOT HERE (host.ts's own doc anticipates a "shell owns
+ * the bootstrap file" reading — this is the precise reconciliation): the actual worker MODULE
+ * that runs `self.onmessage = ...` must statically import `games/registry.ts` so it can resolve
+ * `loadEngine()` for whichever game a request names. `games/registry.ts` lives outside every
+ * package's `rootDir`/tsconfig project-reference graph (it's part of `tsconfig.app.json`'s own
+ * project, not `packages/shell`'s) — precisely the same reason `GameShell`/`PlayClient` already
+ * take a `RegistryEntry`/`Registry` as a prop/parameter instead of importing the registry
+ * directly (see `GameShell.tsx`'s and `PlayClient.tsx`'s own header comments). So the concrete
+ * worker entry script lives at `app/bot-worker.ts` (app-owned, where the registry import is
+ * legal) and constructs `new Worker(new URL("../bot-worker.ts", import.meta.url))`; this
+ * function is what turns that `Worker` instance into a `BotDriver` `useGame` can drive
+ * identically to `stubBotDriver`/`scriptedBotDriver`.
+ *
+ * DETERMINISM ACROSS THE REAL BOUNDARY: `chooseMove` posts `req` verbatim (already JSON-plain
+ * per `BotRequest`'s own contract) and resolves/rejects from whatever `BotResponse` the worker
+ * posts back for that `requestId` — no client-side state influences the result, so a
+ * `rollouts`-budget tier's determinism (proven in `packages/bots/test/worker/host.test.ts`
+ * against `handleBotRequest` directly) survives unchanged through a REAL `postMessage`/
+ * structured-clone round trip. Proven here (not just asserted) in
+ * `test/worker-bot-driver.test.ts` via a fake worker that runs the real `handleBotRequest` and
+ * round-trips every message through `JSON.parse(JSON.stringify(...))`.
+ *
+ * CANCEL SEMANTICS: `handleBotRequest` has no cancellation hook — once posted, the worker runs
+ * the request to completion regardless. `cancel(requestId)` therefore does NOT postMessage
+ * anything back to the worker; it simply forgets the pending entry and rejects the caller's
+ * promise immediately. The worker's eventual response for that `requestId` still arrives later
+ * and is silently dropped (no matching pending entry) — wasted CPU in the worker thread, never
+ * a correctness problem, exactly like a network request whose response is ignored after the
+ * caller gave up on it.
+ */
+export interface WorkerLike {
+  postMessage(message: unknown): void;
+  addEventListener(type: "message", listener: (event: MessageEvent) => void): void;
+  removeEventListener(type: "message", listener: (event: MessageEvent) => void): void;
+}
+
+/** Carries a `BotResponse`'s `{ ok: false, error: { name, message } }` payload back into a
+ *  rejected promise, `name` set to the ORIGINAL typed error's name (e.g.
+ *  "HiddenInformationUnsupportedError", "NonDeterministicBudgetError") — never a generic
+ *  "Error", since `err.name` is precisely how `useGame`/a caller would branch on which typed
+ *  refusal occurred (protocol.ts's own module doc: "ok: false carries a plain, JSON-plain
+ *  `{ name, message }` — enough for the caller to branch on `error.name` without relying on
+ *  cross-realm `instanceof`"). This class does not (and cannot) restore the original
+ *  prototype/instanceof chain — only `.name`/`.message` survive a real postMessage boundary. */
+export class WorkerBotError extends Error {
+  constructor(name: string, message: string) {
+    super(message);
+    this.name = name;
+  }
+}
+
+interface WorkerPendingEntry {
+  resolve(res: BotMoveResponse): void;
+  reject(err: Error): void;
+}
+
+export function workerBotDriver(worker: WorkerLike): BotDriver {
+  const pending = new Map<string, WorkerPendingEntry>();
+
+  function handleMessage(event: MessageEvent): void {
+    // Trusts the worker's own reply shape — this is OUR bootstrap script on the other end
+    // (app/bot-worker.ts), not arbitrary external input; the untrusted-input boundary
+    // (`encodedState`) is handled inside `handleBotRequest` itself via `engine.decode()` (C4).
+    const data = event.data as BotResponse;
+    const entry = pending.get(data.requestId);
+    if (!entry) return; // already cancelled/disposed, or not a request this driver instance sent.
+    pending.delete(data.requestId);
+    if (data.ok) {
+      entry.resolve({ move: data.move, stats: data.stats });
+    } else {
+      entry.reject(new WorkerBotError(data.error.name, data.error.message));
+    }
+  }
+
+  worker.addEventListener("message", handleMessage);
+
+  return {
+    chooseMove(req: BotMoveRequest): Promise<BotMoveResponse> {
+      return new Promise((resolve, reject) => {
+        pending.set(req.requestId, { resolve, reject });
+        worker.postMessage(req);
+      });
+    },
+    cancel(requestId: string): void {
+      const entry = pending.get(requestId);
+      if (!entry) return; // already settled, or never existed — cancellation races are fine.
+      pending.delete(requestId);
+      entry.reject(new BotCancelledError(requestId));
+    },
+    dispose(): void {
+      for (const [requestId, entry] of pending) {
+        entry.reject(new BotCancelledError(requestId));
+      }
+      pending.clear();
+      worker.removeEventListener("message", handleMessage);
     },
   };
 }

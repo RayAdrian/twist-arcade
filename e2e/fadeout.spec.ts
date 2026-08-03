@@ -5,6 +5,14 @@ import { expect, test, type Page } from "@playwright/test";
 // reduced-motion parity, the input lockout, persistence resume — all need a real registered
 // game's Board"). Fadeout is now that game.
 
+// Mirrors app/bot-driver-singleton.ts's own global augmentation — declared locally too since
+// e2e/ is compiled by Playwright's own (separate) TS transform, not tsconfig.app.json's project.
+declare global {
+  interface Window {
+    __TWIST_ARCADE_BOT_DRIVER_KIND__?: "worker";
+  }
+}
+
 const GAME_URL = "/play/fadeout";
 
 // Standard 3x3 tic-tac-toe lines, 0-indexed row-major (cell = row*3 + col) — self-contained here
@@ -49,12 +57,14 @@ function cellFromAccessibleName(name: string): number {
  * subsequent locator in the test finds nothing.
  *
  * This closes the SELF-inflicted half of that flake (the human's own moves can never now
- * complete a line). It does not fully close the residual, much rarer case of the random stub
- * bot completing ITS OWN line first — Fadeout's default opponent here is `stubBotDriver`
- * (uniform random; see its own "NOT SHIPPABLE" doc comment), and no deterministic bot-driver
- * seam is wired into `/play/[gameId]` today (see `app/play/[gameId]/page.tsx`'s own comment on
- * why searchParams-driven mode selection was deliberately not built). That residual risk is
- * stated here rather than silently assumed away.
+ * complete a line). It does not fully close the residual, much rarer case of the opponent
+ * completing ITS OWN line first. S2 UPDATE: `/play/fadeout`'s opponent is now the real
+ * `workerBotDriver` (default "standard" tier, 1000 MCTS rollouts, a small epsilon-blunder rate —
+ * see `app/bot-driver-singleton.ts` and `games/fadeout/manifest.ts`), not the old uniform-random
+ * `stubBotDriver`. A real bot is LESS likely to hand the human a win by accident, but its own
+ * epsilon-blunder path (and its own genuine best play toward a line when one is open) means the
+ * residual risk this comment already documented does not disappear — it just changes shape.
+ * `reachFinalTurnMark`'s own retry loop below is what actually absorbs it either way.
  */
 async function clickNonWinningCell(page: Page, ownedByHuman: Set<number>): Promise<void> {
   const emptyCells = page.locator('[role="gridcell"]:not([aria-disabled="true"])');
@@ -90,10 +100,12 @@ async function clickNonWinningCell(page: Page, ownedByHuman: Set<number>): Promi
 /**
  * Waiting for the bot's reply to land AND for the post-landing 250ms lockout window to clear
  * matters here: before this fix, callers waited a blind `page.waitForTimeout(400)`, which is NOT
- * long enough — the stub bot's own ~250ms think delay plus the 250ms lockout its landing opens
- * (useGame.ts's `lockedUntil`) together exceed 400ms, so clicking again after only 400ms can land
- * INSIDE that lockout window and have the click silently dropped (exactly the mechanism this
- * file's input-lockout smoke test separately exercises). Counting occupied cells is not a
+ * long enough — the bot's own reply-delay floor (useGame.ts's `minReplyMs` enforcement, S2;
+ * "standard" tier's fixture/manifest floor is 250ms, plus whatever real MCTS search time the
+ * worker driver takes on top of that) plus the 250ms lockout its landing opens (useGame.ts's
+ * `lockedUntil`) together can exceed 400ms, so clicking again after only 400ms can land INSIDE
+ * that lockout window and have the click silently dropped (exactly the mechanism this file's
+ * input-lockout smoke test separately exercises). Counting occupied cells is not a
  * reliable "landed" signal either: once either side reaches its 4th placement, that same move
  * both places AND decays one of the mover's own marks, netting zero change in total occupied-cell
  * count — precisely the round these tests care about (reaching remaining=1). The visible turn
@@ -126,11 +138,12 @@ async function waitForBotReplyOrGameOver(page: Page): Promise<"continue" | "over
  * Drives exactly 4 human placements (reaching the human's own onset of a final-turn mark —
  * remaining=1, cap=3 — regardless of what the bot does), retrying from a fresh navigation if the
  * bot ends the game first. `clickNonWinningCell` only prevents the HUMAN from self-completing a
- * line (must-fix 2 part B's documented, self-inflicted flake); it cannot prevent the random
- * `stubBotDriver` from completing its OWN line, which happens often enough in practice (observed
- * locally at roughly 1 in 3 attempts) that simply documenting it and hoping was not good enough —
- * this detects it via `waitForBotReplyOrGameOver` and retries with a bounded budget instead of
- * letting a real, non-bug outcome intermittently fail the suite.
+ * line (must-fix 2 part B's documented, self-inflicted flake); it cannot prevent the opponent
+ * from completing ITS OWN line — a real risk regardless of which driver is behind it (the old
+ * uniform-random stub could stumble into a line; the real worker driver can deliberately TAKE
+ * one when it's open) — that simply documenting it and hoping was not good enough — this detects
+ * it via `waitForBotReplyOrGameOver` and retries with a bounded budget instead of letting a real,
+ * non-bug outcome intermittently fail the suite.
  */
 async function reachFinalTurnMark(page: Page): Promise<void> {
   const maxAttempts = 6;
@@ -174,6 +187,20 @@ test.describe("Fadeout — cold load", () => {
   test("the rule sentence is visible immediately (ux-lens §1's teaching layer 1, before any interaction)", async ({ page }) => {
     await page.goto(GAME_URL);
     await expect(page.getByText("Your pieces vanish 3 turns after you place them.")).toBeVisible();
+  });
+});
+
+test.describe("Fadeout — the real worker bot is active, not the stub (Risks table: 'stub driver ships by accident')", () => {
+  test("window.__TWIST_ARCADE_BOT_DRIVER_KIND__ is 'worker' after the page loads", async ({ page }) => {
+    await page.goto(GAME_URL);
+    // app/bot-driver-singleton.ts sets this the moment it constructs the real `new Worker(...)` +
+    // `workerBotDriver` — it is unset only if that construction never ran (e.g. a regression
+    // that silently falls back to GameShell's own `stubBotDriver` default). Waited via `poll`
+    // since the singleton is constructed on PlayClient's client-side module evaluation, which
+    // races page load by a few ms.
+    await expect
+      .poll(() => page.evaluate(() => window.__TWIST_ARCADE_BOT_DRIVER_KIND__), { timeout: 5000 })
+      .toBe("worker");
   });
 });
 
@@ -252,7 +279,7 @@ test.describe("Fadeout — reduced motion parity (ux-lens §9: motion never carr
     // its oldest mark and always leaves a NEW front-of-queue mark at remaining=1, regardless of
     // whatever the bot did in between. This is deterministic; it does not depend on badge
     // wording ("1" vs "2") the way the old regex (`/fades in \d turns?/`) did. `reachFinalTurnMark`
-    // additionally retries if the random bot ends the game first (see its own comment).
+    // additionally retries if the opponent ends the game first (see its own comment).
     await reachFinalTurnMark(page);
     const imminentCell = page.getByRole("gridcell", { name: /fades in 1 turn/ }).first();
     await expect(imminentCell).toBeVisible();
@@ -306,7 +333,7 @@ test.describe("Fadeout — input lockout smoke test (no double-commit, no crash 
     const firstEmpty = page.locator('[role="gridcell"]:not([aria-disabled="true"])').first();
     await firstEmpty.click(); // human's move — never locks (useGame.ts: "own moves never lock")
 
-    // Wait for the bot's reply to land (its own stub delay is ~250ms), then, as fast as this
+    // Wait for the bot's reply to land (the reply-delay floor is ~250ms, S2), then, as fast as this
     // harness can manage, attempt a second click immediately after — inside the 250ms lockout
     // window that opens the instant a NON-human move lands. This is inherently timing-sensitive
     // in a real browser (Playwright's own event dispatch has latency); it is written to land as

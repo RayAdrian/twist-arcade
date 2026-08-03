@@ -215,6 +215,13 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
   // already consumed. Callers must treat `botDriver` as effectively stable for the hook's
   // lifetime, exactly like a real worker connection would be.
   const driverRef = useRef<BotDriver | undefined>(opts.botDriver);
+  // The reply-delay floor's own pending timer (plan §5.2.4/§10: "minReplyMs, in the shell, not
+  // the worker"). Tracked separately from `pendingRequestIdRef`/the driver's own cancellation
+  // because the DRIVER's promise can already have settled by the time we're merely waiting out
+  // the floor — cancelPendingBot() must clear THIS timer too, or an undo/unmount mid-floor would
+  // leave a stale setTimeout that lands the bot's move later regardless (guarded redundantly by
+  // the requestId/epoch checks below, but clearing it outright is cleaner and leaks no timer).
+  const floorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const persistModeKey = opts.daily ? `${mode}:daily` : mode;
 
@@ -316,6 +323,10 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
       driverRef.current.cancel(requestId);
     }
     pendingRequestIdRef.current = null;
+    if (floorTimerRef.current !== null) {
+      clearTimeout(floorTimerRef.current);
+      floorTimerRef.current = null;
+    }
   }
 
   function dispatchBotIfNeeded(state: S, record: ReplayRecord): void {
@@ -334,9 +345,19 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
     // here by some path those don't cover.
     assertDailyTierIsRollouts(tierIdRef.current);
 
+    // The reply-delay floor (plan §5.2.4/§10): looked up from the MANIFEST's own tier data, not
+    // hard-coded — this is precisely the "difficulty tiers are manifest data" contract, and it's
+    // what makes minReplyMs tunable per game/per tier with zero code change here. A tierId that
+    // (defensively) doesn't resolve to a manifest entry floors at 0 rather than throwing — the
+    // daily/setTier() paths already assert the tier EXISTS wherever that matters (I1 above); this
+    // is just the floor's own fallback, not a second place that validates tier existence.
+    const tier = manifest.difficultyTiers.find((t) => t.id === tierIdRef.current);
+    const minReplyMs = tier?.minReplyMs ?? 0;
+
     const requestId = randomSeed();
     pendingRequestIdRef.current = requestId;
     const myEpoch = epochRef.current;
+    const dispatchedAt = performance.now();
     // Clearing `botError` here (not just on success) covers both the manual retryBot() path and
     // any automatic re-dispatch that happens to land after a prior failure (C2).
     setInternal((prev) => ({ ...prev, botThinking: true, botError: false }));
@@ -355,9 +376,28 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
     driver.chooseMove(req).then(
       (res) => {
         if (epochRef.current !== myEpoch || pendingRequestIdRef.current !== requestId) return;
-        pendingRequestIdRef.current = null;
-        setInternal((prev) => ({ ...prev, botThinking: false, botError: false }));
-        applyMove(res.move as M, false);
+
+        // Land the move only once minReplyMs has genuinely elapsed since dispatch — a bot that
+        // replies in a few ms doesn't read as "thinking" (plan §10: below ~200ms feels like the
+        // game ignored the player). The driver may already have taken longer than the floor on
+        // its own (a real search, a slow device); in that case `remaining` is 0 and this lands
+        // immediately, never ADDING to a driver that was already slow enough.
+        const elapsed = performance.now() - dispatchedAt;
+        const remaining = Math.max(0, minReplyMs - elapsed);
+
+        const land = () => {
+          if (epochRef.current !== myEpoch || pendingRequestIdRef.current !== requestId) return;
+          floorTimerRef.current = null;
+          pendingRequestIdRef.current = null;
+          setInternal((prev) => ({ ...prev, botThinking: false, botError: false }));
+          applyMove(res.move as M, false);
+        };
+
+        if (remaining <= 0) {
+          land();
+        } else {
+          floorTimerRef.current = setTimeout(land, remaining);
+        }
       },
       (err: unknown) => {
         if (epochRef.current !== myEpoch || pendingRequestIdRef.current !== requestId) return;

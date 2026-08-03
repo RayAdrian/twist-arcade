@@ -47,6 +47,9 @@
       "path": "./packages/game-spec"
     },
     {
+      "path": "./packages/bots"
+    },
+    {
       "path": "./packages/shell"
     }
   ]

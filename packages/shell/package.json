@@ -16,6 +16,7 @@
   "dependencies": {
     "@twist-arcade/engine": "workspace:*",
     "@twist-arcade/game-spec": "workspace:*",
+    "@twist-arcade/bots": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-popover": "^1.1.15",
