@@ -592,3 +592,94 @@ locally over `positionKey`. The orchestrator is carrying this to the platform te
 generic solver ships with that caveat documented rather than a broken promise; any other
 future game with path-dependent legality (repetition rules, move-history constraints) inherits
 the same pattern.
+
+---
+
+## §15 — Orchestrator correction, 2026-08-03: `longestLife` is a bad share stat
+
+**Ruling 2 in §14 was wrong, and the implementer disproved it with measurement rather than
+accepting it. Recording the correction, because the reasoning generalizes.**
+
+I ruled that `longestLife` be redefined from "own placements survived" (confined to
+{0, 2, 3}) to "plies survived on the board", expecting real variance. It was implemented
+exactly as derived. A 3,200-game sweep across all 8 variants then showed the redefined
+field is confined to **{0, 5, 6}** — the same cardinality as the metric it replaced, with
+`6` in roughly 74% of observations.
+
+**Why, structurally:** once a mark becomes doomed (oldest, owner's queue at cap), there is
+exactly *one* ply in which anyone but its owner can evict it early — the opponent's
+immediate next turn, giving lifespan `2·cap − 1 = 5`. If that does not happen, the owner's
+own next placement forces eviction unconditionally at exactly `2·cap = 6`, because a player
+can never skip a turn. Every eviction in every game is therefore 5 or 6. My derivation
+stopped at "lifespan is computable" and never asked what values it could actually take.
+
+**The correction:**
+
+1. **Keep the field as implemented.** It is semantically honest, cheap, and correct. This
+   is not a rollback — the new definition is strictly better than the old one and the
+   `encode` freeze question is settled.
+2. **The share artifact must not use it as its variance stat.** `max(removed, survivor)`
+   does not rescue it either: any game long enough to contain one natural eviction yields
+   6, which is most games.
+3. **For a "longest-lived" flavour line, use the survivor-at-game-end computation** — marks
+   still alive when the game ends. The same sweep shows a genuine spread across all of
+   {1..6} with median 3, because a game-ending win catches marks mid-lifecycle rather than
+   at the forced-eviction boundary. The helpers are already exported for this.
+4. **`pieces faded: N` remains the primary stat.** It varies naturally with game length and
+   needed no rescuing.
+
+**The generalizable lesson, worth citing in future game plans:** a metric derived from a
+fixed-cap FIFO under strict alternation is near-constant by construction. Before a number
+goes on a share artifact — whose entire purpose is per-game variance — *sweep it and look
+at the distribution*. "It is computable and it means something" is not the bar; "it differs
+between two players' games" is.
+
+---
+
+## §16 — Orchestrator correction, 2026-08-03: §15.3 is refuted; drop the longest-lived line
+
+**§15 corrected §14's ruling and then made the same error one level down. Recording both,
+because the failure mode is more instructive than either ruling.**
+
+§15.3 directed F3 to use the survivor-at-game-end computation for a "longest-lived X: N
+turns" share line, citing a {1..6} spread with median 3. Re-review measured what that line
+would actually print, over 480 games across all 8 variants:
+
+- **Pooled per-mark survivor values:** `1:480 2:480 3:480 4:480 5:480 6:389` — values 1–5
+  appear in *every single game*.
+- **Per-game MAX survivor** — the number a "longest-lived" line prints — `{5: 91, 6: 389}`.
+  **Cardinality 2**, worse than the {0, 5, 6} that §15 rejected. `max(survivor,
+  longestLife)` gives `{5: 52, 6: 428}` — ~85% would read `6`.
+
+**Why:** survivor lifespans within one game are consecutive integers by construction
+(`lifespan(i) = total − 2·(faded[p]+i) − p`), so every game's survivor multiset is
+essentially {1,2,3,4,5(,6)}. The spread §15 saw is **within-game structure present
+identically in every game — zero between-game variance.** The pooled median is 3 because
+the *within-game* median is always 3.
+
+**The error, stated plainly: the measurement was right and the unit of aggregation was
+wrong.** §15 correctly said to sweep the distribution before putting a number on a share
+artifact. It then swept the pooled per-mark distribution rather than the per-game statistic
+the artifact actually prints. A pooled distribution can look rich while every individual
+game yields the same answer.
+
+**The ruling:**
+
+1. **Drop the longest-lived line.** No variant of it survives in this ruleset. Forced
+   eviction caps every lifespan at `2·cap = 6`, and any end state has a near-full queue
+   whose oldest survivor is ≥ 5, so the concentration is structural and therefore
+   **play-strength-independent**. Re-sweeping against M2's bots is unnecessary for
+   max-type metrics: competent play can only narrow a structurally-capped max, never widen
+   it.
+2. **Use stats with real between-game variance:** `pieces faded: N` (already primary) plus
+   **game length in plies** — observed spread 5–75 under random play.
+3. **Whatever replacement stat is chosen must be swept against M2's tiers in F4 before the
+   share format freezes.** Unlike max-metrics, length and faded-count distributions *do*
+   shift with play strength, so those genuinely need the stronger check.
+4. **None of this touches the engine.** Survivor stats are computed, never encoded;
+   `longestLife` is the only wire-frozen field and it is settled and honest as implemented.
+
+**The generalized lesson, superseding §15's:** before a number goes on a share artifact,
+sweep **the per-game statistic the artifact prints**, not the pooled distribution of its
+inputs. Ask "would two players see different numbers?" — not "does this quantity take many
+values across my whole sample?"
