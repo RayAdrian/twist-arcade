@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": ".",
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+  },
+  "include": ["*.ts", "*.mts", "ui/**/*.ts", "ui/**/*.tsx", "solver/**/*.ts", "solver/**/*.mts"],
+  "references": [
+    { "path": "../../packages/engine" },
+    { "path": "../../packages/game-spec" },
+    { "path": "../../packages/harness" },
+    { "path": "../../packages/shell" }
+  ]
+}

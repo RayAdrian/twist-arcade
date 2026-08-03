@@ -37,6 +37,14 @@ export interface BoardProps<V extends WithEffects, M extends Json> {
  *  - `imminent`  — a preview of what WILL happen if nothing intervenes (e.g. a tile is 1
  *                  turn from crumbling) — this is what makes decay/expiry legible to a
  *                  screen reader, not just sighted players watching a CountdownBadge.
+ *                  ADDITIVE WIDENING (stage-6 F3 review, must-fix 1): carries `view` alongside
+ *                  `effects`, mirroring `boardSummary` below. `effects` alone can only ever
+ *                  describe what a mover's OWN just-applied overflow decayed THIS ply — it is
+ *                  structurally silent the very first time any mark reaches its final turn
+ *                  (a player's 3rd placement, which fills that mark's queue to cap without
+ *                  popping anything), and it can never name a cell. `view` lets a game compute
+ *                  the full STANDING set of marks at `remaining === 1`, cell names included, on
+ *                  every call — not just the ply a decay happened to fire.
  *  - `boardSummary` — a full-board readback (e.g. on focus, or "read the board" shortcut).
  *  - `status`    — a terminal or phase transition (won/lost/draw/scored).
  *
@@ -45,7 +53,7 @@ export interface BoardProps<V extends WithEffects, M extends Json> {
  */
 export type GameEvent<V extends WithEffects = WithEffects> =
   | { kind: "moved"; player: PlayerId; move: Json; effects: readonly Effect[] }
-  | { kind: "imminent"; effects: readonly Effect[] }
+  | { kind: "imminent"; effects: readonly Effect[]; view: V }
   | { kind: "boardSummary"; view: V }
   | { kind: "status"; status: Status };
 

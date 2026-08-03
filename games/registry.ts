@@ -1,14 +1,22 @@
-// games/registry.ts — id -> RegistryEntry map (plan §2, §5.4). Empty until the first game
-// (M2+/game teams) lands; `pnpm new-game <id>` inserts new entries at the marker below.
+// games/registry.ts — id -> RegistryEntry map (plan §2, §5.4). `pnpm new-game <id>` inserts
+// new entries at the marker below.
 //
 // Manifests are eager (the catalog payload); engine/presentation/solver load via dynamic
 // import() so a game's code only ships to routes that actually play it — enforced on the
 // app side by lint: eslint.config.mjs's registrySplittingBoundary rule statically bans
 // games/*/engine, games/*/ui, and a game's own package-root index from app/** and
-// packages/shell/** (shell team, S1).
+// packages/shell/** (shell team, S1). This file itself is exempt from that rule (it isn't
+// under app/** or packages/shell/src/**) but still uses dynamic import() below on purpose —
+// that's the actual mechanism the boundary exists to protect, not just a lint dodge.
 
 import type { Registry } from "@twist-arcade/game-spec";
+import { FADEOUT_RULESET_CONFIG, fadeoutManifest } from "./fadeout/manifest";
 
 export const registry: Registry = {
   // <new-game:insert>
+  fadeout: {
+    manifest: fadeoutManifest,
+    loadEngine: () => import("./fadeout/engine").then((m) => m.createFadeoutEngine(FADEOUT_RULESET_CONFIG)),
+    loadPresentation: () => import("./fadeout/presentation").then((m) => m.fadeoutPresentation),
+  },
 };

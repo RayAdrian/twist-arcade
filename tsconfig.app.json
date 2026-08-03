@@ -32,6 +32,7 @@
     "app/**/*.ts",
     "app/**/*.tsx",
     "games/**/*.ts",
+    "games/**/*.tsx",
     "next-env.d.ts",
     ".next/types/**/*.ts"
   ],

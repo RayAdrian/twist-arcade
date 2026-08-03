@@ -460,7 +460,7 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
 
     // Announcement composition (plan §6.2 — the critical spec).
     const movedStr = presentation.announce(ev);
-    const imminentStr = presentation.announce({ kind: "imminent", effects }) || undefined;
+    const imminentStr = presentation.announce({ kind: "imminent", effects, view: newView }) || undefined;
     const decay = isDecayClassEffects(effects);
     const boardSummaryStr = decay ? presentation.announce({ kind: "boardSummary", view: newView }) : undefined;
 

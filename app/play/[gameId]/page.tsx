@@ -3,11 +3,14 @@
 // ruleSentence the OG description on every route (plan §3.4 — "the rule sentence is the ad"),
 // byte-identical to RuleCard's copy since both read the same manifest field.
 //
-// This file is the ONLY thing statically importing games/registry.ts on the play path — the
-// registry entry (still holding loadEngine()/loadPresentation() as unresolved functions) is
-// handed down as a plain prop to the client `GameShell` island, which is what actually calls
-// them (plan §3.2's dynamic-import boundary; this file never calls loadEngine/loadPresentation
-// itself, so it never pulls a game's engine/presentation bundle into the server render).
+// This file statically imports games/registry.ts for its manifest catalog (ids + metadata)
+// only — it never touches `loadEngine()`/`loadPresentation()` and never resolves a registry
+// entry to hand down as a prop. That hand-off used to happen here (a `registryEntry` prop
+// straight into the client `<GameShell>` island) and broke `pnpm build`'s prerender step the
+// first time a real game was registered: `RegistryEntry.loadEngine`/`loadPresentation` are
+// plain functions, and functions cannot cross the Server->Client serialization boundary as a
+// prop. See ./PlayClient.tsx's header comment for the full story and the fix (only `gameId`, a
+// plain string, crosses the boundary; PlayClient does its own registry lookup client-side).
 //
 // Deliberately does NOT read `searchParams` (e.g. for a "?mode=hotseat" override, which an
 // earlier revision had): combining `generateStaticParams` with `searchParams` access in the
@@ -21,10 +24,10 @@
 
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { GameShell, type Mode } from "@twist-arcade/shell";
 // Relative, not the "@/*" alias — see app/page.tsx's comment: next build doesn't resolve it
 // from this monorepo's root tsconfig.json (the alias lives in tsconfig.app.json instead).
 import { registry } from "../../../games/registry";
+import PlayClient from "./PlayClient";
 
 interface PlayPageProps {
   params: Promise<{ gameId: string }>;
@@ -56,10 +59,6 @@ export async function generateMetadata({ params }: PlayPageProps): Promise<Metad
   };
 }
 
-function resolveMode(entry: (typeof registry)[string]): Mode {
-  return entry.manifest.players.max === 1 ? "solo-single" : "solo-bot";
-}
-
 export default async function PlayPage({ params }: PlayPageProps) {
   const { gameId } = await params;
   const entry = registry[gameId];
@@ -67,9 +66,5 @@ export default async function PlayPage({ params }: PlayPageProps) {
   // gameId before this function is ever invoked — kept as defense-in-depth, never removed.
   if (!entry) notFound();
 
-  const manifests = Object.values(registry).map((e) => e.manifest);
-
-  return (
-    <GameShell gameId={gameId} registryEntry={entry} manifests={manifests} mode={resolveMode(entry)} />
-  );
+  return <PlayClient gameId={gameId} />;
 }
