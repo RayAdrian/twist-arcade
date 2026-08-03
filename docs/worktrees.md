@@ -17,7 +17,8 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 | platform (engine/bots/harness + workspace bootstrap) | `../claude-project-platform` | `feature/platform` | `twistarcade_platform` | 54421–54429 | not started (no DB) | ACTIVE |
 | shell (Next.js app + component kit) | `../claude-project-shell` | `feature/shell` | `twistarcade_shell` | 54521–54529 | not started (no DB) | PENDING — blocked on platform |
 | fadeout (flagship game + exact solve) | `../claude-project-fadeout` | `feature/fadeout` | `twistarcade_fadeout` | 54621–54629 | not started (no DB) | PENDING — blocked on platform |
-| daily (Daily Twist, share artifact, streaks) | `../claude-project-daily` | `feature/daily` | `twistarcade_daily` | 54721–54729 | not started (no DB) | PENDING — blocked on platform + shell |
+| daily (Daily Twist, share artifact, streaks) | `../claude-project-daily` | `feature/daily` | `twistarcade_daily` | 54721–54729 | not started (no DB) | ACTIVE |
+| harness-solo (M3c/M3d solo suite + certificates) | `../claude-project-solowork` | `feature/harness-solo` | `twistarcade_solowork` | 55021–55029 | not started (no DB) | ACTIVE |
 | crackstep (solo daily puzzle) | `../claude-project-crackstep` | `feature/crackstep` | `twistarcade_crackstep` | 54821–54829 | not started (no DB) | PENDING — blocked on platform M1 + M3d |
 | minerun (solo score chase) | `../claude-project-minerun` | `feature/minerun` | `twistarcade_minerun` | 54921–54929 | not started (no DB) | PENDING — blocked on platform M1 + M3c |
 
@@ -32,7 +33,7 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 | 54721–54729 (team 4) | daily | CLAIMED |
 | 54821–54829 (team 5) | crackstep | CLAIMED |
 | 54921–54929 (team 6) | minerun | CLAIMED |
-| 55021–55029 (team 7) | — | free |
+| 55021–55029 (team 7) | harness-solo | CLAIMED |
 | 55121–55129 (team 8) | — | free |
 
 **Host note (2026-08-02):** Docker on this machine already runs Supabase stacks for
