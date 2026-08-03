@@ -1,13 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  dailyKey,
-  firstsKey,
-  gameKey,
-  readVersioned,
-  SETTINGS_KEY,
-  STREAK_KEY,
-  writeVersioned,
-} from "../src/persistence";
+import { dailyKey, firstsKey, gameKey, readVersioned, SETTINGS_KEY, writeVersioned } from "../src/persistence";
 
 describe("persistence key helpers (plan §5.6)", () => {
   it("gameKey namespaces by gameId and mode", () => {
@@ -19,8 +11,7 @@ describe("persistence key helpers (plan §5.6)", () => {
   it("dailyKey namespaces by day", () => {
     expect(dailyKey("2026-08-02")).toBe("ta:daily:2026-08-02");
   });
-  it("STREAK_KEY / SETTINGS_KEY are the fixed site-level keys", () => {
-    expect(STREAK_KEY).toBe("ta:streak");
+  it("SETTINGS_KEY is the fixed site-level key (STREAK_KEY was dropped here — C8, streak.ts owns its own key)", () => {
     expect(SETTINGS_KEY).toBe("ta:settings");
   });
 });

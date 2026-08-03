@@ -22,9 +22,11 @@ export type { DailyBotRecord, DailyRolloutsBudget, EraFile } from "./era";
 export { assertValidManifest } from "./manifest";
 export type { AssertValidManifestOptions, DailyManifest } from "./manifest";
 
-// The site-level streak reducer (plan §6) — pure; localStorage helpers included.
-export { applyDailyCompletion, INITIAL_STREAK, readStreak, writeStreak } from "./streak";
-export type { StreakRecord } from "./streak";
+// The site-level streak reducer (plan §6) — pure; localStorage helpers included. Consolidated
+// into @twist-arcade/shell per platform-corrections.md C8 (2026-08-03): this package no longer
+// ships its own copy — shell's streak.ts is the one implementation (see that file's header for
+// why the direction is daily-imports-shell, not the reverse).
+export { applyDailyCompletion, INITIAL_STREAK, readStreak, recordDailyCompletion, writeStreak, type StreakRecord } from "@twist-arcade/shell";
 
 // The share artifact composer + grammar validator (plan §4).
 export { composeShareText, GLYPH_TABLE, ShareGrammarError, truncateTimeline } from "./share";

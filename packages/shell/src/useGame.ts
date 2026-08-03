@@ -492,7 +492,7 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
     if (newStatus.kind !== "ongoing") {
       if (mode === "solo-bot") markFirstGamePlayed(manifest.id);
       if (opts.daily) {
-        recordDailyCompletion(opts.daily.day);
+        recordDailyCompletion(opts.daily.dayNumber, opts.daily.day);
         writeVersioned(dailyKey(opts.daily.day), {
           v: 1,
           gameId: manifest.id,
