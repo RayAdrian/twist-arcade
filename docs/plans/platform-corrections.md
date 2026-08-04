@@ -618,6 +618,11 @@ before it reaches players rather than after. It cost one measurement run.
    same defect shape this build keeps producing, now in the probe wiring. It has been locally
    worked around twice rather than fixed once.
 
+4. **`pnpm new-game` registers the game unconditionally.** There is no `--no-registry` flag,
+   so building an engine *without* registering it — which gate-before-UI (C16) now makes the
+   normal case — requires manually reverting `games/registry.ts` afterwards. Found by the
+   Nine Grids team, who had to do exactly that.
+
 **What the scaffold got right**, and it is the larger half: after rebasing across ten commits
 of shell restyle and the real bot worker landing, Wrap's board UI, four-variant `announce()`,
 and registration were **already correct with zero adaptation** — confirmed by planting two
