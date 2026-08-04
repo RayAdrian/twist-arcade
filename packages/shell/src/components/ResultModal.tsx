@@ -97,16 +97,22 @@ export function ResultModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-md"
+        className="max-w-md rounded-xl border-brush border-ink bg-paper-lift p-6 shadow-print-4"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           rematchRef.current?.focus();
         }}
       >
-        <DialogTitle className="text-center text-lg font-bold text-ink">{resultText}</DialogTitle>
-        {textureLine && <p className="text-center text-sm text-ink-muted">{textureLine}</p>}
+        {/* Material pass only (UI direction §4 is the full torn-score-slip rebuild — sheet/
+         *  slip layout, stamp rotation + winner-accent color, receipt-tear mask, staggered
+         *  timeline entrance — all deferred to that later item, which also needs a winner-accent
+         *  prop this component doesn't take yet). This restyle stays inside item 1's "material
+         *  foundation" scope: paper-lift surface, print-shop stroke/shadow, and the three type
+         *  faces, with every existing prop, behavior, and test-visible string untouched. */}
+        <DialogTitle className="text-center font-display text-2xl font-bold text-ink">{resultText}</DialogTitle>
+        {textureLine && <p className="text-center font-texture text-ink-muted">{textureLine}</p>}
 
-        <p className="my-4 text-center text-2xl" aria-label="move timeline">
+        <p className="my-4 text-center font-mono text-2xl tracking-wide" aria-label="move timeline">
           {artifactBody}
         </p>
 
@@ -115,7 +121,7 @@ export function ResultModal({
             ref={rematchRef}
             type="button"
             onClick={onRematch}
-            className="rounded border-2 border-ink px-4 py-3 font-bold text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+            className="h-14 rounded-xl border-brush border-ink bg-paper-lift font-display text-lg font-bold text-ink shadow-print-3 active:translate-x-0.5 active:translate-y-0.5 active:shadow-print-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
           >
             {primaryLabel}
           </button>
@@ -124,11 +130,11 @@ export function ResultModal({
             <a
               href={nextTwistHref}
               onClick={onNextTwistClick}
-              className="rounded border border-ink-muted px-4 py-2 text-left text-sm text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+              className="rounded-xl border-ui border-ink-muted bg-paper-lift px-4 py-2 text-left shadow-print-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
             >
-              <span className="font-medium">{`Next: ${nextTwist.title} →`}</span>
+              <span className="font-display font-semibold text-ink">{`Next: ${nextTwist.title} →`}</span>
               <br />
-              <span className="text-ink-muted">{nextTwist.ruleSentence}</span>
+              <span className="font-texture text-ink-muted">{nextTwist.ruleSentence}</span>
             </a>
           )}
 
@@ -136,12 +142,12 @@ export function ResultModal({
             <button
               type="button"
               onClick={handleShare}
-              className="w-full rounded px-4 py-2 text-sm text-ink underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+              className="h-12 w-full rounded-xl border-hairline border-ink-muted text-sm text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
             >
               ↗ Share result
             </button>
             {shareState.kind === "copied" && (
-              <p role="status" className="text-center text-sm text-ink-muted">
+              <p role="status" className="mt-1 inline-block rounded-full bg-marker px-3 py-1 text-center text-sm font-medium text-ink">
                 Copied
               </p>
             )}
@@ -157,14 +163,14 @@ export function ResultModal({
                   aria-label="Share text"
                   rows={shareFallbackText.split("\n").length}
                   onFocus={(e) => e.currentTarget.select()}
-                  className="mt-1 w-full resize-none rounded border border-ink-muted bg-paper px-2 py-1 text-center text-ink"
+                  className="mt-1 w-full resize-none rounded-lg border-hairline border-ink-muted bg-paper-shade px-2 py-1 text-center text-ink"
                 />
               </div>
             )}
           </div>
         </div>
 
-        {streakLine && <p className="mt-4 text-center text-sm text-ink-muted">{streakLine}</p>}
+        {streakLine && <p className="mt-4 text-center font-mono text-sm text-ink-muted">{streakLine}</p>}
       </DialogContent>
     </Dialog>
   );

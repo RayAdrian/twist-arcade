@@ -1,8 +1,11 @@
-// packages/shell/src/components/GameCard.tsx — plan §4.13 / ux-lens §4. Server component
-// (no interactivity beyond navigation). Fixed anatomy: tiny abstract glyph, twist title,
-// "a twist on {classic}", the CANONICAL rule sentence (byte-identical to the in-game
-// RuleCard and the OG description — all three read the same manifest field), chips
-// (mechanic tags + "~N min"), whole card is the play affordance.
+// packages/shell/src/components/GameCard.tsx — plan §4.13 / ux-lens §4, restyled per UI
+// direction §2.2 ("GameCard v2"). Server component (no interactivity beyond navigation).
+// Fixed anatomy, UNCHANGED: tiny abstract glyph, twist title, "a twist on {classic}", the
+// CANONICAL rule sentence (byte-identical to the in-game RuleCard and the OG description — all
+// three read the same manifest field), chips (mechanic tags + "~N min"), whole card is the
+// play affordance. Only the material dressing changes here — paper-lift surface, the print-
+// shop stroke/shadow scale, and the three type faces (§1.1) — nothing about what's rendered or
+// its accessible structure moved.
 
 import type { ReactNode } from "react";
 import Link from "next/link";
@@ -20,23 +23,26 @@ export function GameCard({ manifest, glyph, featured }: GameCardProps) {
       href={`/play/${manifest.id}`}
       className={
         featured
-          ? "block rounded-lg border-2 border-ink p-4 no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-          : "block rounded-lg border border-ink-muted p-4 no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+          ? // featured variant (§2.2): brush border + the one hand-drawn moment this card is
+            // rationed (Move 6) — `.edge-hand` supplies its own border-radius, so `rounded-xl`
+            // is deliberately omitted here.
+            "group block edge-hand border-brush border-ink bg-paper-lift p-4 shadow-print-3 no-underline transition-[transform,box-shadow] duration-place ease-arcade motion-safe:hover:-translate-x-0.5 motion-safe:hover:-translate-y-0.5 motion-safe:hover:shadow-print-5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+          : "group block rounded-xl border-ui border-ink bg-paper-lift p-4 shadow-print-3 no-underline transition-[transform,box-shadow] duration-place ease-arcade motion-safe:hover:-translate-x-0.5 motion-safe:hover:-translate-y-0.5 motion-safe:hover:shadow-print-5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
       }
     >
       <div aria-hidden="true" className="mb-2 text-2xl text-ink-muted">
         {glyph ?? "◇"}
       </div>
-      <h3 className="font-bold text-ink">{manifest.title}</h3>
-      <p className="text-xs text-ink-muted">a twist on {manifest.classic}</p>
-      <p className="mt-2 text-sm text-ink">{manifest.ruleSentence}</p>
-      <ul className="mt-2 flex flex-wrap gap-2 text-xs text-ink-muted">
+      <h3 className="font-display text-xl font-semibold text-ink">{manifest.title}</h3>
+      <p className="text-sm text-ink-muted">a twist on {manifest.classic}</p>
+      <p className="mt-2 font-texture text-ink-muted line-clamp-3">{manifest.ruleSentence}</p>
+      <ul className="mt-2 flex flex-wrap gap-2 font-mono text-[0.7rem] uppercase tracking-wide text-ink-muted">
         {manifest.tags.map((tag) => (
-          <li key={tag} className="rounded-full border border-ink-muted px-2 py-0.5">
+          <li key={tag} className="rounded-full border-hairline border-ink-muted px-2 py-0.5">
             {tag}
           </li>
         ))}
-        <li className="rounded-full border border-ink-muted px-2 py-0.5">~{manifest.estMinutes} min</li>
+        <li className="rounded-full border-hairline border-ink-muted px-2 py-0.5">~{manifest.estMinutes} min</li>
       </ul>
     </Link>
   );
