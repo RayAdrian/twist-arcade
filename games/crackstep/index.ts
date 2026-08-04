@@ -131,12 +131,33 @@ function provablyDoomed(state: CrackstepState): boolean {
   return deadEndReservationCount(state.tiles, state.crumbled, state.visited, state.width, state.height, state.pos) > 1;
 }
 
-function shareArtifact(record: ReplayRecord, finalView: CrackstepState): string {
+/**
+ * The pure, per-move glyph computation — split out from `shareArtifact` (below) specifically so
+ * it is testable independent of the shell's own line-wrapping/truncation (`timelineToBody`,
+ * @twist-arcade/shell): a run longer than that module's `TRUNCATE_KEEP_LAST` (28 moves) has its
+ * EARLIEST glyphs dropped for display, which has nothing to do with whether Crackstep's own
+ * per-move classification is correct. Exported for index.test.ts's sweep.
+ *
+ * KNOWN, DELIBERATELY-DOCUMENTED LIMIT (crackstep.md §14 — found by sweeping 150+ real generated
+ * boards before trusting this encoding, the C12/Fadeout-timeline-saturation precedent): 🟨 here
+ * marks every move that did not visit a brand-new tile (a stone re-crossing), which is an
+ * honest, ALWAYS-TRUE fact about the replayed run on its own — but it is NOT always equal to
+ * "moves beyond the day's par", because `GamePresentation.shareArtifact(record, finalView)`
+ * has no `par` parameter to compare against (game-spec's frozen signature — the shell composes
+ * the par-relative header separately, from the certificate, outside this function entirely).
+ * On some real boards (~40% of a real 90-day sample), the OPTIMAL solution itself requires at
+ * least one stone re-crossing (the walkable-tile count alone is not always achievable), so even
+ * a run of EXACTLY par length can show one or more 🟨 here. The count IS always exactly
+ * `moves - (walkable tile count - 1)` — a real, locally-provable, par-free invariant — and it is
+ * this that the statLine below narrates, not a moves-over-par claim this function has no way to
+ * verify.
+ */
+export function crackstepShareSymbols(record: ReplayRecord, finalView: CrackstepState): string[] {
   const { states } = replay(crackstep, record);
   const finalStatus = crackstep.status(finalView);
 
   let doomFired = false;
-  const symbols = record.steps.map((_step, i) => {
+  return record.steps.map((_step, i) => {
     const before = states[i]!;
     const after = states[i + 1]!;
     const isLastStep = i === record.steps.length - 1;
@@ -154,13 +175,18 @@ function shareArtifact(record: ReplayRecord, finalView: CrackstepState): string 
     }
     return visitedNew ? "🟩" : "🟨";
   });
+}
+
+function shareArtifact(record: ReplayRecord, finalView: CrackstepState): string {
+  const symbols = crackstepShareSymbols(record, finalView);
+  const finalStatus = crackstep.status(finalView);
 
   const detours = symbols.filter((s) => s === "🟨").length;
   const statLine =
     finalStatus.kind === "won"
       ? detours === 0
         ? "every tile, no wasted step"
-        : `${detours} detour${detours === 1 ? "" : "s"} along the way`
+        : `${detours} stone re-crossing${detours === 1 ? "" : "s"} along the way`
       : "the floor crumbles behind you";
 
   return `${timelineToBody(symbols)}\n${statLine}`;

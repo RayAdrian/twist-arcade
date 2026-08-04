@@ -11,15 +11,16 @@
   "scripts": {
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
-    "certify": "tsx solver/run-certify.mts",
-    "calibrate": "tsx solver/run-calibrate.mts"
+    "certify": "tsx ../../scripts/certify-crackstep.ts",
+    "calibrate": "tsx ../../scripts/calibration-drift.ts"
   },
   "dependencies": {
     "@twist-arcade/engine": "workspace:*",
     "@twist-arcade/game-spec": "workspace:*",
     "@twist-arcade/bots": "workspace:*",
     "@twist-arcade/shell": "workspace:*",
-    "@twist-arcade/harness": "workspace:*"
+    "@twist-arcade/harness": "workspace:*",
+    "@twist-arcade/daily": "workspace:*"
   },
   "peerDependencies": {
     "react": "^19.0.0"
