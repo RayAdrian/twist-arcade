@@ -52,11 +52,36 @@ describe("tokens.css matches design-tokens.ts (no silent drift)", () => {
       expect(cssVars["accent-p2"]).toBe(ts.accentP2);
       expect(cssVars["focus-ring"]).toBe(ts.focusRing);
     });
+
+    // UI direction §1.3, Move 5: the paper-tier + marker + shadow-print additions must
+    // byte-match design-tokens.ts exactly like every other color — this is the "or it fails"
+    // half of the cross-check obligation the file header describes, extended to the new tokens.
+    it(`${name} theme: paperLift/paperShade/marker/shadowPrint match`, () => {
+      expect(cssVars["paper-lift"]).toBe(ts.paperLift);
+      expect(cssVars["paper-shade"]).toBe(ts.paperShade);
+      expect(cssVars["marker"]).toBe(ts.marker);
+      expect(cssVars["shadow-print"]).toBe(ts.shadowPrint);
+    });
   }
 
   it("age-1/age-2 opacity tokens are present and match AGE_OPACITY", () => {
     expect(Number(lightVars["age-1"])).toBeCloseTo(AGE_OPACITY[1], 5);
     expect(Number(lightVars["age-2"])).toBeCloseTo(AGE_OPACITY[2], 5);
+  });
+
+  // UI direction §1.3, Move 4 + the chrome-tier motion extension — theme-invariant, so only
+  // the light block needs checking (tokens.css declares them once, inside `:root`, never
+  // overridden inside `:root.dark`).
+  it("stroke scale (hairline/ui/brush) matches STROKES", () => {
+    expect(lightVars["stroke-hairline"]).toBe(STROKES.hairline);
+    expect(lightVars["stroke-ui"]).toBe(STROKES.ui);
+    expect(lightVars["stroke-brush"]).toBe(STROKES.brush);
+  });
+
+  it("chrome-tier motion timing (dur-sheet/stagger-step) matches CHROME_DURATIONS, and ease-pop matches EASE_POP", () => {
+    expect(lightVars["dur-sheet"]).toBe(`${CHROME_DURATIONS.sheet}ms`);
+    expect(lightVars["stagger-step"]).toBe(`${CHROME_DURATIONS.stagger}ms`);
+    expect(lightVars["ease-pop"]).toBe(EASE_POP);
   });
 });
 
@@ -102,5 +127,53 @@ describe("WCAG contrast (plan §9.1 / ux-lens §2, §8) — both themes", () => 
         expect(contrastRatio(faded, t.paper)).toBeGreaterThanOrEqual(3);
       }
     });
+  }
+});
+
+describe("UI direction §1.3 (Move 5) — paper tiers + marker are decorative-only backgrounds, but ink on them must still clear the text floor", () => {
+  for (const [name, t] of [
+    ["light", LIGHT],
+    ["dark", DARK],
+  ] as [string, ThemeTokens][]) {
+    it(`${name}: ink vs paperLift >= 4.5:1 (raised sheets: cards, board frame, modal slip, rule card)`, () => {
+      expect(contrastRatio(t.ink, t.paperLift)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it(`${name}: ink vs paperShade >= 4.5:1 (recessed: skeleton base, disabled fills, footer band)`, () => {
+      expect(contrastRatio(t.ink, t.paperShade)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    // Plan §1.3: "ink on marker light ≈ 9.8:1, dark ≈ 10.5:1 — add assertions." marker is the
+    // one new chrome-only accent hue (§0), explicitly NOT a player accent — decorative
+    // highlighter-tint background only, so it is held to the text floor like the paper tiers,
+    // never to the non-text 3:1 floor accents are held to elsewhere.
+    it(`${name}: ink vs marker >= 4.5:1 (highlighter tint: daily hero band, aha-callout, "Copied" pill)`, () => {
+      expect(contrastRatio(t.ink, t.marker)).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+});
+
+describe("UI direction §1.3 (Move 3) — paper grain must be contrast-invisible", () => {
+  // Grain (plan §1.2 Move 3) is a tiled feTurbulence texture applied to `body` (the `paper`
+  // background) and to `--paper-lift` surfaces only, never inside board cells, at
+  // GRAIN_OPACITY. Turbulence noise oscillates around neutral gray, so the two extremes a real
+  // pixel can land on are pure black and pure white — compositing EITHER at the ceiling opacity
+  // over each grained surface is the worst case the eye will ever actually see; ink text laid
+  // over that composite must still clear the same 4.5:1 text floor plain ink-on-paper does.
+  const GRAIN_EXTREMES = ["#000000", "#ffffff"];
+
+  for (const [name, t, grainAlpha] of [
+    ["light", LIGHT, GRAIN_OPACITY.light],
+    ["dark", DARK, GRAIN_OPACITY.dark],
+  ] as [string, ThemeTokens, number][]) {
+    for (const surfaceName of ["paper", "paperLift"] as const) {
+      it(`${name}: ink vs worst-case grain pixel over ${surfaceName} stays >= 4.5:1`, () => {
+        const surface = t[surfaceName];
+        for (const extreme of GRAIN_EXTREMES) {
+          const grained = compositeOver(extreme, surface, grainAlpha);
+          expect(contrastRatio(t.ink, grained)).toBeGreaterThanOrEqual(4.5);
+        }
+      });
+    }
   }
 });
