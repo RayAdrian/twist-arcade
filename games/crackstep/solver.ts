@@ -15,7 +15,16 @@
 // two prunes below killing doomed branches within one node of the fatal move).
 
 import type { SoloSolver } from "@twist-arcade/game-spec";
-import { idaStarSolver, type SoloHeuristic } from "@twist-arcade/harness";
+// From the harness's "./solver" subpath, NOT the package root ("@twist-arcade/harness"): the
+// root barrel also statically imports certify.ts, which reads real files via node:fs/promises
+// at module scope. This module is loaded ONLY via games/registry.ts's `loadSolver()` (itself a
+// dynamic import()) — but a client-reachable dynamic import still needs its target chunk to be
+// BUILDABLE for the browser, and a chunk that transitively reaches node:fs/promises is not,
+// regardless of whether the import is static or dynamic or whether `loadSolver()` is ever
+// actually called at runtime. Importing the root barrel here 500'd `next dev`'s `/play/
+// crackstep` outright (`UnhandledSchemeError: node:fs/promises`) until this was narrowed to the
+// browser-safe subpath — see generic-solo.ts's own module doc for the full story.
+import { idaStarSolver, type SoloHeuristic } from "@twist-arcade/harness/solver";
 import {
   countUnvisited,
   deadEndReservationCount,

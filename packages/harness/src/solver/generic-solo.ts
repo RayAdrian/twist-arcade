@@ -22,6 +22,22 @@
 // distribution gates instead, per mine-run.md §6) — calling either on an engine whose only
 // solo terminals are `scored` will correctly report `"unsolvable"` once every reachable state
 // is exhausted, since none of them is ever `won`.
+//
+// BROWSER-SAFE, ON PURPOSE: this file's only imports are @twist-arcade/engine/@twist-arcade/
+// game-spec (both pure, zero-Node-API packages) — no filesystem, no `node:` builtins anywhere
+// in its graph. That is exactly why package.json exposes it as its OWN subpath export
+// (`@twist-arcade/harness/solver`), separate from the package root (`./src/index.ts`, the full
+// barrel including certify.ts's real `node:fs/promises` reads): a client-reachable dynamic
+// `import()` of ANYTHING from the full barrel (even just this file's own exports, re-exported
+// there) makes Next.js's webpack try to build the WHOLE barrel module for the browser target —
+// and that build fails outright on `node:fs/promises`, regardless of which named export the
+// caller actually wanted. A game's own solver.ts (e.g. games/crackstep/solver.ts, loaded only
+// via the registry's `loadSolver()`, itself dynamic) must import `idaStarSolver`/`dfsSolver`
+// from THIS subpath, never from the package root, or its client bundle breaks the same way.
+// (Discovered live: `next dev` 500s on `/play/crackstep` with `UnhandledSchemeError:
+// node:fs/promises`, import trace PlayClient.tsx -> games/registry.ts -> games/crackstep/
+// solver.ts -> packages/harness/src/index.ts -> certify.ts, until this subpath was added and
+// solver.ts's import was repointed to it.)
 
 import type { GameEngine, Json, WithEffects } from "@twist-arcade/engine";
 import { rngFromSeed } from "@twist-arcade/engine";

@@ -37,30 +37,47 @@ as the CLAUDE.md §2 loop's stage-2 (Develop) TDD anchor list for this game.
 
 ## Build order
 
-- [ ] `engine.ts` — replace `computeStatus`'s TODO with your real win/lose rules.
-      `pnpm --filter @twist-arcade/crackstep test` should turn the "termination" failure
-      green.
-- [ ] `engineContract` green — the solo branch (puzzle terminals: `won`/`lost` only — never
+- [x] `engine.ts` — real win/lose rules implemented; `engineContract` green incl. the solo
+      branch, termination-bound test, position-key property test.
+- [x] `engineContract` green — the solo branch (puzzle terminals: `won`/`lost` only — never
       `scored`/`draw`, never a non-zero winner) is auto-checked because `maxPlayers === 1`.
-- [ ] `solver.ts` — confirm `dfsSolver` is valid for your mechanic (trap 3), or swap in
-      `idaStarSolver(heuristic)` / a bespoke solver.
-- [ ] `manifest.ts` — fill in `title`, `classic`, `ruleSentence` (<=90 chars — asserted for
-      real in `manifest.test.ts`), `tags`, `estMinutes`.
-- [ ] `pnpm harness certify crackstep --days 90` — 90 certified days, each verified by
-      `verifyCertificate`. Budget exhaustion / unsolvable / trivial candidates are REJECTED,
-      never shipped uncertified (platform §7.7).
-- [ ] Review the certify report's rejection rate (warn > 50%, hard fail > 90% — a
-      generator/band mismatch needs a redesign, not a threshold nudge).
-- [ ] `pnpm harness suite crackstep --suite solo-ci` green (certificate present + verified,
-      par in band, random-playout solve rate, forced-move fraction, generator rejection rate,
-      day-over-day drift, certified-buffer-days, fog-deduction-only if applicable).
-- [ ] `ui/Board.tsx` + the grayscale-screenshot test (every state change must read from a
-      static, colorless render — motion may only restate it, per C5).
-- [ ] `index.ts`'s `announce()` strings — real per-event sentence fragments (ux-lens §9).
-- [ ] `shareArtifact()` — <=7 lines; the shell hands you the certificate (par) alongside it.
-- [ ] `howSheetFrames` — three real frames.
-- [ ] Register in `games/registry.ts` (the scaffold already inserted your entry, including
-      `loadSolver`, at the `<new-game:insert>` marker — confirm it and delete this line once
-      you have).
+- [x] `solver.ts` — `idaStarSolver(heuristic)` (trap 3: `encode` is a sound position key here,
+      confirmed by `engine-fixtures.test.ts`'s position-key property test) + the two prunes.
+      Imports the harness's browser-safe `"@twist-arcade/harness/solver"` subpath, NOT the
+      package root — see solver.ts's own header comment (the root barrel statically imports
+      certify.ts's `node:fs/promises`, which 500'd `next dev`'s `/play/crackstep` outright
+      until this was narrowed).
+- [x] `manifest.ts` — filled in and asserted (`manifest.test.ts`, 90-char rule sentence).
+- [x] 90 certified days on disk (`data/certificates/crackstep/`, via
+      `games/crackstep/solver/certify-day.ts` + `scripts/certify-crackstep.ts` — the literal
+      `pnpm harness certify crackstep --days 90` in this line's original text does not exist;
+      `packages/harness/src/cli.ts` scopes real-game `certify`/`calibrate` commands out of its
+      surface — see docs/plans/crackstep.md §14 #2). `scripts/verify-certificates.ts` re-verifies
+      all 90+ clean; a planted par-tamper on a real on-disk certificate was caught and reverted.
+- [x] Rejection rate reviewed: **69.7% aggregate over the real 90-day buffer** (10k-seed
+      calibration independently measures 68.1%, consistent) — WARN zone (>50%), well under the
+      90% hard-fail. Flagged to the orchestrator (crackstep.md §14 #1) alongside the related
+      "some optimal solves need a stone revisit" finding, both measured triggers for the
+      plan's pre-approved constructive-generation fallback (§3.1) — not fixed unilaterally here.
+- [x] Solo-ci gate table verified directly against `runGameCiGate` (kind: "solo-puzzle"): every
+      applicable row PASS/WARN (never FAIL), every score-chase-only row prints "N/A
+      (daily-puzzle)" explicitly, not silently skipped.
+- [x] `ui/Board.tsx` — real screenshot taken (`/play/crackstep`, live `next dev`) and converted
+      to true grayscale; all five tile states read distinctly (measured: hole mean-L 20, rubble
+      67, current 134, wood 144, stone 202 — four value bands, stone additionally
+      pattern-distinct via its rivet dots). First-crumble and first-stone-survival callouts
+      both fired live with the exact plan text.
+- [x] `index.ts`'s `announce()` strings — tested (`index.test.ts`) against the literal §7.4
+      templates.
+- [x] `shareArtifact()` — tested and CORRECTED: sweeping 150+ real boards found the plan's
+      "detours == moves-over-par" claim false on ~40% of certified days (`shareArtifact` has no
+      `par` parameter to compare against — game-spec's frozen signature). Fixed to the true,
+      locally-provable invariant and recorded as crackstep.md §14 #1.
+- [x] `howSheetFrames` — three real frames (present since the scaffold, confirmed here).
+- [x] Registered in `games/registry.ts`. `loadSolver` now resolves via the package's own
+      `"./solver"` subpath export (`@twist-arcade/crackstep/solver`) rather than the package
+      root — the root re-exporting `solver` used to silently drag it into `loadEngine`/
+      `loadPresentation`'s own bundle too (fixed; verified at runtime the root module no longer
+      exposes `solver` at all).
 - [ ] Hand `par` rendering to the shell team (the certificate is now a real artifact they can
       render); open the PR — CLAUDE.md §2's loop (stage 3 onward) takes it from here.
