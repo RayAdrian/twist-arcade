@@ -34,7 +34,7 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 | 54821–54829 (team 5) | crackstep | CLAIMED |
 | 54921–54929 (team 6) | minerun | CLAIMED |
 | 55021–55029 (team 7) | harness-solo | CLAIMED |
-| 55121–55129 (team 8) | — | free |
+| 55121–55129 (team 8) | ninegrids | CLAIMED |
 
 **Host note (2026-08-02):** Docker on this machine already runs Supabase stacks for
 unrelated projects (`mento-h0`, `prequal-and405`, `prequal-and473-450`). All four blocks
