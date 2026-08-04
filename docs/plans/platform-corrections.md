@@ -674,3 +674,52 @@ thing before a line of code was written.
 3. **"None by construction" claims get measured too.** Bid-Tac-Toe's FPA is rated "none by
    construction" on the strength of Richman theory — that is exactly the shape of confidence
    that just failed, and it costs one measurement run to check.
+
+---
+
+## C17 — Nothing smoke-tests a registered game's actual route, and a game was 500ing
+
+**Milestone: M4 follow-up. Severity: high — this class is invisible to every existing gate.**
+
+*Found by the Crackstep team, 2026-08-04, by running `next dev` and opening the page.*
+
+**`/play/crackstep` returned a 500 in the live application** while `pnpm typecheck`, `pnpm
+lint`, and 1,321 tests were all green. `solver.ts` imported `@twist-arcade/harness`'s full
+barrel, which dragged `node:fs/promises` into a browser bundle. A second, quieter leak:
+`index.ts` re-exported `solver`, silently pulling it into `loadEngine`/`loadPresentation`'s
+own chunk and defeating the code-splitting the registry exists to provide.
+
+**Both files carried loud header comments asserting this could not happen.** That is the
+sharpest example yet of this build's recurring failure: not a guard that doesn't guard, but a
+*comment* asserting an invariant the code violates, with every gate green.
+
+**The systemic gap:** no CI step builds and loads each registered game's real route. The
+existing gates check engines (unit tests, contract suite, harness gates) and the shell
+(component tests, one Playwright pass). Nothing exercises the seam where a game's module
+graph meets the browser — which is exactly where both leaks lived.
+
+**Fix:** add a CI step that, for every entry in `games/registry.ts`, builds and requests
+`/play/<id>` and asserts a 200 plus a rendered board. The Playwright harness already exists;
+this is a loop over the registry rather than new machinery. Cheap, and it is the only thing
+that would have caught a 500 on a shipped route.
+
+**Related, found in the same pass:** the `pnpm harness certify` CLI that `crackstep.md`
+describes **does not exist**. The team built the real thing from lower-level library pieces.
+Another instance of a plan describing a tool as though it were shipped.
+
+---
+
+## C18 — Crackstep's share invariant was false on 40% of days
+
+*Found by sweeping 150+ real generated boards rather than trusting the plan.*
+
+The plan claimed `🟨 count == moves − par`. **False on 36 of 90 certified days (40%)**,
+because `GamePresentation.shareArtifact(record, finalView)` receives no `par` parameter — and
+because some boards' *optimal* solve itself requires a stone revisit, so the identity does
+not hold even in principle.
+
+Replaced with the true, locally provable invariant: `🟨 == moves − (walkable − 1)`.
+
+This is C12's lesson recurring in a third form. Fadeout's timeline saturated; Fadeout's
+`longestLife` was near-constant; here a stated identity is simply false at scale. **Every
+share-artifact claim in a plan is a hypothesis until swept against real generated data.**
