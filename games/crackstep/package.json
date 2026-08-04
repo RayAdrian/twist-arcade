@@ -6,7 +6,8 @@
   "main": "./index.ts",
   "types": "./index.ts",
   "exports": {
-    ".": "./index.ts"
+    ".": "./index.ts",
+    "./solver": "./solver.ts"
   },
   "scripts": {
     "typecheck": "tsc -b --pretty false",

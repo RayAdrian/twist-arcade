@@ -258,4 +258,13 @@ export const definition: GameDefinition<CrackstepState, CrackstepMove, Crackstep
 };
 
 export { crackstep, manifest };
-export { solver } from "./solver";
+// NOTE: `solver` is deliberately NOT re-exported from this module (see the header comment above
+// — "Deliberately does NOT import ./solver... so a route that only plays the game never drags
+// the solver's heavier dependency into its bundle"). A `export { solver } from "./solver"` line
+// used to sit right here: since ES modules evaluate a module's ENTIRE dependency graph
+// regardless of which named export a caller actually destructures, that one line silently
+// pulled ./solver (and @twist-arcade/harness) into every route that calls `loadEngine()` or
+// `loadPresentation()` too — the exact bundle leak this file's own header warns against, self-
+// inflicted by this file. `games/registry.ts`'s `loadSolver` now imports the real solver via the
+// package's separate `"./solver"` subpath export (package.json) — `@twist-arcade/crackstep/solver`
+// — which resolves straight to solver.ts and pulls in nothing this module exports.
