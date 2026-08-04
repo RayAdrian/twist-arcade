@@ -723,3 +723,45 @@ Replaced with the true, locally provable invariant: `🟨 == moves − (walkable
 This is C12's lesson recurring in a third form. Fadeout's timeline saturated; Fadeout's
 `longestLife` was near-constant; here a stated identity is simply false at scale. **Every
 share-artifact claim in a plan is a hypothesis until swept against real generated data.**
+
+---
+
+## C19 — The CI gate budget is fixed, but gate *cost* scales with the board
+
+**Milestone: M4 follow-up. Severity: the gates cannot run in CI at current settings.**
+
+*Observed 2026-08-04: Wrap's 6×6 gate run took **43+ minutes**; Mine Run's solo chase gate
+**25+ minutes**. Both pinned at ~100% CPU — computing, not hung.*
+
+The gate table uses a fixed budget: three 100-game matchups, ruthless at **10,000 rollouts
+per move**. That was sized against Fadeout — a 3×3 board, 9 cells, games ending near ply 12.
+It is comfortable there.
+
+It does not survive a bigger board. Wrap's 6×6 has 36 cells and longer games, so the same
+nominal budget is roughly `300 games × ~20 plies × 10,000 rollouts` — tens of millions of
+playouts, each simulating to terminal, with branching factor ~21 at every node. **Cost scales
+with cells × plies × rollouts, while the budget is a constant.**
+
+Consequences, in order of seriousness:
+
+1. **These gates cannot run in CI.** A 43-minute step on every PR is not viable, and it grows
+   with each game added — `scripts/ci-gates.ts` currently loops the whole registry (see C13).
+2. **It pushes teams toward improvising.** Two teams have already hand-written throwaway
+   scripts to gate a single game. Improvised gates are the ones that get quietly tuned.
+3. **It makes gate-before-UI (C16) expensive** exactly when we have just made it mandatory.
+
+**Fix, in order of preference:**
+
+- **Scale the rollout budget to board size** rather than fixing it — e.g. a per-manifest
+  budget, or derive it from cell count so a 6×6 costs no more wall-clock than a 3×3. The
+  gates measure *relative* strength, so a smaller absolute budget is fine provided the tiers
+  stay separated (which `hard-vs-medium` already checks).
+- **Split PR from nightly properly.** The plan always intended two budgets (§7: ~1–2k games
+  at PR budget, 20k+ nightly). The implementation uses one. PR should be a fast smoke gate;
+  the full table belongs in nightly.
+- **Land C13's `--game` filter**, so one game's gate does not re-run every other game's.
+
+Worth stating plainly: the gates have already earned their cost — they killed Wrap at 5×5
+before it reached players, and that is exactly what they exist for. The problem is not that
+measurement is expensive; it is that a constant budget silently becomes unaffordable as the
+library grows.
