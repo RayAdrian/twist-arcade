@@ -622,3 +622,55 @@ before it reaches players rather than after. It cost one measurement run.
 of shell restyle and the real bot worker landing, Wrap's board UI, four-variant `announce()`,
 and registration were **already correct with zero adaptation** — confirmed by planting two
 lint violations by hand to prove the boundaries actually fire.
+
+---
+
+## C16 — The Wrap diagnosis, and the rule it generalizes to
+
+*Fable's ruling, 2026-08-04. Full reasoning in `docs/plans/wrap-redesign.md`.*
+
+**Mechanism, verified by enumeration rather than inferred.** On a 5-cycle, win-length 4 is
+**degenerate**: C(5,4) = 5 equals the number of wrap-windows, so *every* 4-subset of every
+line-cycle is a winning set. "In a row" is vacuous when win length = cycle length − 1.
+
+The consequences follow mechanically: any 3 stones in a clean cycle are a double threat; one
+enemy stone collapses a cycle's 5 windows to 1 **from any cell**, so every block is
+placement-free and therefore reliably dual-purpose; every stone quad-poisons, since each cell
+sits on 4 cycles; and vertex-transitivity means P1's opening carries **zero** targeting
+signal. Defense is over-efficient, the responder always places with strictly more
+information, and the initiative becomes a liability.
+
+Two plausible hypotheses were **rejected with evidence**, which is why the diagnosis is
+trustworthy: parity is irrelevant (games end near ply 12, so P1's 13th stone never exists),
+and line density cannot be the operative variable (per-cell window incidence is 16 on both
+5×5 and 6×6).
+
+**Ruling: 6×6 torus, win length unchanged at 4.** Each degenerate quantity disappears — 6 of
+15 subsets win, consecutiveness becomes real, one stone no longer kills a cycle. One
+measurement run. **If FPA lands outside 35–65 in either direction: kill Wrap, promote Duel
+Draft, and pass the topology slot to Closing Walls.** No third board — a second failure would
+indict vertex-transitivity, which no torus escapes.
+
+Rejected alternatives: a cylinder (keeps the degeneracy on the wrapped axis), win-5 (draw
+city), reverse-pie (papers over "attacking never works" rather than fixing it).
+
+**Caveat that matters for the re-run:** 6×6 has no reflection-fixed cell. Wrap's 0.0% mirror
+result depended on cell 12 being its own reflection on a 5×5 board, so **the mirror probe
+becomes load-bearing again** and must not be treated as already passed.
+
+### The new design-time trap (proposed as game-theory-lens §5.12)
+
+**Cyclic boards require cycle length ≥ win length + 2.** §1.7's pencil check was run at 3×3
+and skipped at 5×5. This is a one-line arithmetic check that would have caught the whole
+thing before a line of code was written.
+
+### What the queue inherits
+
+1. **Gate-before-UI is now mandatory**: engine → `runTwoPlayerCiGate --game <id>` → UI.
+   C13's per-game filter becomes a prerequisite rather than a convenience.
+2. **The taxonomy stands; the shortlist's FPA column is downgraded to *hypothesis*.**
+   Strategy-stealing is a perfect-play existence theorem, so remedies are chosen *after* the
+   number, never before it.
+3. **"None by construction" claims get measured too.** Bid-Tac-Toe's FPA is rated "none by
+   construction" on the strength of Richman theory — that is exactly the shape of confidence
+   that just failed, and it costs one measurement run to check.
