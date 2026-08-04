@@ -765,3 +765,50 @@ Worth stating plainly: the gates have already earned their cost — they killed 
 before it reached players, and that is exactly what they exist for. The problem is not that
 measurement is expensive; it is that a constant budget silently becomes unaffordable as the
 library grows.
+
+---
+
+## C20 — Wrap is killed. Duel Draft is promoted.
+
+**Decision, 2026-08-04. The rule was fixed before the number, and the number is outside it.**
+
+| Board | First-player win rate | Diagnosis |
+|---|---|---|
+| 5×5, win 4 | **24%** | P1 too weak — `C(5,4) = 5` made every 4-subset a winning set, so blocking was free and dual-purpose |
+| 6×6, win 4 | **74%** | P1 too strong — games end near ply 8; first-mover tempo dominates before either side reaches a genuine double threat |
+
+Removing the arithmetic degeneracy did not land the game near 50% — it **overcorrected past
+it**. That is the outcome Fable named in advance as decisive: *"a second failure indicts
+vertex-transitivity, which no torus escapes."* On a torus every cell is topologically
+identical, so there is no corner/edge asymmetry a defender can exploit. **No third board.**
+
+**Per the ruling: kill Wrap, promote Duel Draft to the launch slate, and pass the topology
+slot to Closing Walls** (a shrinking board — dynamic topology without vertex-transitivity).
+
+### What Wrap was providing, that its replacements must
+
+Wrap's pitch was "everything you know is wrong at zero teaching cost" — rules verbatim from
+tic-tac-toe, but every imported heuristic dead. **Duel Draft** (simultaneous commit, collision
+destroys the cell) delivers the same heuristic reset by a different route and has **no turn
+order at all**, so it cannot fail the way Wrap did twice. **Closing Walls** keeps the
+dynamic-topology slot with a shrinking board, which is asymmetric by construction.
+
+### The measurement discipline that made this cheap
+
+- **The verdict was not budget-sensitive** — 74% at 2,000 rollouts, 70% at 1,000, same
+  direction, both far outside the band.
+- **But one gate was**, and the team caught why: at 1,000 rollouts `ruthless` collides with
+  `standard`'s own 1,000-rollout budget, so they become the same tier and
+  `ruthless-vs-standard`'s 50% is an artifact, not a failure. Worth remembering — a tier gate
+  is meaningless once two tiers share a budget.
+- **The mirror probe's 0.0% is earned this time.** On 5×5 it was structurally guaranteed
+  (cell 12 is its own reflection). On 6×6, `35 − c = c` has no integer solution, so mirroring
+  was available on every move and still lost every game.
+- **The shipped `ruthless` tier was never touched** — measurement ran through an in-memory
+  manifest clone, so the difficulty a real player faces is unchanged.
+
+### C19 validated in the same run
+
+**103 seconds at 2,000 rollouts versus 52+ minutes at 10,000 — a ~30× speedup with the
+verdict unchanged.** That is the fix: scale the rollout budget to the board, keep the tiers
+separated, and let `ruthless-vs-standard` police the separation. Make it the default.
