@@ -547,3 +547,78 @@ tuning a gate locally because running the real one was inconvenient.
 `harness suite` resolve registered games rather than refusing them). Small change; it
 removes the incentive to improvise around the gates, which are the one thing that decides
 whether a game ships.
+
+---
+
+## C14 — Wrap fails its gate, in the direction nobody predicted
+
+**Status: the first game the gates have killed. Escalated to design, not tuned.**
+
+*Measured by the Wrap team, 2026-08-04.*
+
+```
+[PASS] strong-vs-random:      100.0%  (min 90%)
+[FAIL] first-player-win-rate:  24.0%  (band 35–65%)
+[PASS] draw-rate:               0.0%  (max 60%)
+[PASS] mean-plies:             11.6, 0 cap hits
+[PASS] ruthless-vs-standard:   76.0%  (min 60%)
+```
+
+Equal-strength self-play (ruthless vs ruthless, identical agents, so no seat effect is
+possible) gives seat 0 a **24% win rate — a 76% advantage to the second player.**
+
+**This inverts the design hypothesis.** `game-theory-lens.md` §1.7 and Wrap's own manifest
+both predicted a strong *first*-player edge, because a torus is centrally symmetric and
+strategy-stealing applies with extra force.
+
+**Why the theory didn't protect us, and this generalizes:** strategy-stealing is a statement
+about **optimal** play — it proves P1 cannot be a guaranteed loser against a perfect
+opponent, since an extra mark never hurts you in this class of game. It says nothing about
+two **equally configured but imperfect** MCTS agents at a fixed rollout budget. That is
+precisely where the surprise lives, and it is where every game in this library will actually
+be played. **A theorem about perfect play is not a prediction about the bots you ship.**
+
+**It is not the mirroring risk we guarded against.** The mirror probe passed with total
+margin — 0.0% over 500 games — and there is a structural reason: cell 12 is the centre of a
+5×5 board and a fixed point of the point-reflection (24 − 12 = 12), so a mirroring P2 cannot
+even mirror a centre opening. The 76% edge appears only under real MCTS-vs-MCTS search, so
+it is a tempo phenomenon, not a copy-the-opponent vulnerability.
+
+**The sanctioned remedy does not apply.** The pie rule converts an overly strong *first*
+player opening into a strategic decision, and works only when a near-balanced opening exists
+for P2 to decline. Here **P2 is already winning** — offered a swap, they simply never take
+it, and the rule is a no-op. §5.9's cliff check doesn't even trigger by its own stated
+condition (it is gated on first-player advantage of 55–70%; ours is a 76% *second*-player
+advantage, outside the band entirely). There is no reverse-pie in this codebase's toolbox,
+and inventing one is a design decision, not a parameter.
+
+**Nothing was tuned.** No threshold changed, no `exceptions[]` entry added, no tier adjusted
+— exactly the standing instruction. The remaining remedy on the plan's own menu is "a
+different board": win-length, board size, or torus configuration. That is Fable's call.
+
+**Worth stating plainly: this is the apparatus working.** Five research passes, a gate table,
+and a self-play harness existed precisely so a game that looks clever on paper gets caught
+before it reaches players rather than after. It cost one measurement run.
+
+---
+
+## C15 — Three scaffold gaps found by M5's first real user
+
+*Found by the Wrap team while building the first game from `pnpm new-game`.*
+
+1. **The registry template emits an unresolvable specifier.** It writes a bare
+   `@twist-arcade/<id>`, but the root `package.json` never lists per-game workspace
+   packages. Hand-worked-around once; will bite every future scaffold run until the template
+   itself is fixed.
+2. **No supported way to gate one registered game** — see C13. The Wrap team hand-wrote a
+   throwaway script to avoid re-running Fadeout's ruthless-tier gates.
+3. **`mirrorAgent()` requires a non-null `M`**, but every per-game `mirrorMove` is documented
+   as returning `M | null` with a "falls back to random" promise that **is implemented
+   nowhere** in `roster.ts` or `runner.ts`. A documented fallback that does not exist — the
+   same defect shape this build keeps producing, now in the probe wiring. It has been locally
+   worked around twice rather than fixed once.
+
+**What the scaffold got right**, and it is the larger half: after rebasing across ten commits
+of shell restyle and the real bot worker landing, Wrap's board UI, four-variant `announce()`,
+and registration were **already correct with zero adaptation** — confirmed by planting two
+lint violations by hand to prove the boundaries actually fire.
