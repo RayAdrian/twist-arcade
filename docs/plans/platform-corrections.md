@@ -520,3 +520,206 @@ game over 15 plies. Nothing calls it with a game body yet, so it is not an at-me
 but the committed daily days on `main` *are* Fadeout days. Decide explicitly whether Fadeout
 chunks its own timeline or the daily adapter does, and record it, rather than discovering it
 as a thrown `ShareGrammarError` inside a live daily.
+
+---
+
+## C13 — There is no way to run the CI gates for one registered game
+
+**Milestone: M4 follow-up. Severity: friction that pushes teams into ad-hoc scripts.**
+
+*Found by the Wrap team, 2026-08-04, while trying to run its own ship/no-ship gates.*
+
+Two entry points exist and neither does the obvious thing:
+
+- **`harness suite`** hard-refuses anything outside the built-in testkit fixtures, so it
+  cannot run against a real registered game at all.
+- **`scripts/ci-gates.ts`** iterates the *entire* registry, so checking one game re-runs
+  every other game's gates too — at 10,000 rollouts per move for the ruthless tier, that is
+  minutes of wasted compute per invocation and it grows with every game added.
+
+The Wrap team's workaround was a temporary hand-written script calling
+`runTwoPlayerCiGate` directly for one game. That works, but every future game team will
+independently rediscover the need and write their own — which is precisely how a codebase
+accumulates six subtly different versions of the same measurement, and how a team ends up
+tuning a gate locally because running the real one was inconvenient.
+
+**Fix:** teach `scripts/ci-gates.ts` a `--game <id>` filter (and, while there, let
+`harness suite` resolve registered games rather than refusing them). Small change; it
+removes the incentive to improvise around the gates, which are the one thing that decides
+whether a game ships.
+
+---
+
+## C14 — Wrap fails its gate, in the direction nobody predicted
+
+**Status: the first game the gates have killed. Escalated to design, not tuned.**
+
+*Measured by the Wrap team, 2026-08-04.*
+
+```
+[PASS] strong-vs-random:      100.0%  (min 90%)
+[FAIL] first-player-win-rate:  24.0%  (band 35–65%)
+[PASS] draw-rate:               0.0%  (max 60%)
+[PASS] mean-plies:             11.6, 0 cap hits
+[PASS] ruthless-vs-standard:   76.0%  (min 60%)
+```
+
+Equal-strength self-play (ruthless vs ruthless, identical agents, so no seat effect is
+possible) gives seat 0 a **24% win rate — a 76% advantage to the second player.**
+
+**This inverts the design hypothesis.** `game-theory-lens.md` §1.7 and Wrap's own manifest
+both predicted a strong *first*-player edge, because a torus is centrally symmetric and
+strategy-stealing applies with extra force.
+
+**Why the theory didn't protect us, and this generalizes:** strategy-stealing is a statement
+about **optimal** play — it proves P1 cannot be a guaranteed loser against a perfect
+opponent, since an extra mark never hurts you in this class of game. It says nothing about
+two **equally configured but imperfect** MCTS agents at a fixed rollout budget. That is
+precisely where the surprise lives, and it is where every game in this library will actually
+be played. **A theorem about perfect play is not a prediction about the bots you ship.**
+
+**It is not the mirroring risk we guarded against.** The mirror probe passed with total
+margin — 0.0% over 500 games — and there is a structural reason: cell 12 is the centre of a
+5×5 board and a fixed point of the point-reflection (24 − 12 = 12), so a mirroring P2 cannot
+even mirror a centre opening. The 76% edge appears only under real MCTS-vs-MCTS search, so
+it is a tempo phenomenon, not a copy-the-opponent vulnerability.
+
+**The sanctioned remedy does not apply.** The pie rule converts an overly strong *first*
+player opening into a strategic decision, and works only when a near-balanced opening exists
+for P2 to decline. Here **P2 is already winning** — offered a swap, they simply never take
+it, and the rule is a no-op. §5.9's cliff check doesn't even trigger by its own stated
+condition (it is gated on first-player advantage of 55–70%; ours is a 76% *second*-player
+advantage, outside the band entirely). There is no reverse-pie in this codebase's toolbox,
+and inventing one is a design decision, not a parameter.
+
+**Nothing was tuned.** No threshold changed, no `exceptions[]` entry added, no tier adjusted
+— exactly the standing instruction. The remaining remedy on the plan's own menu is "a
+different board": win-length, board size, or torus configuration. That is Fable's call.
+
+**Worth stating plainly: this is the apparatus working.** Five research passes, a gate table,
+and a self-play harness existed precisely so a game that looks clever on paper gets caught
+before it reaches players rather than after. It cost one measurement run.
+
+---
+
+## C15 — Three scaffold gaps found by M5's first real user
+
+*Found by the Wrap team while building the first game from `pnpm new-game`.*
+
+1. **The registry template emits an unresolvable specifier.** It writes a bare
+   `@twist-arcade/<id>`, but the root `package.json` never lists per-game workspace
+   packages. Hand-worked-around once; will bite every future scaffold run until the template
+   itself is fixed.
+2. **No supported way to gate one registered game** — see C13. The Wrap team hand-wrote a
+   throwaway script to avoid re-running Fadeout's ruthless-tier gates.
+3. **`mirrorAgent()` requires a non-null `M`**, but every per-game `mirrorMove` is documented
+   as returning `M | null` with a "falls back to random" promise that **is implemented
+   nowhere** in `roster.ts` or `runner.ts`. A documented fallback that does not exist — the
+   same defect shape this build keeps producing, now in the probe wiring. It has been locally
+   worked around twice rather than fixed once.
+
+**What the scaffold got right**, and it is the larger half: after rebasing across ten commits
+of shell restyle and the real bot worker landing, Wrap's board UI, four-variant `announce()`,
+and registration were **already correct with zero adaptation** — confirmed by planting two
+lint violations by hand to prove the boundaries actually fire.
+
+---
+
+## C16 — The Wrap diagnosis, and the rule it generalizes to
+
+*Fable's ruling, 2026-08-04. Full reasoning in `docs/plans/wrap-redesign.md`.*
+
+**Mechanism, verified by enumeration rather than inferred.** On a 5-cycle, win-length 4 is
+**degenerate**: C(5,4) = 5 equals the number of wrap-windows, so *every* 4-subset of every
+line-cycle is a winning set. "In a row" is vacuous when win length = cycle length − 1.
+
+The consequences follow mechanically: any 3 stones in a clean cycle are a double threat; one
+enemy stone collapses a cycle's 5 windows to 1 **from any cell**, so every block is
+placement-free and therefore reliably dual-purpose; every stone quad-poisons, since each cell
+sits on 4 cycles; and vertex-transitivity means P1's opening carries **zero** targeting
+signal. Defense is over-efficient, the responder always places with strictly more
+information, and the initiative becomes a liability.
+
+Two plausible hypotheses were **rejected with evidence**, which is why the diagnosis is
+trustworthy: parity is irrelevant (games end near ply 12, so P1's 13th stone never exists),
+and line density cannot be the operative variable (per-cell window incidence is 16 on both
+5×5 and 6×6).
+
+**Ruling: 6×6 torus, win length unchanged at 4.** Each degenerate quantity disappears — 6 of
+15 subsets win, consecutiveness becomes real, one stone no longer kills a cycle. One
+measurement run. **If FPA lands outside 35–65 in either direction: kill Wrap, promote Duel
+Draft, and pass the topology slot to Closing Walls.** No third board — a second failure would
+indict vertex-transitivity, which no torus escapes.
+
+Rejected alternatives: a cylinder (keeps the degeneracy on the wrapped axis), win-5 (draw
+city), reverse-pie (papers over "attacking never works" rather than fixing it).
+
+**Caveat that matters for the re-run:** 6×6 has no reflection-fixed cell. Wrap's 0.0% mirror
+result depended on cell 12 being its own reflection on a 5×5 board, so **the mirror probe
+becomes load-bearing again** and must not be treated as already passed.
+
+### The new design-time trap (proposed as game-theory-lens §5.12)
+
+**Cyclic boards require cycle length ≥ win length + 2.** §1.7's pencil check was run at 3×3
+and skipped at 5×5. This is a one-line arithmetic check that would have caught the whole
+thing before a line of code was written.
+
+### What the queue inherits
+
+1. **Gate-before-UI is now mandatory**: engine → `runTwoPlayerCiGate --game <id>` → UI.
+   C13's per-game filter becomes a prerequisite rather than a convenience.
+2. **The taxonomy stands; the shortlist's FPA column is downgraded to *hypothesis*.**
+   Strategy-stealing is a perfect-play existence theorem, so remedies are chosen *after* the
+   number, never before it.
+3. **"None by construction" claims get measured too.** Bid-Tac-Toe's FPA is rated "none by
+   construction" on the strength of Richman theory — that is exactly the shape of confidence
+   that just failed, and it costs one measurement run to check.
+
+---
+
+## C17 — Nothing smoke-tests a registered game's actual route, and a game was 500ing
+
+**Milestone: M4 follow-up. Severity: high — this class is invisible to every existing gate.**
+
+*Found by the Crackstep team, 2026-08-04, by running `next dev` and opening the page.*
+
+**`/play/crackstep` returned a 500 in the live application** while `pnpm typecheck`, `pnpm
+lint`, and 1,321 tests were all green. `solver.ts` imported `@twist-arcade/harness`'s full
+barrel, which dragged `node:fs/promises` into a browser bundle. A second, quieter leak:
+`index.ts` re-exported `solver`, silently pulling it into `loadEngine`/`loadPresentation`'s
+own chunk and defeating the code-splitting the registry exists to provide.
+
+**Both files carried loud header comments asserting this could not happen.** That is the
+sharpest example yet of this build's recurring failure: not a guard that doesn't guard, but a
+*comment* asserting an invariant the code violates, with every gate green.
+
+**The systemic gap:** no CI step builds and loads each registered game's real route. The
+existing gates check engines (unit tests, contract suite, harness gates) and the shell
+(component tests, one Playwright pass). Nothing exercises the seam where a game's module
+graph meets the browser — which is exactly where both leaks lived.
+
+**Fix:** add a CI step that, for every entry in `games/registry.ts`, builds and requests
+`/play/<id>` and asserts a 200 plus a rendered board. The Playwright harness already exists;
+this is a loop over the registry rather than new machinery. Cheap, and it is the only thing
+that would have caught a 500 on a shipped route.
+
+**Related, found in the same pass:** the `pnpm harness certify` CLI that `crackstep.md`
+describes **does not exist**. The team built the real thing from lower-level library pieces.
+Another instance of a plan describing a tool as though it were shipped.
+
+---
+
+## C18 — Crackstep's share invariant was false on 40% of days
+
+*Found by sweeping 150+ real generated boards rather than trusting the plan.*
+
+The plan claimed `🟨 count == moves − par`. **False on 36 of 90 certified days (40%)**,
+because `GamePresentation.shareArtifact(record, finalView)` receives no `par` parameter — and
+because some boards' *optimal* solve itself requires a stone revisit, so the identity does
+not hold even in principle.
+
+Replaced with the true, locally provable invariant: `🟨 == moves − (walkable − 1)`.
+
+This is C12's lesson recurring in a third form. Fadeout's timeline saturated; Fadeout's
+`longestLife` was near-constant; here a stated identity is simply false at scale. **Every
+share-artifact claim in a plan is a hypothesis until swept against real generated data.**
