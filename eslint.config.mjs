@@ -27,6 +27,36 @@ const purityRules = {
   ],
 };
 
+// UI direction §5.3, R1: Motion One's `animate()` does not itself respect
+// `prefers-reduced-motion` — `animateSafe()` (packages/shell/src/motion.ts) is the ONE
+// sanctioned entry point every call site, board path OR chrome, shell OR games, must use
+// instead; it applies the final keyframe synchronously under reduce (or a caller-supplied
+// `reducedMotion` flag) and otherwise delegates to the real `animate`. A bare
+// `import { animate } from "motion"` (or "motion/mini") anywhere else evades that gate exactly
+// the way a raw `framer-motion` import evades the board-path ban below — same defect class,
+// same fix shape. `importNames`-scoped (not a whole-module ban) so Motion One's other exports
+// (`stagger`, `inView`, ...) stay unrestricted — only the ungated primitive is banned.
+// Referenced from BOTH boundary objects below (each already covers the file sets that need it:
+// boardPathAnimationBoundary → every board-path file + all of games/**; registrySplittingBoundary
+// → app/** + packages/shell/src/**), with a single narrow exception carved out afterward for
+// packages/shell/src/motion.ts itself (the gate module is the one place allowed to import it).
+const rawAnimateImportBanPaths = [
+  {
+    name: "motion",
+    importNames: ["animate"],
+    message:
+      "Motion One's animate() does not respect prefers-reduced-motion on its own (UI direction §5.3 R1). Import " +
+      "animateSafe from packages/shell/src/motion.ts instead — it gates on reduced motion for you.",
+  },
+  {
+    name: "motion/mini",
+    importNames: ["animate"],
+    message:
+      "Motion One's animate() does not respect prefers-reduced-motion on its own (UI direction §5.3 R1). Import " +
+      "animateSafe from packages/shell/src/motion.ts instead — it gates on reduced motion for you.",
+  },
+];
+
 // Board-path heavy-animation boundary (orchestrator directive 2026-08-03, architecture-lens
 // §5): "Motion One or plain CSS over Framer Motion for the hot path... avoid inside per-cell
 // rendering." ReactBits-sourced polish is welcome in CHROME (ResultModal, GameCard, the library
@@ -45,7 +75,9 @@ const purityRules = {
 // matches an EXACT specifier, so it can never express "framer-motion and any of its subpaths"
 // — `framer-motion/dom` slipped the old `paths`-based ban entirely. `patterns` (gitignore-style,
 // via the `ignore` package) handles both the exact and the wildcard cases uniformly, with a
-// per-group custom message preserved for each library.
+// per-group custom message preserved for each library. `paths` (below, `importNames`-scoped)
+// is the ONE case in this file where an exact-specifier match is actually what's wanted (the
+// raw-animate-import ban) rather than a limitation to work around.
 const boardPathAnimationBoundary = {
   "no-restricted-imports": [
     "error",
@@ -71,6 +103,7 @@ const boardPathAnimationBoundary = {
             "Motion One's sanctioned lightweight vanilla-JS API — is NOT banned; use that or plain CSS here instead.",
         },
       ],
+      paths: rawAnimateImportBanPaths,
     },
   ],
 };
@@ -144,6 +177,7 @@ const registrySplittingBoundary = {
             "A game's package root (typically re-exporting engine + presentation together) must never be statically imported outside games/registry.ts — go through the registry's loadEngine()/loadPresentation() instead (plan §3.2).",
         },
       ],
+      paths: rawAnimateImportBanPaths,
     },
   ],
 };
@@ -216,7 +250,11 @@ export default tseslint.config(
   {
     // The merged block (stage-6 review C1, part 1): declared after registrySplittingBoundary
     // above so it is the LAST block matching these six files, making its `no-restricted-imports`
-    // value — the union of both boundaries' patterns — the one that actually applies to them.
+    // value — the union of both boundaries' patterns, PLUS the raw-animate-import ban (R1) —
+    // the one that actually applies to them. `paths` needs the same manual union as `patterns`
+    // here: both boundary objects carry the identical `rawAnimateImportBanPaths` array, so
+    // either one alone would do, but spreading both keeps this block's shape symmetric with the
+    // `patterns` union right above it (and stays correct if the two ever diverge later).
     files: BOARD_PATH_FILES,
     rules: {
       ...dynamicImportBoardPathBan,
@@ -227,7 +265,24 @@ export default tseslint.config(
             ...boardPathAnimationBoundary["no-restricted-imports"][1].patterns,
             ...registrySplittingBoundary["no-restricted-imports"][1].patterns,
           ],
+          paths: rawAnimateImportBanPaths,
         },
+      ],
+    },
+  },
+  {
+    // The ONE exception to the raw-animate-import ban (R1): the gate module itself.
+    // packages/shell/src/motion.ts lives under packages/shell/src/**, so without this override
+    // it would inherit registrySplittingBoundary's now-merged-in animate ban from the block
+    // above and be unable to import the very primitive it exists to wrap. Declared after that
+    // block so it wins for this one file; keeps registrySplittingBoundary's own ban (this file
+    // is not itself a game/registry-splitting concern, but there's no reason to weaken that
+    // boundary here) while dropping only the animate-import restriction.
+    files: ["packages/shell/src/motion.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        { patterns: registrySplittingBoundary["no-restricted-imports"][1].patterns },
       ],
     },
   },

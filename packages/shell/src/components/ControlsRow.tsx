@@ -32,8 +32,14 @@ export interface ControlsRowProps {
   extras?: ReactNode;
 }
 
+// UI direction §3 "Everything else" + the wireframe's Controls row: h-12 print-shop buttons
+// (2px ink border, rounded-xl, print shadow 2px 2px 0) that physically press INTO the paper on
+// activation (Move 2 — translate(2px,2px) + shadow collapses to 1px 1px 0; this is a
+// non-animated state change per §1.2, exempt from motion gating, so it needs no animateSafe
+// call and stays correct even under reduced motion/no-JS). `flex-1` on the three fixed-anatomy
+// buttons gives the "equal flex" sizing the wireframe calls for.
 const buttonClass =
-  "rounded px-3 py-2 text-sm text-ink underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-ink-muted disabled:no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring";
+  "flex h-12 flex-1 items-center justify-center gap-1 rounded-xl border-ui border-ink bg-paper-lift px-3 text-sm font-medium text-ink shadow-print-2 active:translate-x-0.5 active:translate-y-0.5 active:shadow-print-1 disabled:cursor-not-allowed disabled:border-ink-muted disabled:text-ink-muted disabled:shadow-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring";
 
 export function ControlsRow({
   canUndo,

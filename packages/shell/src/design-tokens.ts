@@ -19,6 +19,21 @@ export interface ThemeTokens {
   accentP1: string;
   accentP2: string;
   focusRing: string;
+  /** UI direction §1.3 (material foundation, Move 5) — raised paper-tier surface: cards, board
+   *  frame, modal slip, rule card. Decorative background only; text on it is always `ink`. */
+  paperLift: string;
+  /** Recessed paper-tier surface: skeleton base, disabled fills, footer band. Decorative only. */
+  paperShade: string;
+  /** The one new chrome-only accent hue permitted by §0's corrected rule ("an accent hue always
+   *  means a player") — `marker` is explicitly NOT a player accent, it is a highlighter-tint
+   *  decorative background (daily hero band, aha-callout, "Copied" pill). Text on it is `ink`. */
+  marker: string;
+  /** Offset-print shadow color (Move 2). Light theme is an opaque near-ink hex; dark theme is a
+   *  translucent pale rgba() (a misregistration reads correctly only at reduced alpha in the
+   *  dark theme — see the token's own comment in tokens.css) — NOT a color pair this module's
+   *  contrast math runs against (it never sits behind text), so it is intentionally excluded
+   *  from every contrastRatio() assertion below. */
+  shadowPrint: string;
 }
 
 export const LIGHT: ThemeTokens = {
@@ -28,6 +43,10 @@ export const LIGHT: ThemeTokens = {
   accentP1: "#0b3d91",
   accentP2: "#7a3200",
   focusRing: "#262019",
+  paperLift: "#fffdf6",
+  paperShade: "#f1ead9",
+  marker: "#f6e7b0",
+  shadowPrint: "#262019",
 };
 
 export const DARK: ThemeTokens = {
@@ -37,7 +56,48 @@ export const DARK: ThemeTokens = {
   accentP1: "#8fc1ff",
   accentP2: "#ffb066",
   focusRing: "#f2ecdf",
+  paperLift: "#201b13",
+  paperShade: "#100d09",
+  marker: "#3a3120",
+  shadowPrint: "rgba(242, 236, 223, 0.25)",
 };
+
+/** Print-shop stroke scale (UI direction §1.3, Move 4) — replaces the old uniform 1px border.
+ *  The visual hierarchy of every screen is carried by stroke weight before anything else:
+ *  hairline (dividers/chips/cell interior lines) < ui (interactive borders) < brush (board
+ *  frame, primary button, result stamp, rule-card spine). Theme-invariant (same in both themes). */
+export const STROKES = {
+  hairline: "1px",
+  ui: "2px",
+  brush: "3px",
+} as const;
+
+/** Chrome-tier motion timing (UI direction §1.3) — a formal EXTENSION of the board-only
+ *  DURATIONS/EASE set above, never a bootleg value invented at a call site. `sheet` is the
+ *  result-slip/bottom-sheet ENTER duration (exit reuses the board's own `DURATIONS.moved`);
+ *  `stagger` is a per-item DELAY (not a duration) for staggered chrome entrances. */
+export const CHROME_DURATIONS = {
+  sheet: 250,
+  stagger: 30,
+} as const;
+
+/** Overshoot-settle easing for chrome "pop" moments (result stamp, sheet enter) — distinct from
+ *  the board's own linear-ish `EASE` (ease-out), which never overshoots. */
+export const EASE_POP = "cubic-bezier(0.34, 1.56, 0.64, 1)";
+
+/** Paper-grain overlay opacity (UI direction §1.3, Move 3) — a tiled `feTurbulence` texture
+ *  applied to `body` and `--paper-lift` surfaces only, never inside board cells. Baked directly
+ *  into the generated SVG data-URI's alpha channel (see tokens.css's `--grain` custom property)
+ *  rather than a plain CSS `opacity` on the element, so it never dims the surface's own text —
+ *  this constant documents the ceiling that bake targets and is what the "ink over worst-case
+ *  grain pixel" contrast test below asserts against. Dark theme runs slightly higher (0.07 vs
+ *  0.05) because the darker underlying paper otherwise reads as flatter/less textured at the
+ *  same nominal alpha.
+ */
+export const GRAIN_OPACITY = {
+  light: 0.05,
+  dark: 0.07,
+} as const;
 
 /**
  * Discrete opacity steps for `Cell`'s `ageStep` (ux-lens §2 — never a continuous fade).

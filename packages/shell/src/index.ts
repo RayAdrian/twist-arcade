@@ -62,6 +62,10 @@ export {
   type TurnPhraseInput,
 } from "./announcer";
 export { mapEffects, finalPulseAnimation, type AnimationPrefs, type CellAnimation, type EffectAnimationKind } from "./effects-map";
+// UI direction §5.3, R1 — the ONE gate every Motion One call site (shell OR games) must use;
+// eslint.config.mjs's raw-animate-import ban makes this the only legal way to reach Motion
+// One's `animate()` anywhere outside this module itself.
+export { animateSafe, prefersReducedMotion, type AnimateSafeHandle, type AnimateSafeOptions, type SafeKeyframes } from "./motion";
 export {
   composeShareArtifact,
   composeShareText,

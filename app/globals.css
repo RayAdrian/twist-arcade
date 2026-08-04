@@ -6,7 +6,67 @@
 
 @layer base {
   body {
-    @apply bg-paper text-ink;
+    @apply bg-paper text-ink font-sans;
+  }
+}
+
+@layer utilities {
+  /* UI direction §1.1 Move 1 — Fraunces italic 500 is a SEPARATE @font-face from the roman
+   * variable instance (see app/layout.tsx's comment on why); this utility is the only
+   * sanctioned way to reach it; a bare `italic` class on `font-display` text would synthesize
+   * a fake oblique instead of loading the real face. Used for texture lines / card rule
+   * sentences (plan §1.4's `texture` row: Fraunces italic 500, ink-muted). */
+  .font-texture {
+    font-family: var(--font-display-italic), Georgia, serif;
+    font-style: italic;
+  }
+
+  /* Move 3 — paper becomes material. A tiled SVG feTurbulence grain, baked as a data-URI so its
+   * own alpha channel carries GRAIN_OPACITY (never a plain CSS `opacity` on the element, which
+   * would also dim that surface's own text — see design-tokens.ts's GRAIN_OPACITY comment).
+   * Applied to `body` (the `paper` background) and to `--paper-lift` surfaces only, NEVER
+   * inside board cells (plan §1.2 Move 3) — this class is opt-in, not global, for exactly that
+   * reason. Decorative: `background-repeat: repeat` tiles a small (96x96) noise swatch rather
+   * than shipping one huge image. Dark theme's swatch is baked at the higher GRAIN_OPACITY.dark
+   * ceiling and inverted-luminance noise (a `feColorMatrix` invert), matching design-tokens.ts's
+   * doc comment ("dark uses inverted-luminance noise... otherwise reads as flatter/less
+   * textured at the same nominal alpha").
+   * test/tokens.contrast.test.ts's "ink vs worst-case grain pixel" assertions are what actually
+   * enforce the contrast-invisibility claim; this rule only supplies the pixels being tested. */
+  .bg-grain {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch' result='t'/%3E%3CfeColorMatrix in='t' type='matrix' values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0.3 0.59 0.11 0 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+  }
+
+  :root.dark .bg-grain {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch' result='t'/%3E%3CfeColorMatrix in='t' type='matrix' values='-1 0 0 0 1  0 -1 0 0 1  0 0 -1 0 1  0.3 0.59 0.11 0 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.07'/%3E%3C/svg%3E");
+  }
+
+  /* Move 6 — hand moments, rationed. One wobble edge for the (max 3-per-screen) hand-drawn
+   * moments: result stamp, aha-callout, daily hero board frame. Everything else stays a normal
+   * `rounded-xl`. */
+  .edge-hand {
+    border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
+  }
+}
+
+/* UI direction §5.3, R3 — Motion One does NOT respect `prefers-reduced-motion` on its own (its
+ * `animate()` always runs); `animateSafe()` (packages/shell/src/motion.ts) is the gate for every
+ * Motion One call site, but plain-CSS animations (Tailwind's `animate-pulse` skeletons, hover
+ * transitions, etc.) need their own backstop. This blanket is that backstop, applied globally
+ * exactly once. It is ALSO the fix for the standing defect this build was told to find by
+ * reading rather than by any test: app/play/[gameId]/loading.tsx's `animate-pulse` skeleton had
+ * no reduced-motion gate at all before this rule existed — this collapses its animation to a
+ * single near-instant frame instead of looping forever, without touching that file directly.
+ * See test/reduced-motion-blanket.test.ts for the regression guard (a static parse of this
+ * file, since jsdom doesn't evaluate real `@media` conditions). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

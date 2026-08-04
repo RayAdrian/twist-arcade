@@ -128,9 +128,48 @@ describe("eslint.config.mjs — board-path import boundaries (C1)", () => {
     expect(ruleIds(result)).toContain("no-restricted-syntax");
   });
 
-  it("does NOT ban bare 'motion' or motion/mini on a board-path file — motion/mini is the sanctioned API", async () => {
+  // DELIBERATELY CHANGED (UI direction §5.3 R1, material foundation pass): before animateSafe()
+  // existed, a bare `motion`/`motion/mini` import was unrestricted anywhere — this test used to
+  // assert exactly that for `animate` specifically. R1 now requires funneling EVERY Motion One
+  // call site (board path included) through animateSafe() (packages/shell/src/motion.ts), since
+  // Motion One's own animate() does not respect prefers-reduced-motion by itself. The PRIMITIVE
+  // is what's newly banned, not the whole library — `stagger`/`inView`/etc. remain unrestricted
+  // everywhere (see the "still allows other motion imports" test below).
+  it("bans the raw 'animate' import from motion/mini on a board-path file (Cell.tsx) — must route through animateSafe (R1)", async () => {
     const result = await lint(
       "packages/shell/src/components/Cell.tsx",
+      'import { animate } from "motion/mini";\nexport function probe() { return animate; }\n'
+    );
+    expect(ruleIds(result)).toContain("no-restricted-imports");
+  });
+
+  it("bans the raw 'animate' import from bare 'motion' in CHROME (ResultModal.tsx) too — R1 is library-wide, not board-path-only", async () => {
+    const result = await lint(
+      "packages/shell/src/components/ResultModal.tsx",
+      'import { animate } from "motion";\nexport function probe() { return animate; }\n'
+    );
+    expect(ruleIds(result)).toContain("no-restricted-imports");
+  });
+
+  it("bans the raw 'animate' import from motion/mini in a game file (games/**, outside ui/**)", async () => {
+    const result = await lint(
+      "games/fadeout/__lint_probe__.ts",
+      'import { animate } from "motion/mini";\nexport function probe() { return animate; }\n'
+    );
+    expect(ruleIds(result)).toContain("no-restricted-imports");
+  });
+
+  it("still allows other Motion One named imports (stagger, inView) everywhere — R1 only bans the ungated 'animate' primitive", async () => {
+    const result = await lint(
+      "packages/shell/src/components/ResultModal.tsx",
+      'import { stagger, inView } from "motion/mini";\nexport function probe() { return [stagger, inView]; }\n'
+    );
+    expect(ruleIds(result)).not.toContain("no-restricted-imports");
+  });
+
+  it("allows the raw 'animate' import ONLY inside the gate module itself (packages/shell/src/motion.ts)", async () => {
+    const result = await lint(
+      "packages/shell/src/motion.ts",
       'import { animate } from "motion/mini";\nexport function probe() { return animate; }\n'
     );
     expect(ruleIds(result)).not.toContain("no-restricted-imports");
