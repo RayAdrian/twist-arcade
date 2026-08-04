@@ -42,7 +42,13 @@ export interface GameShellProps {
   daily?: DailyOptions;
   humanSeat?: PlayerId;
   tierId?: TierId;
-  /** Default: stubBotDriver(engine) once the engine resolves — S2 swaps in workerBotDriver. */
+  /** Default: `stubBotDriver(engine)` once the engine resolves — an SSR/no-driver-available
+   *  fallback only. S2's real bot (`workerBotDriver`) is supplied here explicitly by the app
+   *  route (`app/play/[gameId]/PlayClient.tsx`, via `app/bot-driver-singleton.ts`): GameShell
+   *  itself cannot construct the concrete `new Worker(...)` (it would need to statically import
+   *  `games/registry.ts`, which lives outside this package's tsconfig project — see
+   *  `bot-driver.ts`'s `workerBotDriver` doc for the full reconciliation), so this prop is how
+   *  the real driver reaches `useGame` without GameShell ever knowing a Worker exists. */
   botDriver?: BotDriver;
   /** Canonical share path; default `/play/{gameId}`. */
   shareUrl?: string;

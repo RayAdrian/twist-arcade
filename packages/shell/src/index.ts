@@ -14,9 +14,9 @@ export type {
   UseGameResult,
 } from "./useGame";
 
-// The bot seam (plan §5.4).
-export { BotCancelledError, ScriptExhaustedError, scriptedBotDriver, stubBotDriver } from "./bot-driver";
-export type { BotDriver, BotMoveRequest, BotMoveResponse, SearchStats, TierId } from "./bot-driver";
+// The bot seam (plan §5.4) + the S2 real worker driver.
+export { BotCancelledError, ScriptExhaustedError, WorkerBotError, scriptedBotDriver, stubBotDriver, workerBotDriver } from "./bot-driver";
+export type { BotDriver, BotMoveRequest, BotMoveResponse, SearchStats, TierId, WorkerLike } from "./bot-driver";
 
 // Components (plan §4).
 export { AriaAnnouncer } from "./components/AriaAnnouncer";

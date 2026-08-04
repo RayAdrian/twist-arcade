@@ -142,6 +142,9 @@ distribution.
   Supabase sign-in, minted on first server-touching action — not on page load. Tables:
   `matches` / `match_players` / `moves`, RLS denying client reads of `state` and `seed`.
   One shared URL becomes a standing series with seats swapped each rematch.
+- **Migrate the daily certificate buffer** from committed JSON (`data/certificates/`) to
+  Postgres, now that Supabase is load-bearing. The schema is designed to survive the move
+  unchanged. *(Orchestrator-confirmed backlog item, 2026-08-02.)*
 - **Second classic family** filled out so the shelf IA has two real shelves.
 - **Search** in the library (~15 games), mechanic-tag browse facets.
 - **SEO pages** per coined game name and per "classic + variant" query. Search is *the*

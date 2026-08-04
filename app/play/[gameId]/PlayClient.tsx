@@ -26,6 +26,7 @@ import { GameShell, type Mode } from "@twist-arcade/shell";
 // Relative, not the "@/*" alias — see app/page.tsx's comment: next build doesn't resolve it
 // from this monorepo's root tsconfig.json (the alias lives in tsconfig.app.json instead).
 import { registry } from "../../../games/registry";
+import { getBotDriver } from "../../bot-driver-singleton";
 
 export interface PlayClientProps {
   gameId: string;
@@ -43,6 +44,19 @@ export default function PlayClient({ gameId }: PlayClientProps) {
   if (!entry) return null;
 
   const manifests = Object.values(registry).map((e) => e.manifest);
+  // S2: the real bot (plan §5.4/§10) — a module-scope singleton, available synchronously on
+  // this very first render (see bot-driver-singleton.ts's own doc for why that matters).
+  // `undefined` only during SSR/no-Worker environments, where GameShell's own `stubBotDriver`
+  // fallback covers the (never-interactive) render.
+  const botDriver = getBotDriver();
 
-  return <GameShell gameId={gameId} registryEntry={entry} manifests={manifests} mode={resolveMode(entry)} />;
+  return (
+    <GameShell
+      gameId={gameId}
+      registryEntry={entry}
+      manifests={manifests}
+      mode={resolveMode(entry)}
+      {...(botDriver ? { botDriver } : {})}
+    />
+  );
 }

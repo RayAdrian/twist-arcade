@@ -15,6 +15,7 @@
     "harness:ci-gates": "tsx scripts/ci-gates.ts",
     "harness:verify-certificates": "tsx scripts/verify-certificates.ts",
     "harness:calibration-drift": "tsx scripts/calibration-drift.ts",
+    "verify:fadeout-tier-strength": "tsx scripts/verify-fadeout-tier-strength.ts",
     "size-limit": "size-limit",
     "dev": "next dev",
     "build": "next build",
@@ -22,6 +23,7 @@
     "new-game": "tsx scripts/new-game.ts"
   },
   "dependencies": {
+    "@twist-arcade/bots": "workspace:*",
     "@twist-arcade/engine": "workspace:*",
     "@twist-arcade/game-spec": "workspace:*",
     "@twist-arcade/shell": "workspace:*",
@@ -34,7 +36,6 @@
     "@eslint/js": "^9.13.0",
     "@playwright/test": "^1.62.1",
     "@size-limit/file": "^13.0.3",
-    "@twist-arcade/bots": "workspace:*",
     "@twist-arcade/harness": "workspace:*",
     "@types/node": "^20.14.0",
     "@types/react": "^19.0.0",

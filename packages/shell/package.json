@@ -19,6 +19,7 @@
     "@radix-ui/react-popover": "^1.1.15",
     "@twist-arcade/engine": "workspace:*",
     "@twist-arcade/game-spec": "workspace:*",
+    "@twist-arcade/bots": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "motion": "^12.43.0",
