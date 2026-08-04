@@ -1,0 +1,41 @@
+{
+  "gameId": "crackstep",
+  "gameVersion": 1,
+  "engineVersion": "0.1.0",
+  "day": "2026-09-06",
+  "seed": "2e45a48def9bf587bdd0b2c5d5a5838f7387e96c3eaf45625d92ceba5e7ffe93:10",
+  "nonce": 10,
+  "moveLog": [
+    12,
+    17,
+    22,
+    21,
+    20,
+    15,
+    16,
+    11,
+    6,
+    5,
+    0,
+    1,
+    2,
+    3,
+    8,
+    9,
+    14,
+    13,
+    18,
+    23,
+    24
+  ],
+  "par": 21,
+  "parKind": "optimal",
+  "solverNodes": 142,
+  "features": {
+    "forcedMoveFraction": 0.3333333333333333,
+    "branchingMean": 1.8571428571428572,
+    "deadEndDensity": 1,
+    "greedyGap": null,
+    "zScore": 0
+  }
+}

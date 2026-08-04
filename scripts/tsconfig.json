@@ -8,6 +8,7 @@
   "references": [
     { "path": "../packages/engine" },
     { "path": "../packages/game-spec" },
-    { "path": "../packages/harness" }
+    { "path": "../packages/harness" },
+    { "path": "../games/crackstep" }
   ]
 }

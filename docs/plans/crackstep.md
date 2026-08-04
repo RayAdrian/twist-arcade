@@ -804,3 +804,64 @@ dedup works directly — stays prominent as the stated contrast with Fadeout's s
 It is the thing that tells a future author which of the two patterns their game falls into.
 
 **Still open (unchanged):** Q4 — casual/undo mode scope at launch (shell team's queue).
+
+---
+
+## 14. Sonnet implementer's findings — addendum, 2026-08-04
+
+Recorded while finishing the build (certificate pipeline, board UI, `lost` terminal,
+registration, solo CI gates). Binding on this doc; where they conflict with §9 above, this
+addendum wins.
+
+**#1 — §9's "detours are exactly the moves-over-par" claim is FALSE in general, discovered by
+sweeping the share encoding across real generated boards (the C12/Fadeout-timeline-saturation
+precedent, applied here before shipping the encoding rather than after).** `crackstepShareSymbols`
+(`games/crackstep/index.ts`) marks a move 🟨 whenever it does not visit a brand-new tile (a stone
+re-crossing) — an honest, always-true fact about the replayed run on its own. §9 additionally
+claimed this count always equals `moves − par`, "so the row visually reconciles with the header
+arithmetic." It does not, for a structural reason: `GamePresentation.shareArtifact(record,
+finalView)` (game-spec's frozen signature) is never given `par` — the shell composes the
+par-relative header separately, from the day's certificate, entirely outside this function. §9's
+claim silently assumed every board's OPTIMAL solution is a true Hamiltonian sweep with zero stone
+re-crossings (`par == walkable tile count − 1` always). Measured against the real, committed
+90-day certificate buffer: **36 of 90 certified days (40%) have `par > walkable − 1`** — their
+OPTIMAL solution itself requires 1–3 stone re-crossings. On those boards, a run of EXACTLY par
+length (a "perfect crossing 🎯" by the header's own arithmetic) still shows one or more 🟨 in the
+timeline. `games/crackstep/index.test.ts` pins this directly (a fixture search for a real board
+with `par > walkable − 1`, replayed at exactly par, asserting `🟨 > 0`) so it stays a documented,
+intentional fact rather than a silently-relied-upon assumption.
+
+**Resolution applied:** the TRUE, always-verifiable invariant is `🟨 count == moves − (walkable
+tile count − 1)` — no `par` required, provable from the replay and the board alone, and confirmed
+to vary across seeds (not collapse to a constant — the actual C12 check) in a 150-seed sweep.
+`crackstepShareSymbols` is now exported and documents this precisely; the solved-run stat line's
+wording was softened from "N detour(s)" to "N stone re-crossing(s)" so it no longer implies a
+mistake when the crossing may have been structurally unavoidable. The header (shell-composed,
+`moves` vs. the certificate's `par`) remains the authoritative "how good was this run" signal;
+the body's glyphs are a faithful per-move trace, not a second, independently-reconciling
+scorecard.
+
+**Left to the orchestrator, not decided unilaterally:** whether to additionally constrain the
+generator/certify pipeline to reject any board whose optimal solve requires a stone re-crossing
+(guaranteeing "perfect ⇒ all-green" the way §9's original examples show), at the cost of
+discarding ~40% of otherwise-valid, already-in-band boards on top of the generator's existing
+69.7% aggregate rejection rate (measured over the same 90-day buffer; a single day's own
+`generatorRejectionRate` gate reads as high as 66.7%, correctly WARN — not FAIL, ceiling is 90%).
+Both numbers are real, not estimates, and both sit in the same "measured trigger" territory §3.1's
+own pre-approved constructive-generation fallback (backbite Hamiltonian-path seeding) was written
+for — worth a combined design-gate review rather than two separate threshold nudges.
+
+**#2 — the daily-puzzle certificate pipeline (§3.3/§3.4) needed a repo-level CLI this plan
+described but did not fully specify.** `pnpm harness certify crackstep --days 90` (as written)
+does not exist — `packages/harness/src/cli.ts`'s own module doc scopes `certify`/`calibrate` out
+of its command surface entirely ("real-game resolution via games/registry.ts is out of this
+milestone's CLI scope"). The actual, now-real path: `games/crackstep/solver/certify-day.ts`
+(pure composition of `certifyDay` + `@twist-arcade/daily`'s `dailySeed` formula) backing
+`games/crackstep/solver/run-certify.mts` (the CLI `pnpm --filter @twist-arcade/crackstep run
+certify -- --days 90`), writing to the same `data/certificates/crackstep/` the platform's
+`scripts/verify-certificates.ts` / `scripts/ci-gates.ts` / `scripts/calibration-drift.ts` already
+read from (those three needed no changes at all — they were already registry-driven and
+format-sectioned correctly per §13 #4). The 90-day buffer is real and committed; 10,000-seed
+calibration is real and committed (`data/calibration/crackstep.json`). This required adding
+`@twist-arcade/daily` as a real dependency of `games/crackstep` (for `dailySeed` only) —
+previously undeclared.

@@ -9,7 +9,8 @@
     "harness": "./src/cli.ts"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./solver": "./src/solver/generic-solo.ts"
   },
   "scripts": {
     "typecheck": "tsc -b --pretty false",
