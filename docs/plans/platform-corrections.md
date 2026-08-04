@@ -520,3 +520,30 @@ game over 15 plies. Nothing calls it with a game body yet, so it is not an at-me
 but the committed daily days on `main` *are* Fadeout days. Decide explicitly whether Fadeout
 chunks its own timeline or the daily adapter does, and record it, rather than discovering it
 as a thrown `ShareGrammarError` inside a live daily.
+
+---
+
+## C13 — There is no way to run the CI gates for one registered game
+
+**Milestone: M4 follow-up. Severity: friction that pushes teams into ad-hoc scripts.**
+
+*Found by the Wrap team, 2026-08-04, while trying to run its own ship/no-ship gates.*
+
+Two entry points exist and neither does the obvious thing:
+
+- **`harness suite`** hard-refuses anything outside the built-in testkit fixtures, so it
+  cannot run against a real registered game at all.
+- **`scripts/ci-gates.ts`** iterates the *entire* registry, so checking one game re-runs
+  every other game's gates too — at 10,000 rollouts per move for the ruthless tier, that is
+  minutes of wasted compute per invocation and it grows with every game added.
+
+The Wrap team's workaround was a temporary hand-written script calling
+`runTwoPlayerCiGate` directly for one game. That works, but every future game team will
+independently rediscover the need and write their own — which is precisely how a codebase
+accumulates six subtly different versions of the same measurement, and how a team ends up
+tuning a gate locally because running the real one was inconvenient.
+
+**Fix:** teach `scripts/ci-gates.ts` a `--game <id>` filter (and, while there, let
+`harness suite` resolve registered games rather than refusing them). Small change; it
+removes the incentive to improvise around the gates, which are the one thing that decides
+whether a game ships.
