@@ -485,7 +485,7 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
     // current firstOccurrence forward unchanged — only a byHuman step re-evaluates (dismissing
     // whatever was showing and possibly firing a new one, all in one place, exactly like §5.2.8
     // describes) — the human seat is the only audience a callout is ever anchored for.
-    const ev: GameEvent<V> = { kind: "moved", player: actingPlayer, move: move as Json, effects, view: newView };
+    const ev: GameEvent<V> = { kind: "moved", player: actingPlayer, move: move as Json, effects };
     let firstOccurrence: Internal<S>["firstOccurrence"] = byHuman ? null : cur.firstOccurrence;
     if (byHuman) {
       for (const entry of presentation.firstOccurrence ?? []) {
