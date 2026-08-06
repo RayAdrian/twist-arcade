@@ -21,7 +21,15 @@ import {
 import { certifyDay, writeCertificate, dfsSolver } from "@twist-arcade/harness";
 import type { Json } from "@twist-arcade/engine";
 import type { SafeMoveFn } from "@twist-arcade/harness";
-import { CI_GAMES, CI_SEED_COUNT, dayFor, runAllGates, SafeMoveNotExportedError, todayUtc } from "../ci-gates";
+import {
+  CI_GAMES,
+  CI_SEED_COUNT,
+  dayFor,
+  runAllGates,
+  SafeMoveNotExportedError,
+  todayUtc,
+  UnknownGameIdError,
+} from "../ci-gates";
 
 describe("todayUtc / dayFor", () => {
   it("todayUtc returns a YYYY-MM-DD string", () => {
@@ -229,5 +237,99 @@ describe("CI budget constants", () => {
   it("CI_GAMES and CI_SEED_COUNT are explicitly >= 100 (G-14)", () => {
     expect(CI_GAMES).toBeGreaterThanOrEqual(100);
     expect(CI_SEED_COUNT).toBeGreaterThanOrEqual(100);
+  });
+});
+
+describe("runAllGates — C13 --game filter", () => {
+  let certBaseDir: string;
+
+  beforeEach(async () => {
+    certBaseDir = await mkdtemp(path.join(tmpdir(), "scripts-ci-gates-certs-game-filter-"));
+  });
+
+  afterEach(async () => {
+    await rm(certBaseDir, { recursive: true, force: true });
+  });
+
+  function buildRegistry(): Registry {
+    return {
+      "classic-ttt-fixture": {
+        manifest: twoPlayerManifest(),
+        loadEngine: async () => classicTicTacToe,
+        loadPresentation: async () => {
+          throw new Error("not needed by this test");
+        },
+      },
+      "bank-run-fixture": {
+        manifest: chaseManifest(),
+        loadEngine: async () => bankRun,
+        loadPresentation: async () => {
+          throw new Error("not needed by this test");
+        },
+      },
+    };
+  }
+
+  const alwaysBank = (_view: BankRunState): BankRunMove => ({ kind: "bank" });
+
+  it("--game <id> runs ONLY that game's gate, never the rest of the registry (C13's whole point)", async () => {
+    const registry = buildRegistry();
+    const reports = await runAllGates(
+      registry,
+      { suite: "ci", game: "bank-run-fixture" },
+      {
+        resolveSafeMove: async () => alwaysBank as unknown as SafeMoveFn<Json, unknown>,
+        certBaseDir,
+        today: "2026-09-14",
+        dayFor,
+      }
+    );
+    expect(reports).toHaveLength(1);
+    expect(reports[0]!.gameId).toBe("bank-run-fixture");
+  });
+
+  it("throws UnknownGameIdError for a --game id not present in the registry, rather than silently running nothing", async () => {
+    // Deliberately a registry with ONLY the two-player fixture (no solo-chase entry, so
+    // resolveSafeMove is never a plausible source of a throw) — the ONLY way this rejects is
+    // the --game filter itself refusing an id absent from the registry. Without that check,
+    // an unrecognized --game would just silently fall through to running the whole registry
+    // (here: the one two-player game) and NOT throw at all, which is exactly the silent-wrong-
+    // answer failure mode this test guards against.
+    const registry: Registry = {
+      "classic-ttt-fixture": {
+        manifest: twoPlayerManifest(),
+        loadEngine: async () => classicTicTacToe,
+        loadPresentation: async () => {
+          throw new Error("not needed by this test");
+        },
+      },
+    };
+    await expect(
+      runAllGates(
+        registry,
+        { suite: "ci", game: "not-a-real-game" },
+        {
+          resolveSafeMove: async () => undefined,
+          certBaseDir,
+          today: "2026-09-14",
+          dayFor,
+        }
+      )
+    ).rejects.toThrow(UnknownGameIdError);
+  });
+
+  it("omitting --game keeps the existing full-registry behaviour (backward compatible)", async () => {
+    const registry = buildRegistry();
+    const reports = await runAllGates(
+      registry,
+      { suite: "ci" },
+      {
+        resolveSafeMove: async () => alwaysBank as unknown as SafeMoveFn<Json, unknown>,
+        certBaseDir,
+        today: "2026-09-14",
+        dayFor,
+      }
+    );
+    expect(reports).toHaveLength(2);
   });
 });

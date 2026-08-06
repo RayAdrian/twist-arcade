@@ -181,6 +181,28 @@ export function evaluateCiGates(
   return results;
 }
 
+/** Thrown by `runCiSuite` (platform-corrections.md C19/C20) when a scaled-down
+ *  `ciGateBudget.twoPlayerCiRollouts` would make the "ruthless" tier's CI-suite measurement
+ *  budget equal to or lower than the "standard" tier's own (unscaled) budget. Wrap's exact
+ *  finding: at a scaled 1,000, ruthless collided with standard's own 1,000-rollout budget, the
+ *  two tiers became indistinguishable, and `ruthless-vs-standard` read a meaningless 50% that
+ *  looked like a gate failure. A tier gate is meaningless once two tiers share a budget — this
+ *  refuses BEFORE running the matchup, rather than silently reporting that ratio. */
+export class TierBudgetCollapseError extends Error {
+  constructor(gameId: string, effectiveRuthlessN: number, standardN: number) {
+    super(
+      `runCiSuite: game "${gameId}"'s CI-suite ruthless rollout budget (${effectiveRuthlessN}, ` +
+        `possibly scaled via manifest.ciGateBudget.twoPlayerCiRollouts) is not strictly greater ` +
+        `than the "standard" tier's own budget (${standardN}) — ruthless-vs-standard would ` +
+        "measure two agents of the same effective strength (platform-corrections.md C19/C20: " +
+        "Wrap's scaled-down budget collided with standard's own and the resulting 50% win rate " +
+        "was a measurement artifact, not a real result). Raise the scaled budget (or the " +
+        "manifest's ciGateBudget.twoPlayerCiRollouts) so ruthless stays strictly above standard."
+    );
+    this.name = "TierBudgetCollapseError";
+  }
+}
+
 export class SuiteFailedError extends Error {
   constructor(failing: readonly Pick<GateResult, "gate" | "status" | "detail">[]) {
     const names = failing.map((g) => `${g.gate} (${g.detail})`).join(", ");
@@ -255,13 +277,38 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
   const thresholds: HarnessThresholds = { ...DEFAULT_HARNESS_THRESHOLDS, ...manifest.thresholds };
   const exceptions = manifest.exceptions ?? [];
 
-  const ruthlessTier = findTier(manifest, "ruthless");
-  if (!ruthlessTier) {
+  const shippedRuthlessTier = findTier(manifest, "ruthless");
+  if (!shippedRuthlessTier) {
     throw new Error(
       `runCiSuite: manifest "${manifest.id}" has no "ruthless" difficulty tier — the CI gate ` +
         "table's strong-vs-random and strong-self-play rows have no agent to run."
     );
   }
+
+  // C19: at suite "ci" only, measure with `ciGateBudget.twoPlayerCiRollouts` rollouts instead
+  // of the tier's own shipped budget, via an IN-MEMORY clone — the shipped tier object (what a
+  // real player's bot actually uses) is never touched (C20: "the shipped ruthless tier was
+  // never touched"). Nightly always uses the tier's real budget unscaled (the plan's "nightly
+  // keeps the full-budget table"). A `deadlineMs`-budgeted tier is left alone either way — this
+  // override only ever applies to the deterministic `rollouts` budget kind the harness gates
+  // with (platform §5.2).
+  const ciRolloutOverride = manifest.ciGateBudget?.twoPlayerCiRollouts;
+  const ruthlessTier =
+    suite === "ci" && ciRolloutOverride !== undefined && shippedRuthlessTier.budget.kind === "rollouts"
+      ? { ...shippedRuthlessTier, budget: { kind: "rollouts" as const, n: ciRolloutOverride } }
+      : shippedRuthlessTier;
+
+  const standardTier = findTier(manifest, "standard");
+  // C19/C20: a scaled-down ruthless budget must never collapse onto standard's own budget — a
+  // tier gate is meaningless once two tiers share a budget (Wrap's exact finding). Checked
+  // BEFORE running anything, so a collapse is a loud refusal, never a silently-meaningless
+  // ruthless-vs-standard ratio.
+  if (standardTier && ruthlessTier.budget.kind === "rollouts" && standardTier.budget.kind === "rollouts") {
+    if (ruthlessTier.budget.n <= standardTier.budget.n) {
+      throw new TierBudgetCollapseError(manifest.id, ruthlessTier.budget.n, standardTier.budget.n);
+    }
+  }
+
   const ruthless = tierAgent<S, M>("ruthless", ruthlessTier);
   const random = resolveNamedAgent<S, M>("random");
 
@@ -276,7 +323,6 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
     ...(opts.clock ? { clock: opts.clock } : {}),
   });
 
-  const standardTier = findTier(manifest, "standard");
   const ruthlessVsStandard = standardTier
     ? runMatchup(engine, ruthless, tierAgent<S, M>("standard", standardTier), {
         games,

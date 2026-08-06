@@ -20,6 +20,7 @@ import {
   evaluateCiGates,
   runCiSuite,
   SuiteFailedError,
+  TierBudgetCollapseError,
   worstCapHitRate,
   type GateInputs,
 } from "../src/suites";
@@ -263,5 +264,146 @@ describe("runCiSuite() end-to-end wiring (a real matchup, not a hand-built GateI
     const report = runCiSuite(classicTicTacToe, healthyManifest, { games: 30, seed: "suites-test:healthy" });
     const gate = report.gates.find((g) => g.gate === "strong-vs-random")!;
     expect(gate.status).toBe("pass");
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// platform-corrections.md C19 — CI-gate-only rollout budget scaling.
+//
+// The gate table's absolute rollout budget was sized against Fadeout's 3x3 board (fast) and
+// broke down on Wrap's 6x6 (43+ minutes). The proven fix: measure with a SMALLER rollout
+// budget for the "ruthless" tier, at the CI (PR) suite only — never the shipped tier real
+// players face, never nightly's full-budget table. `manifest.ciGateBudget.twoPlayerCiRollouts`
+// is that override; omitted, behavior is 100% unchanged (Fadeout never needs to touch this).
+//
+// The Wrap trap this guards against (C20): at a scaled-down 1000, "ruthless" collapsed onto
+// "standard"'s OWN 1000-rollout budget — the two tiers became indistinguishable and
+// ruthless-vs-standard's 50% was a measurement artifact, not a real result. A tier gate is
+// meaningless once two tiers share a budget, so a scaled budget that collapses them must
+// refuse loudly (TierBudgetCollapseError) rather than silently emit that meaningless ratio.
+// ---------------------------------------------------------------------------------------
+
+describe("runCiSuite() — C19: ciGateBudget.twoPlayerCiRollouts scales ONLY the ci-suite ruthless measurement", () => {
+  // A genuinely strong tier (mcts, 5000 rollouts) so a healthy strong-vs-random pass at the
+  // FULL budget is not in doubt — the only variable under test is whether the CI-suite
+  // override actually gets substituted in place of it. Deliberately NO "standard" tier here —
+  // the tier-collapse guard is its own describe block below; this one isolates the scaling
+  // substitution itself.
+  const manifestNoStandard: GameManifest = {
+    id: "classic-ttt-fixture",
+    title: "Scaled TTT",
+    classic: "Tic-Tac-Toe",
+    ruleSentence: "suites.test.ts C19 fixture.",
+    tags: [],
+    estMinutes: 1,
+    modes: { bot: true, hotseat: false, asyncLink: false },
+    players: { min: 2, max: 2 },
+    difficultyTiers: [
+      { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 5000 }, minReplyMs: 0 },
+    ],
+    // Absurdly low on purpose: at n=1, MCTS with a single rollout per candidate is barely
+    // distinguishable from random — if the ci-suite override is really substituted for the
+    // shipped 5000-rollout ruthless tier, strong-vs-random must fail for real.
+    ciGateBudget: { twoPlayerCiRollouts: 1 },
+  };
+
+  it("suite 'ci' (default) uses the override — a real strong-vs-random regression at the scaled-down budget", () => {
+    const report = runCiSuite(classicTicTacToe, manifestNoStandard, {
+      games: 30,
+      seed: "suites-test:c19:ci-scaled",
+      suite: "ci",
+    });
+    const gate = report.gates.find((g) => g.gate === "strong-vs-random")!;
+    expect(gate.status).toBe("fail");
+  });
+
+  it("suite 'nightly' ignores the override and runs the full shipped budget (the plan's 'nightly keeps the full-budget table')", () => {
+    const report = runCiSuite(classicTicTacToe, manifestNoStandard, {
+      games: 30,
+      seed: "suites-test:c19:nightly-full",
+      suite: "nightly",
+    });
+    const gate = report.gates.find((g) => g.gate === "strong-vs-random")!;
+    expect(gate.status).toBe("pass");
+  });
+
+  it("no ciGateBudget declared at all: behavior is unchanged (a game like Fadeout never needs this)", () => {
+    const { ciGateBudget: _omit, ...rest } = manifestNoStandard;
+    const noOverride: GameManifest = { ...rest };
+    const report = runCiSuite(classicTicTacToe, noOverride, {
+      games: 30,
+      seed: "suites-test:c19:no-override",
+      suite: "ci",
+    });
+    const gate = report.gates.find((g) => g.gate === "strong-vs-random")!;
+    expect(gate.status).toBe("pass"); // full 5000-rollout ruthless tier, unscaled
+  });
+});
+
+describe("runCiSuite() — C19/C20: a scaled budget that collapses ruthless onto standard fails LOUDLY", () => {
+  function manifestWithOverride(standardN: number, ruthlessShippedN: number, ciOverrideN: number): GameManifest {
+    return {
+      id: "classic-ttt-fixture",
+      title: "Collapse TTT",
+      classic: "Tic-Tac-Toe",
+      ruleSentence: "suites.test.ts C19/C20 collapse fixture.",
+      tags: [],
+      estMinutes: 1,
+      modes: { bot: true, hotseat: false, asyncLink: false },
+      players: { min: 2, max: 2 },
+      difficultyTiers: [
+        { id: "standard", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: standardN }, minReplyMs: 0 },
+        { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: ruthlessShippedN }, minReplyMs: 0 },
+      ],
+      ciGateBudget: { twoPlayerCiRollouts: ciOverrideN },
+    };
+  }
+
+  it("throws TierBudgetCollapseError when the scaled ruthless budget EQUALS standard's own budget (Wrap's exact C20 finding)", () => {
+    const manifest = manifestWithOverride(1000, 10000, 1000);
+    expect(() =>
+      runCiSuite(classicTicTacToe, manifest, { games: 10, seed: "suites-test:collapse:equal", suite: "ci" })
+    ).toThrow(TierBudgetCollapseError);
+  });
+
+  it("throws TierBudgetCollapseError when the scaled ruthless budget drops BELOW standard's own budget", () => {
+    const manifest = manifestWithOverride(1000, 10000, 500);
+    expect(() =>
+      runCiSuite(classicTicTacToe, manifest, { games: 10, seed: "suites-test:collapse:below", suite: "ci" })
+    ).toThrow(TierBudgetCollapseError);
+  });
+
+  it("does NOT throw when the scaled budget stays strictly above standard's (real separation preserved)", () => {
+    const manifest = manifestWithOverride(1000, 10000, 2000);
+    expect(() =>
+      runCiSuite(classicTicTacToe, manifest, { games: 10, seed: "suites-test:collapse:safe", suite: "ci" })
+    ).not.toThrow();
+  });
+
+  it("the nightly suite is immune — it never applies the ci-only override, so it cannot collapse", () => {
+    const manifest = manifestWithOverride(1000, 10000, 1000); // would collapse at "ci"
+    expect(() =>
+      runCiSuite(classicTicTacToe, manifest, { games: 10, seed: "suites-test:collapse:nightly-immune", suite: "nightly" })
+    ).not.toThrow();
+  });
+
+  it("a manifest with no 'standard' tier at all cannot collapse (nothing to collapse onto)", () => {
+    const manifest: GameManifest = {
+      id: "classic-ttt-fixture",
+      title: "No Standard TTT",
+      classic: "Tic-Tac-Toe",
+      ruleSentence: "suites.test.ts C19 no-standard-tier fixture.",
+      tags: [],
+      estMinutes: 1,
+      modes: { bot: true, hotseat: false, asyncLink: false },
+      players: { min: 2, max: 2 },
+      difficultyTiers: [
+        { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 10000 }, minReplyMs: 0 },
+      ],
+      ciGateBudget: { twoPlayerCiRollouts: 1 },
+    };
+    expect(() =>
+      runCiSuite(classicTicTacToe, manifest, { games: 10, seed: "suites-test:collapse:no-standard", suite: "ci" })
+    ).not.toThrow();
   });
 });

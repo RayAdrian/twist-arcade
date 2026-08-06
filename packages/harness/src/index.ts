@@ -59,6 +59,7 @@ export {
   evaluateCiGates,
   runCiSuite,
   SuiteFailedError,
+  TierBudgetCollapseError,
   worstCapHitRate,
 } from "./suites";
 
@@ -158,6 +159,8 @@ export {
   DEFAULT_CI_GATE_GAMES,
   DEFAULT_SOLO_SEED_COUNT,
   GateKindMismatchError,
+  HiddenInfoBudgetTooLowError,
+  MIN_HIDDEN_INFO_SAMPLES_PER_CANDIDATE,
   runGameCiGate,
   runSoloChaseCiGate,
   runSoloPuzzleCiGate,
