@@ -817,3 +817,151 @@ dynamic-topology slot with a shrinking board, which is asymmetric by constructio
 **103 seconds at 2,000 rollouts versus 52+ minutes at 10,000 — a ~30× speedup with the
 verdict unchanged.** That is the fix: scale the rollout budget to the board, keep the tiers
 separated, and let `ruthless-vs-standard` police the separation. Make it the default.
+
+---
+
+## C21 — Phase 2 sign-offs, and the schema that lived only on a server
+
+*Orchestrator ruling on `docs/plans/phase-2-async-multiplayer.md`. Three approvals, one
+overrule, one admitted orchestrator error.*
+
+### The orchestrator error: the schema was never in version control
+
+The async-multiplayer schema was applied to the remote Supabase project via MCP and **never
+checked in**. There is no `supabase/` directory in this repo. For weeks the shape of the
+production database existed in exactly one place — a hosted project — with no migration
+file, no diff, no review, and no way to recreate it. Nothing in the build would have caught
+this: every test, gate, typecheck and lint was green throughout, because none of them look
+at a database that no code has used yet.
+
+That is the same defect class as the rest of this document, applied to infrastructure rather
+than code: **the artifact that governs behaviour was not the artifact under review.** It is
+also the one instance where the orchestrator wrote it. Milestone A0 checks the applied
+schema in as migration `0001`, generated from the live database rather than from memory, so
+the file is a record of what is true and not a guess at it.
+
+### Approved: RLS stays at zero policies — as the end-state, not a transition (§5)
+
+The plan's position — no client-facing table access at all, reads included, every access
+through a service-role route handler — is adopted, and it overrules `architecture-lens` §4's
+allowance of "direct table SELECT limited to non-sensitive columns for participants."
+
+The reasoning that carries it: a participant-scoped SELECT policy would need column
+exclusion, a `match_players` subquery, and per-game hidden-info awareness. That is **a second
+redaction path, expressed in a second language**. C1 has now failed twice, both times at a
+seam where one redaction decision was re-made somewhere else. Buying a fractions-of-a-cent
+saving on a poll by opening that seam is a bad trade at any scale this product will reach.
+
+The audit consequence is what makes it worth stating as policy: *"zero policies exist"* is
+one query and cannot be partially true. A set of three column-scoped policies reads as
+reviewed while leaking; an empty set cannot.
+
+### Approved: claim-on-first-move (§7.2), amending `ux-lens` §6.3
+
+Seat claim moves from link-open to first move. The deciding argument is the second one: a
+claimed-but-vanished guest **dead-locks the match with no recovery**, because anonymous play
+means there is no account to unclaim from. Claim-on-open converts an accidental tap into a
+permanently wedged game. A claimant who has moved has demonstrably joined.
+
+Two openers can now both believe they are joining. That is accepted *because it is
+specified*: the loser gets "Someone else just took this seat — you're watching now," which is
+a designed state rather than a silent one. The hidden-info rule stands as written — a
+candidate is served the **spectator** view until the claim commits, never the seat view.
+
+### Approved: the move log is the record of truth, `state` is a cache (§4.2)
+
+With the invariant test as the enforcement: `encode(replay(record).final) === matches.state`,
+divergence quarantines the match rather than serving it. Replay wins. This is the correct
+shape — the guard is a test that runs, not a comment asserting the two agree.
+
+### Overruled: `moves` PK keeps `seat` (§4.5)
+
+**Ruling: the primary key becomes `(match_id, idx)`.**
+
+§4.5 keeps `(match_id, idx, seat)` on the grounds that seat-in-PK "is the simultaneous seam;
+costs nothing now, saves a migration later," and that **"Phase 2 writes only one row per
+idx."**
+
+That last sentence is the problem. It is an intention recorded in prose while the schema
+permits its violation — the standing instruction *"a comment asserting an invariant is not
+enforcement; comments don't run"* applies exactly. With `seat` in the key, `(m, 5, 0)` and
+`(m, 5, 1)` are both legal rows.
+
+It matters more here than it would have a section earlier, because §4.2 just made the move
+log **the record of truth**. A duplicate `idx` makes `replay()` ambiguous between two
+different move sequences — and the failure surfaces as a state-vs-replay divergence, i.e.
+as the quarantine path in §4.2, which reports a corrupted match without explaining why. The
+CAS on `step_count` (§8.3) is intended to prevent the double-write, but that is a guard
+depending on another guard being correct with no structural backstop underneath — the
+precise arrangement that has failed twenty-three times in this build. The PK is free
+enforcement; declining it keeps only the *option* of a schema we have no design for.
+
+The "saves a migration later" argument also inverts: §4 opens by observing the amendments
+are near-free **because every table is empty**. That is an argument for making the schema
+correct now, not for preserving optionality against a simultaneous-move mode that no
+shipped or planned game requires.
+
+If simultaneity arrives in Phase 4+, it migrates then — against a table whose real access
+patterns are known, instead of being pre-paid for today with a weakened invariant.
+
+---
+
+## C22 — The gate-cost fix shipped as opt-in, and nobody opted in
+
+*Orchestrator finding while verifying the C13/C17/C19 work. The mechanism is sound. The
+default is not.*
+
+### What was verified, by planting violations rather than reading code
+
+- **C19 tier-collapse guard — VERIFIED.** Planted three budgets against Fadeout (`standard`
+  = 1000, `ruthless` = 10000): a scaled `twoPlayerCiRollouts` of **1000 — Wrap's exact
+  collision — throws `TierBudgetCollapseError` in 0ms**; 800 throws; 1001 runs. The boundary
+  is strictly-greater and the refusal happens *before* the matchup runs, so a collapsed tier
+  can never surface as a meaningless 50% ratio. The override is an in-memory manifest clone,
+  so the difficulty a real player faces is untouched.
+- **C19 yardstick floor guard — present** (`MIN_HIDDEN_INFO_SAMPLES_PER_CANDIDATE`, checked
+  against the *resolved* budget rather than the raw override) with planted-violation tests in
+  the suite.
+- **C13 `--game` filter — covered, and the tests are not tautological.** The unknown-id test
+  deliberately uses a registry containing *only* a two-player fixture, so `resolveSafeMove`
+  cannot be a plausible source of the throw — the filter's own refusal is the only thing that
+  can make it reject. Without the check, an unrecognized `--game` would silently fall through
+  to running the whole registry and not throw at all.
+- **C17 route smoke test — present and actually invoked.** It loops `games/registry.ts` with
+  no hardcoded id list, asserts 200 **plus** a rendered board (`role="grid"` + at least one
+  `gridcell`), and CI runs it via `pnpm test:e2e` against `next start` — a real production
+  build, which is the only thing that could have caught the original bundling failure.
+
+### The finding: the fix is opt-in, and every registered game skips it
+
+`ciGateBudget.twoPlayerCiRollouts` is an **optional** manifest field with no default.
+**Fadeout does not set it.** So `--suite ci --game fadeout` runs at the shipped 10,000
+rollouts, and the measured result is that it **ran past 29 minutes** — for a **3×3 board, the
+smallest game in the catalogue**, with the `--game` filter working perfectly and doing exactly
+what it promised.
+
+C20's close-out sentence was *"Make it the default."* What shipped is a knob each team sets
+by hand. That is the same defect this document keeps recording, in a new place: **the
+mechanism exists, is well-guarded, is tested — and does not run.** C13's own motivation was
+"without it every team improvises a script, and improvised gates get tuned"; an opt-in budget
+each team picks by hand is that same improvisation moved into the manifest.
+
+It also interacts badly with the now-mandatory **gate-before-UI** rule (C16). A queue of six
+remaining games, each paying ~30+ minutes minimum before anyone may build a board, is exactly
+the pressure that produces a waived or hand-tuned gate.
+
+### Required, before the game queue restarts
+
+The budget must be **scaled by default, not by remembering**. Either:
+
+1. compute it from board size and tier spacing, respecting the tier-collapse floor (the
+   `ruthless` budget must stay strictly above `standard`'s); or
+2. **require** the field for every registered game and fail loudly when it is absent — the
+   same move C2 made for inapplicable solo gates, which report `n/a` explicitly rather than
+   silently not running.
+
+Option 2 is weaker but honest, and it is compatible with option 1 as the computed default.
+What is not acceptable is the current state, where a game that says nothing gets the most
+expensive possible run and no warning that it did.
+
+**A default nobody sets is not a default. It is a comment.**

@@ -32,13 +32,21 @@ Research: `docs/research/games/` · Corrections: `docs/plans/platform-correction
 | **Mine Run** — engine merged, gates running | board gated behind gates |
 | Nine Grids, Order vs Chaos, Tilt, Bid-Tac-Toe | queued |
 
-## Phase 2 — not started
+## Phase 2 — planned, first milestone in flight
 
-Remote Supabase (`fjiwrzaosluymamannaw`) is prepped: the async-multiplayer schema is
-applied with **RLS enabled and zero policies**, verified against a real row carrying a canary
-seed rather than an empty table. Async multiplayer has no plan yet, and the RLS policies are
-the boundary keeping hidden game state out of clients — so they get written with a plan, not
-ahead of one.
+`docs/plans/phase-2-async-multiplayer.md` is written and reviewed. Orchestrator rulings are
+**C21**: RLS stays at zero policies as the *end-state* (a participant-scoped SELECT would be a
+second redaction path in a second language — C1's seam); seat claim moves to first **move**,
+not link-open (a claimed-but-vanished guest would dead-lock the match with no account to
+unclaim from); the move log is the record of truth with `state` as a cache. One overrule: the
+`moves` PK drops `seat`, because "Phase 2 writes only one row per idx" was an intention in
+prose while the schema permitted its violation.
+
+**An orchestrator error the build could not have caught:** the schema was applied to the
+remote via MCP and **never checked in** — no `supabase/` directory existed, so the shape of
+the production database lived only on a hosted server. Every gate stayed green throughout,
+because none of them look at a database no code uses yet. Milestone A0 (in flight) checks it
+in as migration `0001`, generated from the live database rather than from memory.
 
 ---
 
