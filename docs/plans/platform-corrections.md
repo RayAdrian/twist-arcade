@@ -1059,3 +1059,54 @@ for every game regardless of expense, so the sweep must report the surface acros
 dimensions — 100 games × 5,000 rollouts and 300 × 1,700 cost the same and buy different things
 (statistical power versus agent strength). C19 named board size as the scaling axis the budget
 ignored; this is the same oversight one level up.
+
+### C21 addendum, corrected — "A0 is done" was wrong, and the drift guard is narrower than its header
+
+The addendum above said **"A0 is done."** That was an orchestrator overclaim and the stage-6
+review caught it. Against plan §16's own definition of A0 — *"`supabase/` dir, migrations
+0001/0002, `commit_move`, canary re-verification"* — **two of the four are absent**, and
+neither absence was recorded as a deviation. My verification of the drift guard was real, but
+verifying one component is not the same as completing a milestone, and I wrote the stronger
+claim.
+
+The review is the model for what stage 6 is for: it planted a **10-mutant matrix** rather than
+reading code, and four mutants passed green.
+
+**Fires correctly:** a planted `create policy`, a changed `check` predicate, a dropped index, a
+changed column default, RLS disabled, a changed table comment.
+
+**Blind (executed, not theorised):** a **new table**, a **new function**, a **`grant`**, and a
+changed column comment.
+
+That first set is serious precisely because of C21. The introspection whitelists the three
+table names, so `policy_count === 0` is true-but-vacuous for anything else — **a new table
+created with RLS off, or carrying its own policy, passes green.** C21 made "zero policies" a
+load-bearing invariant; the guard enforces it only for tables that already existed when the
+guard was written. A1 lands `commit_move()`, a SECURITY-relevant SQL function, into exactly
+that blind spot.
+
+**And the guard is one-directional while its header claims otherwise.** `schema-drift.test.ts`
+says drift goes red "if a migration file is edited without the live database being changed to
+match, *or vice versa*." The "or vice versa" is false: the test compares migrations against a
+**frozen fixture** and nothing in CI ever contacts the remote. So **the exact original sin this
+milestone exists to fix — apply a change to the remote via MCP, never check it in — still
+passes green**, and the only thing preventing it is a procedure that lives in a comment.
+Comments don't run. The reviewer confirmed remote ≡ fixture as of today, so this is forward
+risk, not present drift.
+
+### Ruling on the reviewer's escalation: `on delete cascade` → `on delete restrict`
+
+`match_players.user_id references auth.users on delete cascade`, paired with §4.5's recorded
+constraint that *"no anonymous-user cleanup job may run… deleting a stale anon user would
+cascade into live seats,"* **is the same defect C21's PK overrule condemned two sections
+above** — an intention in prose while the schema not merely permits but *performs* its
+violation, silently unseating a live player.
+
+Consistency is not the only reason. Under `restrict`, a cleanup job that would corrupt a live
+match **fails loudly** instead of succeeding quietly, and account deletion is forced into an
+explicit anonymise-or-resolve decision rather than a silent cascade — which is the behaviour
+account deletion should have anyway. §4's own argument applies with full force: this is
+near-free **only while the tables are empty**, and that window closes at launch.
+
+**Ruled: `on delete restrict`.** I approved §4.5 as written in C21 and was wrong to; the PK
+reasoning I applied in the same correction should have been applied here in the same pass.
