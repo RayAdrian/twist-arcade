@@ -1007,3 +1007,55 @@ a credential — a spam and quota vector, and one that interacts with C21's reco
 that no anon-user cleanup job may run while matches reference those users. Enabling it on
 `fjiwrzaosluymamannaw` waits for A1 and must arrive with a rate-limiting and abuse story, not
 as a checkbox flipped in passing.
+
+### C22 resolution — the computed default was measured, and it was wrong
+
+**A computed budget was tried first and rejected on evidence.** Scaling Fadeout to 2,000
+rollouts — *the exact ratio validated for Wrap in C19/C20* — produced **mean-plies 40+, a
+100% draw rate, and 0% first-player wins**, a verdict the shipped 10,000-rollout budget does
+not produce.
+
+That is **C6's yardstick collapse appearing in the two-player self-play lane**, where it had
+only ever been guarded for in the hidden-info one. The mechanism is specific to a game like
+Fadeout: pieces vanish, so an agent too weak to construct a winning line never finds one, and
+the game degenerates into an endless draw. The gate would have failed — and the failure would
+have measured *the agent's weakness*, with nothing in the report to distinguish it from a real
+balance defect.
+
+**The ratio that was safe for Wrap was unsafe for Fadeout.** Board size alone does not
+determine how much search a game needs to stay decidable. That kills option 1 (compute the
+budget from board dimensions) as stated in C22 — not because the arithmetic was wrong, but
+because the quantity it predicts is not a function of the inputs it was given.
+
+**Shipped: option 2.** `runCiSuite` now *requires* `ciGateBudget.twoPlayerCiRollouts` for
+suite `"ci"` whenever the shipped `ruthless` budget exceeds `MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE`
+(3000), throwing `MissingCiRolloutBudgetError` **before any self-play runs**. Games at or
+under the ceiling are unaffected; nightly is exempt unconditionally.
+
+Verified against the real Fadeout manifest, not a fixture: **`--game fadeout` now refuses in
+0.4 seconds** instead of running 37 minutes. Crackstep, which has no two-player lane, is
+untouched at 0.67s. Both pre-existing guards re-fired at the same boundaries the orchestrator
+measured independently (override 1000 and 800 → `TierBudgetCollapseError` in 0ms).
+
+### The consequence, stated plainly rather than buried
+
+**Fadeout's two-player CI gate now hard-fails until someone validates a budget for it**, and
+no validated value exists: 2,000 is *proven* unsafe, and the implementer correctly declined to
+guess one under time pressure rather than ship a number that looks like a measurement. This
+would turn `main`'s CI red on merge.
+
+So the honest state is: the gate went from *37 minutes and possibly meaningless* to *0.4
+seconds and openly unanswered*. The second is better — a gate that refuses is not a gate that
+lies — but it is not done, and the queue behind it is still blocked until Fadeout has a real
+number.
+
+**What the validation sweep must answer** (the C19/C20 rigor, applied to Fadeout): not "which
+budget is fastest" but "which is the cheapest budget whose **mean-plies, draw-rate, and
+first-player win-rate still match the 10,000-rollout baseline**." Speed alone is not the
+criterion — that is precisely how 2,000 looked acceptable.
+
+**And cost has a second axis.** Gate cost is `games × rollouts`. `CI_GAMES` is fixed at 100
+for every game regardless of expense, so the sweep must report the surface across *both*
+dimensions — 100 games × 5,000 rollouts and 300 × 1,700 cost the same and buy different things
+(statistical power versus agent strength). C19 named board size as the scaling axis the budget
+ignored; this is the same oversight one level up.
