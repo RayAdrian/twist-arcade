@@ -203,6 +203,56 @@ export class TierBudgetCollapseError extends Error {
   }
 }
 
+/** platform-corrections.md C22: `ciGateBudget.twoPlayerCiRollouts` shipped as an OPTIONAL
+ *  field with no default, so every registered game silently skipped it and ran the CI suite at
+ *  the full shipped `ruthless` budget. Fadeout — a 3x3 board, the smallest game in the
+ *  catalogue — measured past 29 minutes on that path. C20's close-out said "make it the
+ *  default"; an opt-in knob nobody sets is not a default, it is a comment.
+ *
+ *  A NAIVELY COMPUTED default turned out to be unsafe to ship blindly: re-running Fadeout's own
+ *  self-play at a scaled-down 2,000 rollouts (the exact ratio that worked for Wrap's 6x6, C19/
+ *  C20's validated 30x speedup) produced mean-plies of 40+ against a [8,16]-ish design band and
+ *  a 100% draw rate / 0% first-player win rate — a verdict the FULL 10,000-rollout budget does
+ *  not produce. That is C6's failure mode ("a gate defined relative to a reference agent is
+ *  only as trustworthy as that agent") recurring in the two-player self-play lane: a `ruthless`
+ *  weakened enough to search shallowly does not merely run faster, it can fail to find the
+ *  moves that make the game converge at all, and the resulting gate failure measures the
+ *  agent's weakness, not the game's balance. Silently computing and trusting a scaled number
+ *  here risks shipping exactly that false failure (or, worse, a false PASS on a different
+ *  game) with nobody able to tell it apart from a real one.
+ *
+ *  So this module takes the fallback platform-corrections.md explicitly sanctions as
+ *  acceptable (the same move C2 made for inapplicable solo gates: require the field and fail
+ *  loudly, never silently skip): a game whose shipped `ruthless` budget is already at or below
+ *  `MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE` needs no override at all (this is the unchanged, safe
+ *  pass-through path — a cheap game like a small fixture never has to touch this field). A game
+ *  whose shipped budget EXCEEDS that ceiling MUST declare an explicit, validated
+ *  `ciGateBudget.twoPlayerCiRollouts` for suite "ci" — its absence is now a loud, immediate
+ *  refusal (this error), not a silent 30-minute run. Nightly is exempt unconditionally (the
+ *  plan's "nightly keeps the full-budget table") — this requirement only ever applies to the
+ *  fast PR-budget suite. */
+export const MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE = 3000;
+
+export class MissingCiRolloutBudgetError extends Error {
+  constructor(gameId: string, shippedRuthlessN: number) {
+    super(
+      `runCiSuite: game "${gameId}"'s shipped "ruthless" tier budget (${shippedRuthlessN} rollouts) ` +
+        `exceeds ${MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE} — the ceiling below which no CI override is ` +
+        "needed — but the manifest declares no manifest.ciGateBudget.twoPlayerCiRollouts " +
+        "(platform-corrections.md C22: a budget nobody sets is not a default, it is a comment). " +
+        "Running the CI suite unscaled at this budget is exactly the defect just found: Fadeout's " +
+        "own 3x3 board took 29+ minutes at its shipped 10,000. Add an explicit " +
+        "manifest.ciGateBudget.twoPlayerCiRollouts, VALIDATED the way Wrap's was (a real self-play " +
+        "run confirming the scaled-down budget still separates the tiers AND still produces a " +
+        "sane verdict — mean-plies in band, draw-rate in band — not just a fast one; a naive " +
+        "scaled-down budget can weaken \"ruthless\" enough to break the game's own convergence, " +
+        "which reads as a gate failure but is actually a too-weak yardstick, C6). Nightly is " +
+        "unaffected — this requirement applies only to suite \"ci\"."
+    );
+    this.name = "MissingCiRolloutBudgetError";
+  }
+}
+
 export class SuiteFailedError extends Error {
   constructor(failing: readonly Pick<GateResult, "gate" | "status" | "detail">[]) {
     const names = failing.map((g) => `${g.gate} (${g.detail})`).join(", ");
@@ -293,6 +343,20 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
   // override only ever applies to the deterministic `rollouts` budget kind the harness gates
   // with (platform §5.2).
   const ciRolloutOverride = manifest.ciGateBudget?.twoPlayerCiRollouts;
+
+  // C22: a shipped budget expensive enough to matter MUST declare an override for suite "ci" —
+  // checked before anything else runs, so an absent override is a loud, immediate refusal
+  // (MissingCiRolloutBudgetError) rather than a silent full-cost run. See that error's own doc
+  // comment for why this module refuses to just compute-and-trust a scaled number instead.
+  if (
+    suite === "ci" &&
+    ciRolloutOverride === undefined &&
+    shippedRuthlessTier.budget.kind === "rollouts" &&
+    shippedRuthlessTier.budget.n > MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE
+  ) {
+    throw new MissingCiRolloutBudgetError(manifest.id, shippedRuthlessTier.budget.n);
+  }
+
   const ruthlessTier =
     suite === "ci" && ciRolloutOverride !== undefined && shippedRuthlessTier.budget.kind === "rollouts"
       ? { ...shippedRuthlessTier, budget: { kind: "rollouts" as const, n: ciRolloutOverride } }

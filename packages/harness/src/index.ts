@@ -57,6 +57,8 @@ export {
   assertSuiteOk,
   EmptyExceptionJustificationError,
   evaluateCiGates,
+  MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE,
+  MissingCiRolloutBudgetError,
   runCiSuite,
   SuiteFailedError,
   TierBudgetCollapseError,

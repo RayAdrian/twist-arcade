@@ -18,6 +18,8 @@ import type { GameManifest } from "@twist-arcade/game-spec";
 import {
   EmptyExceptionJustificationError,
   evaluateCiGates,
+  MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE,
+  MissingCiRolloutBudgetError,
   runCiSuite,
   SuiteFailedError,
   TierBudgetCollapseError,
@@ -327,7 +329,16 @@ describe("runCiSuite() — C19: ciGateBudget.twoPlayerCiRollouts scales ONLY the
     expect(gate.status).toBe("pass");
   });
 
-  it("no ciGateBudget declared at all: behavior is unchanged (a game like Fadeout never needs this)", () => {
+  it("no ciGateBudget declared at all, shipped budget within C22's no-override ceiling: behavior is unchanged (a genuinely cheap game never needs this field)", () => {
+    // REVISED under C22 (platform-corrections.md): this test originally used a 5000-rollout
+    // shipped tier and asserted "a game like Fadeout never needs this" — that premise is
+    // exactly the defect C22 found (Fadeout's shipped 10,000-rollout tier ran unscaled for
+    // 29+ minutes because nobody was required to set an override). runCiSuite now REQUIRES
+    // manifest.ciGateBudget.twoPlayerCiRollouts once the shipped budget exceeds
+    // MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE — see the dedicated C22 describe block below for that
+    // refusal. This test is narrowed to what its title actually means: a shipped budget that
+    // is ALREADY at or under the ceiling is genuinely cheap and still needs no override at all.
+    //
     // A fresh literal (not manifestNoStandard minus a field) so this test never accidentally
     // inherits an override via a stray key — "no ciGateBudget" means the property is genuinely
     // absent, not merely destructured away.
@@ -341,7 +352,7 @@ describe("runCiSuite() — C19: ciGateBudget.twoPlayerCiRollouts scales ONLY the
       modes: { bot: true, hotseat: false, asyncLink: false },
       players: { min: 2, max: 2 },
       difficultyTiers: [
-        { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 5000 }, minReplyMs: 0 },
+        { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE }, minReplyMs: 0 },
       ],
     };
     const report = runCiSuite(classicTicTacToe, noOverride, {
@@ -350,7 +361,7 @@ describe("runCiSuite() — C19: ciGateBudget.twoPlayerCiRollouts scales ONLY the
       suite: "ci",
     });
     const gate = report.gates.find((g) => g.gate === "strong-vs-random")!;
-    expect(gate.status).toBe("pass"); // full 5000-rollout ruthless tier, unscaled
+    expect(gate.status).toBe("pass"); // full shipped ruthless tier, unscaled (no throw, no override needed)
   });
 });
 
@@ -419,5 +430,92 @@ describe("runCiSuite() — C19/C20: a scaled budget that collapses ruthless onto
     expect(() =>
       runCiSuite(classicTicTacToe, manifest, { games: 10, seed: "suites-test:collapse:no-standard", suite: "ci" })
     ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// platform-corrections.md C22: the CI rollout budget must be required (and refuse loudly when
+// absent), not merely available as a knob a team must remember to set. `--game fadeout` at the
+// shipped, unscaled 10,000-rollout "ruthless" budget measured past 29 minutes — a 3x3 board,
+// the smallest game in the catalogue — because ciGateBudget.twoPlayerCiRollouts is optional
+// with no default and Fadeout never set it. A naively COMPUTED scaled default (mirroring
+// Wrap's validated 2,000-rollout, 30x-speedup ratio) was tried against Fadeout and rejected:
+// self-play at 2,000 rollouts produced mean-plies 40+ / 100% draw-rate / 0% first-player-win —
+// a verdict the full 10,000-rollout budget does not produce — proving a scaled-down "ruthless"
+// can be too weak a yardstick for THIS game even though the identical ratio was safe for
+// Wrap's. So this suite proves the loud-refusal fallback instead: every test below is a
+// planted violation (a manifest with no override and an expensive shipped tier) observed
+// actually refusing, synchronously, before any self-play runs — never a silent full-cost run.
+// ---------------------------------------------------------------------------------------
+
+describe("runCiSuite() — C22: an expensive shipped ruthless budget REQUIRES an explicit CI override", () => {
+  function expensiveManifestNoOverride(shippedN: number): GameManifest {
+    return {
+      id: "expensive-fixture",
+      title: "Expensive Fixture",
+      classic: "Tic-Tac-Toe",
+      ruleSentence: "suites.test.ts C22 fixture — an expensive shipped ruthless tier, no CI override.",
+      tags: [],
+      estMinutes: 1,
+      modes: { bot: true, hotseat: false, asyncLink: false },
+      players: { min: 2, max: 2 },
+      difficultyTiers: [
+        { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: shippedN }, minReplyMs: 0 },
+      ],
+      // Deliberately no ciGateBudget — this is exactly the state every registered game shipped
+      // in (platform-corrections.md C22's own finding).
+    };
+  }
+
+  it("MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE is a real, positive ceiling", () => {
+    expect(MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE).toBeGreaterThan(0);
+  });
+
+  it("refuses loudly, before running any self-play, when the shipped budget exceeds the ceiling and no override is set — proves Fadeout's exact defect is now caught rather than silently run", () => {
+    const manifest = expensiveManifestNoOverride(MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE + 1);
+    // An absurdly large `games` count that would take far too long to actually run for real —
+    // if this test completes at all (let alone the sub-second budget the whole suite runs
+    // under), the throw fired BEFORE any matchup started, not merely "eventually".
+    expect(() =>
+      runCiSuite(classicTicTacToe, manifest, { games: 1_000_000, seed: "suites-test:c22:missing-required" })
+    ).toThrow(MissingCiRolloutBudgetError);
+  });
+
+  it("the thrown error names the actual shipped budget and the ceiling, so a reader knows exactly what to fix", () => {
+    const manifest = expensiveManifestNoOverride(10_000);
+    try {
+      runCiSuite(classicTicTacToe, manifest, { games: 10, seed: "suites-test:c22:message" });
+      expect.fail("expected MissingCiRolloutBudgetError to throw");
+    } catch (e) {
+      expect(e).toBeInstanceOf(MissingCiRolloutBudgetError);
+      const message = (e as Error).message;
+      expect(message).toContain("10000");
+      expect(message).toContain(String(MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE));
+      expect(message).toContain("expensive-fixture");
+    }
+  });
+
+  it("does NOT throw when the shipped budget sits AT the ceiling — a cheap/small game never needs to touch this field (the unchanged, safe pass-through path)", () => {
+    const manifest = expensiveManifestNoOverride(MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE);
+    expect(() =>
+      runCiSuite(classicTicTacToe, manifest, { games: 10, seed: "suites-test:c22:at-ceiling" })
+    ).not.toThrow(MissingCiRolloutBudgetError);
+  });
+
+  it("does NOT throw when an explicit ciGateBudget.twoPlayerCiRollouts is present, however low — an active, reviewed choice is never refused by this guard (the tier-collapse guard is the one that polices ITS safety)", () => {
+    const manifest: GameManifest = {
+      ...expensiveManifestNoOverride(10_000),
+      ciGateBudget: { twoPlayerCiRollouts: 500 },
+    };
+    expect(() =>
+      runCiSuite(classicTicTacToe, manifest, { games: 10, seed: "suites-test:c22:override-present" })
+    ).not.toThrow(MissingCiRolloutBudgetError);
+  });
+
+  it("nightly is exempt unconditionally — the full-budget table always runs there regardless of this ceiling", () => {
+    const manifest = expensiveManifestNoOverride(10_000);
+    expect(() =>
+      runCiSuite(classicTicTacToe, manifest, { games: 10, seed: "suites-test:c22:nightly-exempt", suite: "nightly" })
+    ).not.toThrow(MissingCiRolloutBudgetError);
   });
 });
