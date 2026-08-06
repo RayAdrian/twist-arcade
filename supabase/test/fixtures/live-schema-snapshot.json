@@ -1,0 +1,59 @@
+{
+  "columns": [
+    { "table_name": "match_players", "column_name": "match_id", "ordinal_position": 1, "column_default": null, "is_nullable": "NO", "data_type": "uuid", "udt_name": "uuid" },
+    { "table_name": "match_players", "column_name": "seat", "ordinal_position": 2, "column_default": null, "is_nullable": "NO", "data_type": "integer", "udt_name": "int4" },
+    { "table_name": "match_players", "column_name": "user_id", "ordinal_position": 3, "column_default": null, "is_nullable": "NO", "data_type": "uuid", "udt_name": "uuid" },
+    { "table_name": "match_players", "column_name": "joined_at", "ordinal_position": 4, "column_default": "now()", "is_nullable": "NO", "data_type": "timestamp with time zone", "udt_name": "timestamptz" },
+    { "table_name": "match_players", "column_name": "display_name", "ordinal_position": 5, "column_default": null, "is_nullable": "YES", "data_type": "text", "udt_name": "text" },
+    { "table_name": "matches", "column_name": "id", "ordinal_position": 1, "column_default": "gen_random_uuid()", "is_nullable": "NO", "data_type": "uuid", "udt_name": "uuid" },
+    { "table_name": "matches", "column_name": "game_id", "ordinal_position": 2, "column_default": null, "is_nullable": "NO", "data_type": "text", "udt_name": "text" },
+    { "table_name": "matches", "column_name": "seed", "ordinal_position": 4, "column_default": null, "is_nullable": "NO", "data_type": "text", "udt_name": "text" },
+    { "table_name": "matches", "column_name": "state", "ordinal_position": 5, "column_default": null, "is_nullable": "NO", "data_type": "jsonb", "udt_name": "jsonb" },
+    { "table_name": "matches", "column_name": "status", "ordinal_position": 6, "column_default": "'open'::text", "is_nullable": "NO", "data_type": "text", "udt_name": "text" },
+    { "table_name": "matches", "column_name": "active_seats", "ordinal_position": 7, "column_default": "'{}'::integer[]", "is_nullable": "NO", "data_type": "ARRAY", "udt_name": "_int4" },
+    { "table_name": "matches", "column_name": "join_code", "ordinal_position": 8, "column_default": null, "is_nullable": "NO", "data_type": "text", "udt_name": "text" },
+    { "table_name": "matches", "column_name": "created_at", "ordinal_position": 9, "column_default": "now()", "is_nullable": "NO", "data_type": "timestamp with time zone", "udt_name": "timestamptz" },
+    { "table_name": "matches", "column_name": "updated_at", "ordinal_position": 10, "column_default": "now()", "is_nullable": "NO", "data_type": "timestamp with time zone", "udt_name": "timestamptz" },
+    { "table_name": "matches", "column_name": "game_version", "ordinal_position": 11, "column_default": null, "is_nullable": "NO", "data_type": "integer", "udt_name": "int4" },
+    { "table_name": "matches", "column_name": "engine_version", "ordinal_position": 12, "column_default": null, "is_nullable": "NO", "data_type": "text", "udt_name": "text" },
+    { "table_name": "matches", "column_name": "round", "ordinal_position": 13, "column_default": "1", "is_nullable": "NO", "data_type": "integer", "udt_name": "int4" },
+    { "table_name": "matches", "column_name": "expires_at", "ordinal_position": 14, "column_default": null, "is_nullable": "NO", "data_type": "timestamp with time zone", "udt_name": "timestamptz" },
+    { "table_name": "matches", "column_name": "step_count", "ordinal_position": 15, "column_default": "0", "is_nullable": "NO", "data_type": "integer", "udt_name": "int4" },
+    { "table_name": "moves", "column_name": "match_id", "ordinal_position": 1, "column_default": null, "is_nullable": "NO", "data_type": "uuid", "udt_name": "uuid" },
+    { "table_name": "moves", "column_name": "idx", "ordinal_position": 2, "column_default": null, "is_nullable": "NO", "data_type": "integer", "udt_name": "int4" },
+    { "table_name": "moves", "column_name": "seat", "ordinal_position": 3, "column_default": null, "is_nullable": "NO", "data_type": "integer", "udt_name": "int4" },
+    { "table_name": "moves", "column_name": "move", "ordinal_position": 4, "column_default": null, "is_nullable": "NO", "data_type": "jsonb", "udt_name": "jsonb" },
+    { "table_name": "moves", "column_name": "created_at", "ordinal_position": 5, "column_default": "now()", "is_nullable": "NO", "data_type": "timestamp with time zone", "udt_name": "timestamptz" }
+  ],
+  "constraints": [
+    { "table_name": "match_players", "conname": "match_players_match_id_fkey", "contype": "f", "definition": "FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE" },
+    { "table_name": "match_players", "conname": "match_players_match_id_user_id_key", "contype": "u", "definition": "UNIQUE (match_id, user_id)" },
+    { "table_name": "match_players", "conname": "match_players_pkey", "contype": "p", "definition": "PRIMARY KEY (match_id, seat)" },
+    { "table_name": "match_players", "conname": "match_players_user_id_fkey", "contype": "f", "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE" },
+    { "table_name": "matches", "conname": "matches_join_code_round_key", "contype": "u", "definition": "UNIQUE (join_code, round)" },
+    { "table_name": "matches", "conname": "matches_pkey", "contype": "p", "definition": "PRIMARY KEY (id)" },
+    { "table_name": "matches", "conname": "matches_status_check", "contype": "c", "definition": "CHECK ((status = ANY (ARRAY['open'::text, 'ongoing'::text, 'finished'::text, 'expired'::text, 'void'::text])))" },
+    { "table_name": "moves", "conname": "moves_match_id_fkey", "contype": "f", "definition": "FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE" },
+    { "table_name": "moves", "conname": "moves_pkey", "contype": "p", "definition": "PRIMARY KEY (match_id, idx)" }
+  ],
+  "indexes": [
+    { "tablename": "match_players", "indexname": "match_players_match_id_user_id_key", "indexdef": "CREATE UNIQUE INDEX match_players_match_id_user_id_key ON public.match_players USING btree (match_id, user_id)" },
+    { "tablename": "match_players", "indexname": "match_players_pkey", "indexdef": "CREATE UNIQUE INDEX match_players_pkey ON public.match_players USING btree (match_id, seat)" },
+    { "tablename": "matches", "indexname": "matches_join_code_idx", "indexdef": "CREATE INDEX matches_join_code_idx ON public.matches USING btree (join_code)" },
+    { "tablename": "matches", "indexname": "matches_join_code_round_key", "indexdef": "CREATE UNIQUE INDEX matches_join_code_round_key ON public.matches USING btree (join_code, round)" },
+    { "tablename": "matches", "indexname": "matches_pkey", "indexdef": "CREATE UNIQUE INDEX matches_pkey ON public.matches USING btree (id)" },
+    { "tablename": "matches", "indexname": "matches_updated_at_idx", "indexdef": "CREATE INDEX matches_updated_at_idx ON public.matches USING btree (updated_at)" },
+    { "tablename": "moves", "indexname": "moves_pkey", "indexdef": "CREATE UNIQUE INDEX moves_pkey ON public.moves USING btree (match_id, idx)" }
+  ],
+  "rls": [
+    { "table_name": "match_players", "rls_enabled": true },
+    { "table_name": "matches", "rls_enabled": true },
+    { "table_name": "moves", "rls_enabled": true }
+  ],
+  "policy_count": 0,
+  "table_comments": [
+    { "table_name": "match_players", "comment": "Seat-to-user mapping, anonymous users included. RLS deny-all until Phase 2." },
+    { "table_name": "matches", "comment": "Async multiplayer matches. RLS deny-all until Phase 2 writes policies. state and seed are server-only — clients receive playerView(state, seat), never this row." },
+    { "table_name": "moves", "comment": "Per-ply move log; the leaderboard verifier replays this through the pure engine. RLS deny-all until Phase 2." }
+  ]
+}
