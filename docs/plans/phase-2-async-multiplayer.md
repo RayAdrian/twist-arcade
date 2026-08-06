@@ -506,10 +506,22 @@ supabase-js has no multi-statement transactions, and game logic cannot run in Po
 (the engine is TS). The split: **all rules in Node, one atomic commit primitive in SQL** —
 a plain function `commit_move(match_id, expected_step, seat, claim_user, move, new_state,
 new_status, new_active_seats)` that, in one transaction: inserts the seat claim if
-requested (PK conflict → raise `seat_taken`), inserts the `moves` row (PK `(match_id,
-idx, seat)` conflict → raise `duplicate_move`), and updates `matches` guarded by
-`where step_count = expected_step` (0 rows → raise `stale_state`). The function contains
-no conditionals about the game — it is a CAS, nothing more.
+requested (PK conflict → raise `seat_taken`), inserts the `moves` row (PK conflict → raise
+`duplicate_move`), and updates `matches` guarded by `where step_count = expected_step`
+(0 rows → raise `stale_state`). The function contains no conditionals about the game — it
+is a CAS, nothing more.
+
+**Correction (A0, C21 overrule — `docs/plans/platform-corrections.md`):** the `moves` PK
+shipped as `(match_id, idx)`, not `(match_id, idx, seat)` as drafted above. This changes
+what "duplicate" means, on purpose: under the three-column key, two different seats could
+each insert their own row at the same `idx` without conflicting — exactly the ambiguity
+§4.2 forbids once the move log is the record of truth (`replay()` has no way to choose
+between them). Under `(match_id, idx)`, any second insert at an already-used `idx` conflicts
+regardless of which seat sent it, so `duplicate_move` now fires on *any* re-submission of an
+idx, not only a same-seat one. This is a strengthening consistent with §1's non-goal
+(simultaneous-move games are out of scope; sequential play only ever produces one seat per
+idx), not a behavioural loss — `commit_move()` itself is unimplemented as of A0 (A1's job);
+this note exists so A1 is built against the schema that actually shipped.
 
 Client-visible mapping: `seat_taken` → the race-loss state (§7.5); `duplicate_move` /
 `stale_state` → 409, client refetches the view and re-renders (a double-tap or a
@@ -754,10 +766,23 @@ and clock skew around `expires_at` boundaries.
 | # | Milestone | Contents |
 |---|---|---|
 | A0 | Schema home + amendments | §12.1–.2: `supabase/` dir, migrations 0001/0002, `commit_move`, canary re-verification. Small, unblocks everything |
-| A1 | Authority core | `packages/match` skeleton, wire brand, `redactForWire`, `assertNoCanonicalLeak`, leaky-mock tests, service layer create/view/move/rematch vs local stack (TDD) |
+| A1 | Authority core | `packages/match` skeleton, wire brand, `redactForWire`, `assertNoCanonicalLeak`, leaky-mock tests, service layer create/view/move/rematch vs local stack (TDD), **`commit_move()` (deferred from A0 — recorded below)** |
 | A2 | Routes + identity | Route handlers, JWT resolution, anonymous sign-in flow, poke endpoint, full-bytes leak tests, lint boundary blocks |
 | A3 | Client | `useAsyncMatch`, `/g/[code]`, Play-a-friend + share sheet, polling with visibility backoff, series UI |
 | A4 | Failure states + hardening | §7.5 table end-to-end, version-void, expiry copy, bundle check, two-context Playwright, metrics queries |
+
+**A0 deviation, recorded explicitly (stage-6 review, `docs/plans/platform-corrections.md`
+"C21 addendum, corrected"):** A0 shipped `supabase/` + migrations 0001–0003 (0003 added
+post-review: `match_players.user_id` FK `on delete restrict`, see that ruling) and the
+§12.2 canary re-verification (re-run against `matches`' new 0002 columns — `game_version`,
+`engine_version`, `round`, `expires_at`, `step_count` — with a planted canary row, probed as
+anon, deleted after). **`commit_move()` is deliberately NOT implemented in A0** — it moves
+to A1, both because it is authority-layer logic (out of A0's schema-only scope by the
+milestone's own description) and because A0's drift guard did not cover SQL functions until
+the stage-6 review's Finding 1 fix; implementing it before that fix landed would have shipped
+a security-relevant function into a proven blind spot. The guard now covers `pg_proc`
+(`supabase/test/introspect-schema.sql`), so A1 lands `commit_move()` into schema that is
+already watched, not into the gap that produced this finding.
 
 One worktree/team per CLAUDE.md §4–5 (this feature is one team; A0–A4 are sequential
 stages, not parallel teams). The team's local stack must have anonymous sign-in enabled

@@ -8,6 +8,7 @@
     { "path": "./packages/shell" },
     { "path": "./packages/daily" },
     { "path": "./scripts" },
+    { "path": "./supabase" },
     { "path": "./tsconfig.app.json" }
   ]
 }

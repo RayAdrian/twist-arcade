@@ -9,4 +9,5 @@ export default defineWorkspace([
   "packages/*/",
   "games/*/",
   "scripts/",
+  "supabase/",
 ]);

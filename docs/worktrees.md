@@ -21,6 +21,7 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 | harness-solo (M3c/M3d solo suite + certificates) | `../claude-project-solowork` | `feature/harness-solo` | `twistarcade_solowork` | 55021–55029 | not started (no DB) | ACTIVE |
 | crackstep (solo daily puzzle) | `../claude-project-crackstep` | `feature/crackstep` | `twistarcade_crackstep` | 54821–54829 | not started (no DB) | PENDING — blocked on platform M1 + M3d |
 | minerun (solo score chase) | `../claude-project-minerun` | `feature/minerun` | `twistarcade_minerun` | 54921–54929 | not started (no DB) | PENDING — blocked on platform M1 + M3c |
+| phase2schema (A0: schema home + amendments, `docs/plans/phase-2-async-multiplayer.md`) | `../claude-project-phase2schema` | `feature/phase2-schema` | `twistarcade_phase2schema` | 55221–55229 | not started — Docker on this host is heavily loaded with other projects' stacks (mento-h3, prequal-prototype, resto-queue-qa, stampmate-qa, undrop\*); `supabase start` deliberately skipped for A0, see report | ACTIVE |
 
 ## Port blocks
 
@@ -35,6 +36,7 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 | 54921–54929 (team 6) | minerun | CLAIMED |
 | 55021–55029 (team 7) | harness-solo | CLAIMED |
 | 55121–55129 (team 8) | ninegrids | CLAIMED |
+| 55221–55229 (team 9) | phase2schema | CLAIMED |
 
 **Host note (2026-08-02):** Docker on this machine already runs Supabase stacks for
 unrelated projects (`mento-h0`, `prequal-and405`, `prequal-and473-450`). All four blocks
