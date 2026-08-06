@@ -936,9 +936,15 @@ default is not.*
 
 `ciGateBudget.twoPlayerCiRollouts` is an **optional** manifest field with no default.
 **Fadeout does not set it.** So `--suite ci --game fadeout` runs at the shipped 10,000
-rollouts, and the measured result is that it **ran past 29 minutes** — for a **3×3 board, the
-smallest game in the catalogue**, with the `--game` filter working perfectly and doing exactly
-what it promised.
+rollouts, and the measured result is **~37 minutes** (process elapsed 29:26 when the watch was
+armed, exiting 7:40 later) — for a **3×3 board, the smallest game in the catalogue**, with the
+`--game` filter working perfectly and doing exactly what it promised.
+
+*Stated precisely, because a measurement's provenance matters here:* that is wall-clock for
+the process, observed directly. Its stdout was owned by another agent's shell and was never
+seen by the orchestrator, so **this records a duration, not a verdict** — no claim is made
+that the run produced a passing gate table. The duration is the finding; the verdict is
+irrelevant to it.
 
 C20's close-out sentence was *"Make it the default."* What shipped is a knob each team sets
 by hand. That is the same defect this document keeps recording, in a new place: **the
