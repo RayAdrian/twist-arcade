@@ -19,13 +19,6 @@ import { crackstep, type CrackstepMove, type CrackstepState } from "./engine";
 import { manifest } from "./manifest";
 import { Board } from "./ui/Board";
 import { boardSummaryText, positionName, tilesRemaining } from "./ui/board-view";
-// TEMP C17 VERIFICATION PLANT — DO NOT MERGE. Reproduces the exact defect class C17 exists to
-// catch: a Node built-in dragged into a browser-reachable module. Reverted immediately after
-// confirming e2e/route-smoke.spec.ts fails.
-import { readFile as __c17PlantedReadFile } from "node:fs/promises";
-export function __c17PlantedNodeBuiltinLeak(): typeof __c17PlantedReadFile {
-  return __c17PlantedReadFile;
-}
 
 function movedEffect(effects: readonly Effect[]): Effect | undefined {
   return effects.find((e) => e.type === "moved");
