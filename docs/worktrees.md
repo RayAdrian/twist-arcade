@@ -21,7 +21,10 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 | harness-solo (M3c/M3d solo suite + certificates) | `../claude-project-solowork` | `feature/harness-solo` | `twistarcade_solowork` | 55021–55029 | not started (no DB) | ACTIVE |
 | crackstep (solo daily puzzle) | `../claude-project-crackstep` | `feature/crackstep` | `twistarcade_crackstep` | 54821–54829 | not started (no DB) | PENDING — blocked on platform M1 + M3d |
 | minerun (solo score chase) | `../claude-project-minerun` | `feature/minerun` | `twistarcade_minerun` | 54921–54929 | not started (no DB) | PENDING — blocked on platform M1 + M3c |
-| phase2schema (A0: schema home + amendments, `docs/plans/phase-2-async-multiplayer.md`) | `../claude-project-phase2schema` | `feature/phase2-schema` | `twistarcade_phase2schema` | 55221–55229 | not started — Docker on this host is heavily loaded with other projects' stacks (mento-h3, prequal-prototype, resto-queue-qa, stampmate-qa, undrop\*); `supabase start` deliberately skipped for A0, see report | ACTIVE |
+| phase2schema (A0: schema home + amendments, `docs/plans/phase-2-async-multiplayer.md`) | `../claude-project-phase2schema` | `feature/phase2-schema` | `twistarcade_phase2schema` | 55221–55229 | never started (Docker on this host was loaded with unrelated projects' stacks; skipped deliberately, see report) | **CLOSED** — merged `1c8244e`, worktree removed, branch deleted, ports released |
+| ninegrids (engine built + green, deliberately unregistered) | `../claude-project-ninegrids` | `feature/ninegrids` | `twistarcade_ninegrids` | 55121–55129 | not started (no DB) | ACTIVE — 2 commits ahead; awaiting affordable gates (C22) before UI + registration |
+| ui-material ("ink on paper" material foundation) | — removed | — deleted | `twistarcade_ui` | — | never started (no DB) | **CLOSED** — fully merged into `main`, 0 unique commits, worktree and branch removed |
+| wrap (killed game) | — removed | `feature/wrap` retained | `twistarcade_wrap` | — | never started (no DB) | **CLOSED — GAME KILLED (C20).** Worktree removed; branch and tag `archive/wrap-killed-by-c20` kept: its 5 commits are the measurement evidence that killed it |
 
 ## Port blocks
 
@@ -36,9 +39,17 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 | 54921–54929 (team 6) | minerun | CLAIMED |
 | 55021–55029 (team 7) | harness-solo | CLAIMED |
 | 55121–55129 (team 8) | ninegrids | CLAIMED |
-| 55221–55229 (team 9) | phase2schema | CLAIMED |
+| 55221–55229 (team 9) | phase2schema | **RELEASED** — team closed 2026-08-07 |
 
 **Host note (2026-08-02):** Docker on this machine already runs Supabase stacks for
 unrelated projects (`mento-h0`, `prequal-and405`, `prequal-and473-450`). All four blocks
 above were verified free with `lsof` before claiming. Never stop another project's
 containers to free a port — claim a different block.
+
+**Registry reconciliation (2026-08-07).** This table had drifted from reality: three
+worktrees existed on disk with no row here — `wrap`, `ui-material`, and `ninegrids` (which
+held a claimed port block but no team). CLAUDE.md §4 makes this file the orchestrator's to
+own, so the drift was mine. Reconciled against `git worktree list`, and the check that found
+it is worth repeating whenever a team closes: **the registry is not the source of truth about
+what is running — the filesystem is.** A row that says CLOSED next to a directory that still
+exists is exactly the leak §6 exists to prevent.
