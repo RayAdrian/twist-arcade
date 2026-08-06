@@ -6,10 +6,12 @@
 // exercises the exact same logic `main()` calls.
 
 import { describe, expect, it } from "vitest";
+import type { Json } from "@twist-arcade/engine";
 import type { GameManifest, RegistryEntry } from "@twist-arcade/game-spec";
 import { classicTicTacToe } from "@twist-arcade/engine/testkit/fixtures/classic-ttt";
 import { bankRun, type BankRunMove, type BankRunState } from "@twist-arcade/engine/testkit/fixtures/bank-run";
 import { CliUsageError, dispatch, parseArgs, UnknownFixtureError, UnregisteredGameError, type DispatchResult } from "../src/cli";
+import type { SafeMoveFn } from "../src/agents";
 
 // `dispatch()`'s return type widened to `DispatchResult | Promise<DispatchResult>` once "suite"
 // started resolving real registered games (real `loadEngine()` is a dynamic import — see
@@ -239,8 +241,7 @@ describe("dispatch() — suite resolves a REAL registered game (platform-correct
     const alwaysBank = (_view: BankRunState): BankRunMove => ({ kind: "bank" });
     const result = dispatch(["suite", "bank-run-fixture", "--seed", "cli-suite-chase", "--json", "true"], {
       resolveRegisteredGame: async (gameId) => (gameId === "bank-run-fixture" ? entry : undefined),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      resolveSafeMove: async () => alwaysBank as any,
+      resolveSafeMove: async () => alwaysBank as unknown as SafeMoveFn<Json, unknown>,
     });
     const { output } = await result;
     const parsed = JSON.parse(output) as { kind: string; gameId: string };

@@ -20,7 +20,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { classicTicTacToe } from "@twist-arcade/engine/testkit/fixtures/classic-ttt";
 import { bankRun, createBankRun, type BankRunMove, type BankRunState } from "@twist-arcade/engine/testkit/fixtures/bank-run";
-import { createMineRun, safeMove as mineRunSafeMove } from "@twist-arcade/mine-run";
+import { safeMove as mineRunSafeMove } from "@twist-arcade/mine-run";
 import type { GameManifest } from "@twist-arcade/game-spec";
 import {
   DEFAULT_CI_GATE_GAMES,

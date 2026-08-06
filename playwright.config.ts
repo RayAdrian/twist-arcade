@@ -1,12 +1,13 @@
 import { defineConfig, devices } from "@playwright/test";
 
 // Real-browser E2E + the plan's own a11y gate (§11.2/§11.3: "a11y gate (axe via Playwright —
-// platform CI hook)"). Scope note for this pass: with the registry still empty (no game has a
-// presentation yet — see the shell team's final report), the only routes that actually render
-// today are "/" (empty-state library home) and the 404 (an unknown gameId). The full §11.2
-// suite this config is built to eventually carry — cold-load-to-first-move timing, keyboard-
-// only play, the 320px cell floor, reduced-motion parity, the input lockout, persistence resume
-// — all need a real registered game's Board and are deferred until one lands; e2e/ is
+// platform CI hook)"), plus e2e/route-smoke.spec.ts (platform-corrections.md C17): a loop over
+// games/registry.ts asserting every registered game's /play/<id> route returns 200 and renders
+// a real board. Two games are registered as of this pass (crackstep, fadeout) and both are
+// covered automatically — route-smoke.spec.ts reads the registry itself, so a new game needs no
+// edit here. The full §11.2 suite this config is built to eventually carry — cold-load-to-
+// first-move timing, keyboard-only play, the 320px cell floor, reduced-motion parity, the input
+// lockout, persistence resume — remains scoped per e2e/a11y.spec.ts's own comment; e2e/ is
 // structured so those specs slot in without reshaping this config.
 export default defineConfig({
   testDir: "./e2e",

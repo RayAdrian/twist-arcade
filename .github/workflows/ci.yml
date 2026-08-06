@@ -87,8 +87,14 @@ jobs:
 
       - name: E2E + a11y gate (Playwright + axe, plan §11.2/§11.3)
         run: pnpm test:e2e
-        # Scope note (shell team, S1): the registry is still empty (no game has a presentation
-        # yet), so this currently exercises "/" and the unknown-gameId 404 path only — see
-        # playwright.config.ts and e2e/a11y.spec.ts for what's deferred until a real game
-        # lands (cold-load timing, keyboard-only play, the 320px cell floor, reduced-motion
-        # parity, the input lockout, persistence resume).
+        # `playwright.config.ts`'s `testDir: "./e2e"` picks up every spec in the directory,
+        # including e2e/route-smoke.spec.ts (platform-corrections.md C17): for EVERY entry in
+        # games/registry.ts, requests /play/<id> against the just-built production server and
+        # asserts a real 200 plus a rendered board (role="grid" + at least one "gridcell") —
+        # the gap that let a solver import drag node:fs/promises into crackstep's browser
+        # bundle ship past typecheck/lint/1,321 green unit tests. Must stay AFTER the Build
+        # step above (webServer runs `next start`, not `next dev`). e2e/a11y.spec.ts's own
+        # deeper suite (cold-load timing, keyboard-only play, the 320px cell floor,
+        # reduced-motion parity, the input lockout, persistence resume) remains scoped to what
+        # the shell team's S1 pass covered — see that file's own comment for what's still
+        # deferred per-game.

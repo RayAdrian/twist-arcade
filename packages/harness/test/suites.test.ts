@@ -328,8 +328,22 @@ describe("runCiSuite() — C19: ciGateBudget.twoPlayerCiRollouts scales ONLY the
   });
 
   it("no ciGateBudget declared at all: behavior is unchanged (a game like Fadeout never needs this)", () => {
-    const { ciGateBudget: _omit, ...rest } = manifestNoStandard;
-    const noOverride: GameManifest = { ...rest };
+    // A fresh literal (not manifestNoStandard minus a field) so this test never accidentally
+    // inherits an override via a stray key — "no ciGateBudget" means the property is genuinely
+    // absent, not merely destructured away.
+    const noOverride: GameManifest = {
+      id: "classic-ttt-fixture",
+      title: "Scaled TTT",
+      classic: "Tic-Tac-Toe",
+      ruleSentence: "suites.test.ts C19 fixture.",
+      tags: [],
+      estMinutes: 1,
+      modes: { bot: true, hotseat: false, asyncLink: false },
+      players: { min: 2, max: 2 },
+      difficultyTiers: [
+        { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 5000 }, minReplyMs: 0 },
+      ],
+    };
     const report = runCiSuite(classicTicTacToe, noOverride, {
       games: 30,
       seed: "suites-test:c19:no-override",
