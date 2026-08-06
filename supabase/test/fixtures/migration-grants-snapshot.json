@@ -1,0 +1,25 @@
+{
+  "grants": [
+    { "table_name": "match_players", "grantee": "postgres", "privilege_type": "DELETE" },
+    { "table_name": "match_players", "grantee": "postgres", "privilege_type": "INSERT" },
+    { "table_name": "match_players", "grantee": "postgres", "privilege_type": "REFERENCES" },
+    { "table_name": "match_players", "grantee": "postgres", "privilege_type": "SELECT" },
+    { "table_name": "match_players", "grantee": "postgres", "privilege_type": "TRIGGER" },
+    { "table_name": "match_players", "grantee": "postgres", "privilege_type": "TRUNCATE" },
+    { "table_name": "match_players", "grantee": "postgres", "privilege_type": "UPDATE" },
+    { "table_name": "matches", "grantee": "postgres", "privilege_type": "DELETE" },
+    { "table_name": "matches", "grantee": "postgres", "privilege_type": "INSERT" },
+    { "table_name": "matches", "grantee": "postgres", "privilege_type": "REFERENCES" },
+    { "table_name": "matches", "grantee": "postgres", "privilege_type": "SELECT" },
+    { "table_name": "matches", "grantee": "postgres", "privilege_type": "TRIGGER" },
+    { "table_name": "matches", "grantee": "postgres", "privilege_type": "TRUNCATE" },
+    { "table_name": "matches", "grantee": "postgres", "privilege_type": "UPDATE" },
+    { "table_name": "moves", "grantee": "postgres", "privilege_type": "DELETE" },
+    { "table_name": "moves", "grantee": "postgres", "privilege_type": "INSERT" },
+    { "table_name": "moves", "grantee": "postgres", "privilege_type": "REFERENCES" },
+    { "table_name": "moves", "grantee": "postgres", "privilege_type": "SELECT" },
+    { "table_name": "moves", "grantee": "postgres", "privilege_type": "TRIGGER" },
+    { "table_name": "moves", "grantee": "postgres", "privilege_type": "TRUNCATE" },
+    { "table_name": "moves", "grantee": "postgres", "privilege_type": "UPDATE" }
+  ]
+}

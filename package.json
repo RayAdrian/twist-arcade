@@ -21,7 +21,9 @@
     "dev": "next dev",
     "build": "next build",
     "test:e2e": "playwright test",
-    "new-game": "tsx scripts/new-game.ts"
+    "new-game": "tsx scripts/new-game.ts",
+    "supabase:verify-remote": "tsx supabase/scripts/verify-remote-schema.ts",
+    "supabase:sync-fixtures": "tsx supabase/scripts/verify-remote-schema.ts --write"
   },
   "dependencies": {
     "@twist-arcade/bots": "workspace:*",
@@ -35,17 +37,20 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
     "@electric-sql/pglite": "^0.5.4",
+    "@electric-sql/pglite-socket": "^0.2.7",
     "@eslint/js": "^9.13.0",
     "@playwright/test": "^1.62.1",
     "@size-limit/file": "^13.0.3",
     "@twist-arcade/crackstep": "workspace:*",
     "@twist-arcade/harness": "workspace:*",
     "@types/node": "^20.14.0",
+    "@types/pg": "^8.20.4",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.13.0",
     "fast-check": "^3.22.0",
+    "pg": "^8.22.0",
     "postcss": "^8.4.47",
     "size-limit": "^13.0.3",
     "tailwindcss": "^3.4.13",

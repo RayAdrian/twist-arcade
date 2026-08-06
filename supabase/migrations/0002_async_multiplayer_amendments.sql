@@ -2,8 +2,9 @@
 --
 -- A0 (docs/plans/phase-2-async-multiplayer.md §12.2, §4), amendments as corrected by
 -- ruling C21 (docs/plans/platform-corrections.md). All three tables are empty (verified
--- immediately before this migration was applied remotely — see the A0 report), so every
--- change here is a plain ALTER with zero data-migration risk.
+-- immediately before this migration was applied remotely — see docs/reports/
+-- phase2-a0-schema.md §2), so every change here is a plain ALTER with zero
+-- data-migration risk.
 --
 -- §4.1 — matches.engine_version (int) conflated ReplayRecord's gameVersion: number and
 -- engineVersion: string (packages/engine/src/replay.ts). Split into the two columns the

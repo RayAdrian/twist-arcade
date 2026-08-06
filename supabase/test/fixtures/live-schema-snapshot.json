@@ -1,4 +1,5 @@
 {
+  "tables": ["match_players", "matches", "moves"],
   "columns": [
     { "table_name": "match_players", "column_name": "match_id", "ordinal_position": 1, "column_default": null, "is_nullable": "NO", "data_type": "uuid", "udt_name": "uuid" },
     { "table_name": "match_players", "column_name": "seat", "ordinal_position": 2, "column_default": null, "is_nullable": "NO", "data_type": "integer", "udt_name": "int4" },
@@ -29,7 +30,7 @@
     { "table_name": "match_players", "conname": "match_players_match_id_fkey", "contype": "f", "definition": "FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE" },
     { "table_name": "match_players", "conname": "match_players_match_id_user_id_key", "contype": "u", "definition": "UNIQUE (match_id, user_id)" },
     { "table_name": "match_players", "conname": "match_players_pkey", "contype": "p", "definition": "PRIMARY KEY (match_id, seat)" },
-    { "table_name": "match_players", "conname": "match_players_user_id_fkey", "contype": "f", "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE" },
+    { "table_name": "match_players", "conname": "match_players_user_id_fkey", "contype": "f", "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE RESTRICT" },
     { "table_name": "matches", "conname": "matches_join_code_round_key", "contype": "u", "definition": "UNIQUE (join_code, round)" },
     { "table_name": "matches", "conname": "matches_pkey", "contype": "p", "definition": "PRIMARY KEY (id)" },
     { "table_name": "matches", "conname": "matches_status_check", "contype": "c", "definition": "CHECK ((status = ANY (ARRAY['open'::text, 'ongoing'::text, 'finished'::text, 'expired'::text, 'void'::text])))" },
@@ -55,5 +56,7 @@
     { "table_name": "match_players", "comment": "Seat-to-user mapping, anonymous users included. RLS deny-all until Phase 2." },
     { "table_name": "matches", "comment": "Async multiplayer matches. RLS deny-all until Phase 2 writes policies. state and seed are server-only — clients receive playerView(state, seat), never this row." },
     { "table_name": "moves", "comment": "Per-ply move log; the leaderboard verifier replays this through the pure engine. RLS deny-all until Phase 2." }
-  ]
+  ],
+  "column_comments": [],
+  "functions": []
 }
