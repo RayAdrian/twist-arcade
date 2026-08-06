@@ -971,3 +971,39 @@ What is not acceptable is the current state, where a game that says nothing gets
 expensive possible run and no warning that it did.
 
 **A default nobody sets is not a default. It is a comment.**
+
+### C21 addendum — A0 landed; the anonymous-sign-in config call
+
+**A0 is done** (`feature/phase2-schema`, `91ebb09`). Migrations `0001` (a faithful record of
+the already-applied schema, generated from live introspection) and `0002` (plan §4 amendments
+as corrected by C21, applied against verified-empty tables) are in version control, and the
+database's shape no longer lives only on a hosted server.
+
+**The drift guard was verified by the orchestrator, not accepted on report.** Planted a
+nullability drift — flipped `engine_version text not null` to nullable in the checked-in
+migration, confirming by `diff` that the edit actually applied — and the suite went red naming
+exactly the sabotaged column (`is_nullable: "NO" → "YES"`). Reverted, green again, 1.85s.
+
+This mattered specifically because the implementer had **weakened a comparison to get green**:
+pglite catalogues `NOT NULL` as `pg_constraint` rows (`contype = 'n'`) while the hosted
+instance does not, so `contype = 'n'` was excluded, with the claim that `columns.is_nullable`
+covers it losslessly. That is the exact shape of the twenty-three defects in `PROGRESS.md` —
+an exclusion that makes a test pass, justified by a comment. **The claim happened to be
+true**, and is now observed rather than trusted. It would have been equally cheap to check and
+find it false.
+
+The fixture is a snapshot of the **real remote database**, not of the migration file's intent,
+so the test cannot pass tautologically — and `supabase/` was added to `vitest.workspace.ts`,
+so CI's `pnpm test` actually invokes it (the Daily lesson: three working guards that no CI
+step invoked).
+
+**Ruling on `enable_anonymous_sign_ins = true` in `config.toml`:** keep it. `config.toml`
+configures the *local* stack only; it is inert until A1 wires auth, and plan §16 has A0–A4
+sharing one worktree, so deferring it just creates a config ghost.
+
+**But the remote setting is a separate, deliberate act with an abuse surface, and it is not
+authorized by this ruling.** Anonymous sign-in lets any caller mint `auth.users` rows without
+a credential — a spam and quota vector, and one that interacts with C21's recorded constraint
+that no anon-user cleanup job may run while matches reference those users. Enabling it on
+`fjiwrzaosluymamannaw` waits for A1 and must arrive with a rate-limiting and abuse story, not
+as a checkbox flipped in passing.
