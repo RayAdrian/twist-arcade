@@ -74,6 +74,26 @@ function threeInARowWinner(slots: readonly MicroCell[]): PlayerId | null {
   return null;
 }
 
+/** True if a single micro board's 9 `slots` contain a COMPLETE three-in-a-row for both
+ *  players at once — structurally impossible to reach by real play, since a board closes at
+ *  its first completed line and (transition()'s "closed boards never accept marks" rule) no
+ *  further marks are ever placed in it afterward. `threeInARowWinner` alone can't surface this:
+ *  it returns whichever line it finds FIRST in `LINES` order and says nothing about a second,
+ *  conflicting line sitting right behind it for the other player — exactly the "ownership
+ *  settled by internal scan order" gap platform-corrections.md C4/C28 (ruling A3) requires
+ *  `decode` to reject rather than silently paper over. */
+export function hasConflictingLines(slots: readonly MicroCell[]): boolean {
+  let owner: PlayerId | null = null;
+  for (const [a, b, c] of LINES) {
+    const va = slots[a];
+    if (va !== null && va !== undefined && va === slots[b] && va === slots[c]) {
+      if (owner !== null && owner !== va) return true;
+      owner = va;
+    }
+  }
+  return false;
+}
+
 /** Status of micro board `board` (0..8), derived fresh from `cells` every call — see this
  *  file's module doc for why nothing caches this. */
 export function boardStatusOf(cells: readonly MicroCell[], board: number): MicroBoardStatus {
@@ -106,6 +126,40 @@ export function macroWinnerOf(boardStatuses: readonly MicroBoardStatus[]): Playe
 
 export function allBoardsClosed(boardStatuses: readonly MicroBoardStatus[]): boolean {
   return boardStatuses.every((s) => s.kind !== "open");
+}
+
+/** Is macro `line` (three board indices) still achievable for `player` — i.e. could every one
+ *  of its three boards conceivably end up won by `player`? A board already `full` (drawn) or
+ *  `won` by the OPPONENT kills the line for `player` outright; `open` or already `won` by
+ *  `player` keeps it alive. Same disqualification shape as heuristic.ts's `liveLineCredit`
+ *  (kept separate rather than shared: that function also tallies a credit score this one has no
+ *  use for, and duplicating the ~4-line check is cheaper than threading an extra return mode
+ *  through a hot path). */
+function lineAchievableFor(boardStatuses: readonly MicroBoardStatus[], line: readonly [number, number, number], player: PlayerId): boolean {
+  for (const b of line) {
+    const s = boardStatuses[b]!;
+    if (s.kind === "full") return false;
+    if (s.kind === "won" && s.winner !== player) return false;
+  }
+  return true;
+}
+
+/** platform-corrections.md C28 ruling A1: true when NEITHER player can still complete any of
+ *  the 8 macro lines — the position's outcome (a draw) is already forced even though boards may
+ *  remain open. Deliberately cheap and approximate: it reasons only from each board's coarse
+ *  `open`/`won`/`full` status, never from whether an `open` board's remaining empty cells could
+ *  actually still produce the specific winner a line needs (D2a in the nine-grids test plan is
+ *  exactly such a case — its one open board is fated to end up drawn no matter who fills the
+ *  last cell, but this check still counts it as "achievable" for the player who owns both other
+ *  boards on the live diagonal, correctly leaving that position `ongoing`). That's intentional:
+ *  a full lookahead is a different, far more expensive check this ruling does not ask for. */
+export function isDeadPosition(boardStatuses: readonly MicroBoardStatus[]): boolean {
+  for (const line of LINES) {
+    if (lineAchievableFor(boardStatuses, line, 0) || lineAchievableFor(boardStatuses, line, 1)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** Legal GLOBAL cell indices (0..80) for whoever is to move, given `activeBoard` (null = free

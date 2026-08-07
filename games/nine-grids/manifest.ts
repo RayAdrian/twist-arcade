@@ -50,6 +50,27 @@ export const manifest: GameManifest = {
       minReplyMs: 250,
     },
   ],
+
+  // CI-only rollout budget (platform-corrections.md C19/C22). The shipped `ruthless` tier
+  // above (10,000) exceeds MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE (3000), so `runCiSuite` refuses
+  // for suite "ci" without an explicit override — measured, not guessed, via an in-memory
+  // manifest clone that never touches the shipped tier (C20 discipline).
+  //
+  // Measured against the real engine (9x9 board, no solvedValue — full self-play cost, unlike
+  // Fadeout's proven-draw shortcut): at n=1,500, self-play cost 9.99s/game (100 games x 3
+  // matchups = ~17 min for a full "ci" run) — affordable, and comparable to Fadeout's own
+  // shipped 3,000-rollout budget on a much smaller 3x3 board (848s for the same 300-game
+  // shape), consistent with C19's "cost scales with cells x plies x rollouts, not cells alone"
+  // — Nine Grids' larger board is offset by a smaller effective branching factor (mostly
+  // constrained to one 3x3 sub-board) and comparable game length. 1,500 clears the
+  // TierBudgetCollapseError floor (standard's own 1,000) with room to spare (1.5x).
+  //
+  // NOTE: an earlier probe accidentally varied the self-play seed per rollout count, which
+  // conflated the budget with which games were played (a 13.3% vs 60.0% FPA swing at n=1,500
+  // vs n=2,000, at only 15 games/matchup — not attributable to budget). That data was
+  // discarded. This number is chosen on COST alone, measured with a fixed seed; it makes no
+  // claim about balance — the real, full 100-game "ci" gate below is the balance measurement.
+  ciGateBudget: { twoPlayerCiRollouts: 1500 },
 };
 
 assertRuleSentenceLength(manifest);

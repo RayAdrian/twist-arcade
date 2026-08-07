@@ -54,6 +54,9 @@ importers:
       '@twist-arcade/harness':
         specifier: workspace:*
         version: link:packages/harness
+      '@twist-arcade/nine-grids':
+        specifier: workspace:*
+        version: link:games/nine-grids
       '@types/node':
         specifier: ^20.14.0
         version: 20.19.43

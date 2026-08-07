@@ -18,8 +18,11 @@ import {
   allBoardsClosed,
   allBoardStatuses,
   boardStatusOf,
+  CELLS_PER_BOARD,
   computeLegalCells,
   globalIndex,
+  hasConflictingLines,
+  isDeadPosition,
   macroWinnerOf,
   NUM_BOARDS,
   TOTAL_CELLS,
@@ -60,6 +63,12 @@ function computeStatus(state: NineGridsState): Status {
   const macroWinner = macroWinnerOf(boardStatuses);
   if (macroWinner !== null) return { kind: "won", winner: macroWinner };
   if (allBoardsClosed(boardStatuses)) return { kind: "draw" };
+  // C28 ruling A1: end the game the moment neither player can still complete any macro line,
+  // rather than playing out every remaining cell in a forced draw (measured mean-plies of 50.2
+  // sat above ux-lens's 10-40 band). Checked AFTER the two branches above, never before: a move
+  // that both wins the game and would otherwise read as "dead" must score as a win (TERM-003's
+  // shape), and a position with zero open boards is already handled by allBoardsClosed.
+  if (isDeadPosition(boardStatuses)) return { kind: "draw" };
   return { kind: "ongoing" };
 }
 
@@ -186,6 +195,20 @@ export const nineGrids: GameEngine<NineGridsState, NineGridsMove, NineGridsState
       throw new NineGridsDecodeError(`\`cells\` must be an array of length ${TOTAL_CELLS} of 0, 1, or null`);
     }
     const cells = obj.cells;
+
+    // C4/C28 ruling A3: reject a micro board carrying completed lines for BOTH players — no
+    // legal sequence of moves can ever reach it (a board closes at its FIRST completed line),
+    // so silently accepting it would let ownership be decided by internal line-scan order
+    // instead of being the forgery-detection failure it actually is.
+    for (let board = 0; board < NUM_BOARDS; board++) {
+      const base = board * CELLS_PER_BOARD;
+      if (hasConflictingLines(cells.slice(base, base + CELLS_PER_BOARD))) {
+        throw new NineGridsDecodeError(
+          `board ${board} contains completed three-in-a-row lines for BOTH players — a board closes ` +
+            "at its first completed line, so no legal move sequence can reach this shape"
+        );
+      }
+    }
 
     if (obj.toMove !== 0 && obj.toMove !== 1) {
       throw new NineGridsDecodeError("`toMove` must be 0 or 1");

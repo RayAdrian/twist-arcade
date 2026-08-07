@@ -12,6 +12,7 @@
 import type { Registry } from "@twist-arcade/game-spec";
 import { FADEOUT_RULESET_CONFIG, fadeoutManifest } from "./fadeout/manifest";
 import { manifest as crackstepManifest } from "./crackstep/manifest";
+import { manifest as nineGridsManifest } from "./nine-grids/manifest";
 
 export const registry: Registry = {
   "crackstep": {
@@ -25,6 +26,11 @@ export const registry: Registry = {
     // the solver via the SAME module as loadEngine/loadPresentation would defeat that (ES
     // modules evaluate a module's whole dependency graph regardless of which export is used).
     loadSolver: () => import("@twist-arcade/crackstep/solver").then((m) => m.solver),
+  },
+  "nine-grids": {
+    manifest: nineGridsManifest,
+    loadEngine: () => import("@twist-arcade/nine-grids").then((m) => m.nineGrids),
+    loadPresentation: () => import("@twist-arcade/nine-grids").then((m) => m.presentation),
   },
   // <new-game:insert>
   fadeout: {
