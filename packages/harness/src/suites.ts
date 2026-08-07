@@ -106,6 +106,20 @@ export class MissingSolvedValueProofError extends Error {
   }
 }
 
+/** Info `evaluateCiGates` needs to decide whether a CI-suite rollout override has changed the
+ *  very quantity `ruthless-vs-standard` compares (platform-corrections.md C26). `active` is
+ *  true only when suite "ci" actually substituted `ciGateBudget.twoPlayerCiRollouts` in place
+ *  of the shipped `ruthless` budget — the SAME condition `runCiSuite` uses to build the
+ *  in-memory clone, computed once and threaded through rather than re-derived, so the gate and
+ *  the substitution can never disagree about whether it happened. `ruthlessN`/`standardN` are
+ *  the two budgets under comparison, named in the gate's own `n/a` detail so a reader can see
+ *  WHY it wasn't measured, not just that it wasn't. */
+export interface RuthlessVsStandardBudgets {
+  readonly active: boolean;
+  readonly ruthlessN: number;
+  readonly standardN: number | null;
+}
+
 /** Self-play floor for the "solved-value-reached" gate (platform-corrections.md C23's inverted
  *  check): for a game with a PROVEN `solvedValue`, self-play must actually reach that value at a
  *  healthy rate — the real regression signal a decided game needs, and the exact opposite of the
@@ -131,7 +145,8 @@ export function evaluateCiGates(
   thresholds: HarnessThresholds,
   exceptions: readonly ManifestException[] = [],
   suite: "ci" | "nightly" = "ci",
-  solvedValue?: SolvedValueClaim
+  solvedValue?: SolvedValueClaim,
+  ruthlessBudgets?: RuthlessVsStandardBudgets
 ): GateResult[] {
   // Validated up front, before any gate runs — an exception with a blank justification is
   // rejected regardless of whether it ends up matching a failing gate (see
@@ -242,6 +257,32 @@ export function evaluateCiGates(
       });
     } else if (inputs.ruthlessVsStandardWinRate === null) {
       results.push({ gate: "ruthless-vs-standard", status: "n/a", detail: "manifest has no \"standard\" tier" });
+    } else if (ruthlessBudgets?.active) {
+      // C26 (Nine Grids): TierBudgetCollapseError's strict-inequality check (ruthlessN >
+      // standardN) is NECESSARY but not SUFFICIENT — MCTS strength grows roughly with the
+      // LOGARITHM of rollouts, so a budget gap that clears the strict inequality (Nine Grids:
+      // 1,500 vs standard's 1,000, a 1.5x gap) can still be a strength difference noise
+      // swallows whole, when the SHIPPED gap is 10x (10,000 vs 1,000). The measured number in
+      // that case is not a finding about the game — it is an artifact of the CI substitution
+      // having changed the very quantity under comparison. Reporting a WARN with that number
+      // reads as a real result; it is not one. Reject the temptation to fix this with a ratio
+      // threshold instead (rejected in platform-corrections.md C26): any ratio is a guess about
+      // how strength scales with rollouts for an unknown game, the exact assumption C22 and C25
+      // already punished twice (Wrap's safe ratio was unsafe for Fadeout; a budget proven on a
+      // 6x6 fixture didn't transfer to Mine Run's 10x10 board). n/a, naming both budgets, is
+      // honest about what CI can and cannot measure — nightly never applies this override, so
+      // it keeps measuring the real, shipped 10x (or whatever the manifest actually ships) gap,
+      // where the comparison means something.
+      results.push({
+        gate: "ruthless-vs-standard",
+        status: "n/a",
+        detail:
+          `manifest.ciGateBudget.twoPlayerCiRollouts is active for this CI-suite run — ` +
+          `"ruthless" is measured at ${ruthlessBudgets.ruthlessN} rollouts vs "standard"'s shipped ` +
+          `${ruthlessBudgets.standardN} — the override has changed the very quantity under ` +
+          "comparison, so this gate cannot measure its claim at suite \"ci\" (C26). Nightly " +
+          "measures it at the real shipped budgets, where it means something.",
+      });
     } else {
       const pass = inputs.ruthlessVsStandardWinRate >= thresholds.ruthlessVsStandardMinWinRate;
       const detail = `${(inputs.ruthlessVsStandardWinRate * 100).toFixed(1)}% (min ${(thresholds.ruthlessVsStandardMinWinRate * 100).toFixed(1)}%, ${suite})`;
@@ -376,9 +417,61 @@ export interface CiSuiteReport {
 
 export interface RunCiSuiteOptions {
   readonly games?: number; // per matchup; default 200 (PR budget)
+  /** `runMatchup` (runner.ts) seeds matchup game *i* as `` `${seed}:${i}` ``. Two calls that
+   *  vary THIS string therefore play DIFFERENT games — any measured difference between them
+   *  conflates whatever you changed with seed variance, not isolates it (platform-corrections.md
+   *  C24: two independent agents, in unrelated worktrees on the same day, both templated the
+   *  varying parameter INTO this seed while hand-rolling a budget comparison — a recurrence
+   *  across independent authors that never saw each other's code is evidence the INTERFACE makes
+   *  the wrong thing natural, not that either agent was careless). Comparing configurations
+   *  (e.g. several candidate `ciGateBudget.twoPlayerCiRollouts` values)? Use `compareBudgets`
+   *  below, which holds this ONE seed fixed across every candidate so they play the identical
+   *  games — never invent a seed per candidate here. */
   readonly seed: string;
   readonly suite?: "ci" | "nightly"; // default "ci"
   readonly clock?: RunMatchupOptions["clock"];
+}
+
+/** One `compareBudgets` result point: the candidate rollout count and the full report a real
+ *  `runCiSuite` run produced at that count. */
+export interface CompareBudgetsPoint {
+  readonly rollouts: number;
+  readonly report: CiSuiteReport;
+}
+
+/**
+ * platform-corrections.md C24's preferred fix: "provide the comparison as a first-class harness
+ * helper... so nobody hand-rolls the loop, nobody invents a seed." Runs `runCiSuite` once per
+ * candidate in `rolloutCandidates`, ALL under the exact same `opts.seed` + `opts.games` — only
+ * `ciGateBudget.twoPlayerCiRollouts` varies between calls, via a fresh in-memory clone per
+ * candidate (the shipped `manifest.ciGateBudget` — and every difficulty tier — is never
+ * mutated, matching `runCiSuite`'s own C20 discipline). Always `suite: "ci"`: a rollout-budget
+ * comparison is a CI-suite-only concept in the first place (nightly ignores the override
+ * entirely, so every candidate would report the identical result there).
+ *
+ * This is exactly the comparison the C22 Fadeout sweep and the Nine Grids pilot each needed and
+ * each built by hand, with a seed that varied per candidate — the confound C24 found in both,
+ * independently, in one day. This helper makes the correct construction the only one available.
+ */
+export function compareBudgets<S extends WithEffects, M extends Json, V extends WithEffects>(
+  engine: GameEngine<S, M, V>,
+  manifest: GameManifest,
+  rolloutCandidates: readonly number[],
+  opts: { readonly seed: string; readonly games?: number; readonly clock?: RunMatchupOptions["clock"] }
+): CompareBudgetsPoint[] {
+  return rolloutCandidates.map((rollouts) => {
+    const candidateManifest: GameManifest = {
+      ...manifest,
+      ciGateBudget: { ...manifest.ciGateBudget, twoPlayerCiRollouts: rollouts },
+    };
+    const report = runCiSuite(engine, candidateManifest, {
+      seed: opts.seed, // SAME across every candidate — the entire point of this helper
+      ...(opts.games !== undefined ? { games: opts.games } : {}),
+      suite: "ci",
+      ...(opts.clock ? { clock: opts.clock } : {}),
+    });
+    return { rollouts, report };
+  });
 }
 
 function findTier(manifest: GameManifest, id: DifficultyTier["id"]): DifficultyTier | undefined {
@@ -508,7 +601,16 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
     ruthlessVsStandardWinRate: ruthlessVsStandard ? agentWinRate(ruthlessVsStandard.outcomes, "ruthless") : null,
   };
 
-  const gates = evaluateCiGates(inputs, thresholds, exceptions, suite, manifest.solvedValue);
+  // C26: SAME condition as the in-memory clone substitution above (never re-derived
+  // differently), so the gate and the substitution can never disagree about whether the
+  // override actually applied.
+  const ruthlessBudgets: RuthlessVsStandardBudgets = {
+    active: suite === "ci" && ciRolloutOverride !== undefined && shippedRuthlessTier.budget.kind === "rollouts",
+    ruthlessN: ruthlessTier.budget.kind === "rollouts" ? ruthlessTier.budget.n : 0,
+    standardN: standardTier && standardTier.budget.kind === "rollouts" ? standardTier.budget.n : null,
+  };
+
+  const gates = evaluateCiGates(inputs, thresholds, exceptions, suite, manifest.solvedValue, ruthlessBudgets);
 
   return {
     gameId: manifest.id,

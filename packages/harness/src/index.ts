@@ -52,9 +52,18 @@ export { agentWinRate, computeMatchupMetrics, percentile } from "./metrics";
 export type { MatchupReport, RunMatchupOptions } from "./runner";
 export { HiddenInformationUnsupportedError, runMatchup } from "./runner";
 
-export type { CiSuiteReport, GateInputs, GateResult as CiGateResult, GateStatus as CiGateStatus, RunCiSuiteOptions } from "./suites";
+export type {
+  CiSuiteReport,
+  CompareBudgetsPoint,
+  GateInputs,
+  GateResult as CiGateResult,
+  GateStatus as CiGateStatus,
+  RunCiSuiteOptions,
+  RuthlessVsStandardBudgets,
+} from "./suites";
 export {
   assertSuiteOk,
+  compareBudgets,
   EmptyExceptionJustificationError,
   evaluateCiGates,
   MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE,
