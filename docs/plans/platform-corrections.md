@@ -1794,3 +1794,62 @@ which is the cheapest kill-test this game owns; the hidden variant puts it out o
 self-plays, Tilt runs a kill-test sweep before its gates, Order vs Chaos runs a 10k-board
 line-probability script before anything is built. Two hours were spent today accumulating seeds
 on a question a five-minute code read answered.
+
+---
+
+## C32 — A1 fires. The 6-point swing was not a defect; the comparison was.
+
+The A1 firing diagnostic, instrumented rather than re-run blind:
+
+```
+firstPlayerWinRate=0.4  drawRate=0.3  meanPlies=49.78
+{ wonCount: 70, capHitCount: 0, deadPositionDraws: 14, fullBoardDraws: 16, unexpected: 0, total: 100 }
+dead-position games: 7 mirrored pairs (seeds 10, 26, 27, 32, 43, 46, 48), each ending with openBoardsAtEnd=1
+```
+
+**The rule is not inert: 14 of 100 games (7 mirrored pairs) now terminate by dead-position
+detection**, all with exactly one sub-board still open — precisely the case A1 was ruled to
+catch. `14 + 16 = 30` reconciles with the reported 30% draw rate, and `70 + 30 = 100`. The
+mechanism runs.
+
+### Why mean-plies barely moved, and why that is correct
+
+The 14 affected games were **already going to be draws**; A1 only ends them sooner. So the draw
+rate is unchanged by construction (what changed is the *reason* 14 draws terminate: full-board
+before, dead-position now — `fullBoardDraws` fell from 30 to 16), and the ply saving is small
+because these games were already near the end. 14 games × ~3 plies saved ÷ 100 ≈ 0.4 — exactly
+the observed 50.2 → 49.8.
+
+I predicted mean-plies would "drop" and told the implementer to investigate if it didn't. **The
+prediction was too coarse.** Ending only near-terminal drawn games can shorten 14% of games and
+still move the mean by less than half a ply. Investigating was still right — the number was
+consistent with an inert rule, and only instrumentation could tell the two apart.
+
+### The 6-point FPA swing: my comparison was invalid, not the data
+
+46.0% → 40.0% cannot be attributed to A1 turning wins into draws — the draw count is identical.
+The actual cause is that **A1 changes the tree the bots search**. Rollouts that previously played
+dead positions out to a full board now terminate as draws, which changes leaf values, which
+changes evaluations, which changes moves — **from early in the game, not only at the end.**
+
+So the two runs are **not a paired comparison**. They are independent samples from two different
+games, and comparing them point-to-point was my error. At n=100 the 95% interval on a win rate is
+roughly ±10 points; 46% and 40% are indistinguishable, and both sit inside [35, 65].
+
+**This generalises, and it is the C24 lesson one level up.** C24 was about holding the *seed*
+fixed so a comparison isolates one variable. Here the seed was fixed and the comparison was still
+invalid, because **the engine change altered what the seed produces**. A fixed seed guarantees the
+same starting positions, not the same games. Any rules change that a search can observe makes
+before/after gate numbers independent samples — they can be compared for *band membership*, never
+for drift.
+
+### Ruling
+
+**Nine Grids' recorded numbers are the post-A1 ones: FPA 40.0%, draws 30.0%, mean-plies 49.8,
+zero cap hits.** A1 stays — it fires on 14% of games and removes play after the outcome is
+settled, which is what it was ruled in to do. The earlier 46.0% belongs to a different ruleset and
+is superseded, not averaged.
+
+One thing to carry into the UI stage: **40.0% sits nearer the band edge than 46.0%.** Not a
+concern at n=100, but if any future change moves it again, the next measurement wants more games
+rather than a tighter reading of the same 100.
