@@ -1,0 +1,22 @@
+
+==== rollouts=2000 ====
+  strongVsRandom win rate: see gates below
+  strongSelfPlay: drawRate=0.0% firstPlayerWinRate=43.3% meanPlies=10.9 capHitRate=0.00%
+  gates:
+    [PASS] strong-vs-random: 100.0% (min 90.0%)
+    [N/A] first-player-win-rate: manifest.solvedValue is a proven "draw" (docs/research/games/bid-tac-toe-solve-report.md §1 (B=8: exact backward induction, pure at every bid node — 369,802/369,802 — cross-checked against an independent brute-force oracle at B<=3)) — a balanced-FPA band does not apply to a solved game
+    [N/A] draw-rate: manifest.solvedValue is a proven draw (docs/research/games/bid-tac-toe-solve-report.md §1 (B=8: exact backward induction, pure at every bid node — 369,802/369,802 — cross-checked against an independent brute-force oracle at B<=3)) — a draw-rate ceiling is unsatisfiable by construction for a drawn game
+    [PASS] mean-plies: mean 10.9 plies, 0 cap hits across all matchups
+    [N/A] ruthless-vs-standard: manifest.solvedValue is a proven draw (docs/research/games/bid-tac-toe-solve-report.md §1 (B=8: exact backward induction, pure at every bid node — 369,802/369,802 — cross-checked against an independent brute-force oracle at B<=3)) — ruthless cannot out-win standard when neither can win
+    [FAIL] solved-value-reached: self-play reached the proven "draw" 0.0% of the time (floor 90%, proof: docs/research/games/bid-tac-toe-solve-report.md §1 (B=8: exact backward induction, pure at every bid node — 369,802/369,802 — cross-checked against an independent brute-force oracle at B<=3))
+
+==== rollouts=10000 ====
+  strongVsRandom win rate: see gates below
+  strongSelfPlay: drawRate=0.0% firstPlayerWinRate=36.7% meanPlies=7.7 capHitRate=0.00%
+  gates:
+    [PASS] strong-vs-random: 91.7% (min 90.0%)
+    [N/A] first-player-win-rate: manifest.solvedValue is a proven "draw" (docs/research/games/bid-tac-toe-solve-report.md §1 (B=8: exact backward induction, pure at every bid node — 369,802/369,802 — cross-checked against an independent brute-force oracle at B<=3)) — a balanced-FPA band does not apply to a solved game
+    [N/A] draw-rate: manifest.solvedValue is a proven draw (docs/research/games/bid-tac-toe-solve-report.md §1 (B=8: exact backward induction, pure at every bid node — 369,802/369,802 — cross-checked against an independent brute-force oracle at B<=3)) — a draw-rate ceiling is unsatisfiable by construction for a drawn game
+    [PASS] mean-plies: mean 7.7 plies, 0 cap hits across all matchups
+    [N/A] ruthless-vs-standard: manifest.solvedValue is a proven draw (docs/research/games/bid-tac-toe-solve-report.md §1 (B=8: exact backward induction, pure at every bid node — 369,802/369,802 — cross-checked against an independent brute-force oracle at B<=3)) — ruthless cannot out-win standard when neither can win
+    [FAIL] solved-value-reached: self-play reached the proven "draw" 0.0% of the time (floor 90%, proof: docs/research/games/bid-tac-toe-solve-report.md §1 (B=8: exact backward induction, pure at every bid node — 369,802/369,802 — cross-checked against an independent brute-force oracle at B<=3))

@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 import { rngFromSeed } from "@twist-arcade/engine";
 import { classicTicTacToe, type TTTMove, type TTTState } from "@twist-arcade/engine/testkit/fixtures/classic-ttt";
 import { bankRun, type BankRunMove, type BankRunState } from "@twist-arcade/engine/testkit/fixtures/bank-run";
-import { mctsPolicy } from "../src/mcts";
+import { aggregateByOwnMove, mctsPolicy } from "../src/mcts";
 import { randomPolicy } from "../src/random";
 import { determinize, deriveView, probeViewHonesty, type Policy, type SearchStats, type ViewPolicy } from "../src/policy";
 import { fakeClock } from "./helpers";
 import { rps, type RPSMove, type RPSState } from "./fixtures/rps";
+import { luckyCellRps, type LuckyCellRPSMove, type LuckyCellRPSState } from "./fixtures/lucky-cell-rps";
 import { tinyFog, type TinyFogMove, type TinyFogState, type TinyFogView } from "./fixtures/tiny-fog";
 
 describe("mctsPolicy", () => {
@@ -150,6 +151,102 @@ describe("mctsPolicy", () => {
       const legal = engine.legalMoves(state, player);
       expect(legal.some((m) => m.choice === move.choice)).toBe(true);
     }
+  });
+
+  describe("marginal aggregation at a simultaneous root (platform-corrections.md C56)", () => {
+    it("aggregateByOwnMove: a single lucky joint cell can out-visit any individual cell of the TRUE-best action — plant a violation the OLD joint-argmax rule would have missed", () => {
+      // Constructed directly (bypassing real search noise) so the disagreement is exact and
+      // not seed-dependent: player 0's action A is uniformly good across all three of player
+      // 1's responses (15 visits each, avg value 1.0 apiece — marginal total 45 visits, mean
+      // 1.0). Action B is a trap: one lucky cell (B,X) alone gets MORE visits (40) than any
+      // single A-cell (15), even though B's other two cells are barely explored and strongly
+      // negative (1 visit each, avg -1.0) — B's marginal total is only 42, mean ~0.905.
+      //
+      // The OLD defect (docs/plans/platform-corrections.md C56): read off the single
+      // most-visited JOINT cell, which is (B,X) at 40 — recommending B, the worse action.
+      // A test asserting the OLD rule's answer here would still pass after a fix that changed
+      // nothing (C41's "vacuous agreement" trap) — this asserts the OPPOSITE: the marginal
+      // total prefers A (45 > 42), and that is what `aggregateByOwnMove` must return.
+      const entries = [
+        { move: "A" as const, visits: 15, totalValue: 15 },
+        { move: "A" as const, visits: 15, totalValue: 15 },
+        { move: "A" as const, visits: 15, totalValue: 15 },
+        { move: "B" as const, visits: 40, totalValue: 40 }, // the lucky cell: joint-argmax picks THIS
+        { move: "B" as const, visits: 1, totalValue: -1 },
+        { move: "B" as const, visits: 1, totalValue: -1 },
+      ];
+
+      // Sanity check on the plant itself: confirm the single most-visited JOINT cell really is
+      // a B-cell (40), strictly beating every individual A-cell (15) — i.e. the OLD rule really
+      // would disagree with the fixed one here, not just "arguably".
+      const jointArgmax = entries.reduce((best, e) => (e.visits > best.visits ? e : best));
+      expect(jointArgmax.move).toBe("B");
+      expect(jointArgmax.visits).toBe(40);
+      expect(entries.filter((e) => e.move === "A").every((e) => e.visits < jointArgmax.visits)).toBe(true);
+
+      const aggregated = aggregateByOwnMove(entries);
+      const byMove = new Map(aggregated.map((a) => [a.move, a]));
+      expect(byMove.get("A")?.visits).toBe(45);
+      expect(byMove.get("B")?.visits).toBe(42);
+
+      const marginalBest = aggregated.reduce((best, a) => (a.visits > best.visits ? a : best));
+      expect(marginalBest.move).toBe("A"); // the TRUE-best action — disagrees with jointArgmax
+      expect(marginalBest.move).not.toBe(jointArgmax.move);
+    });
+
+    it("aggregateByOwnMove is a structural no-op for a sequential root's shape: one joint arm per own move never merges with another", () => {
+      // Every sequential root child is ALREADY keyed by a singleton {player: move} map, so
+      // jointMoveOptions() never produces two children sharing the same own-move value. This
+      // is the fact mcts.ts's sequential branch relies on to justify NOT routing through
+      // aggregateByOwnMove at all (see mcts.ts's byte-identical-for-sequential rationale) —
+      // asserted here directly so that claim has its own regression coverage.
+      const entries = [
+        { move: "left" as const, visits: 10, totalValue: 3 },
+        { move: "right" as const, visits: 20, totalValue: -5 },
+        { move: "center" as const, visits: 5, totalValue: 5 },
+      ];
+      const aggregated = aggregateByOwnMove(entries);
+      expect(aggregated).toEqual(entries);
+    });
+
+    it("real MCTS on a fixture engineered to expose the pathology (lucky-cell-rps): marginalizes over the opponent instead of reading off the joint argmax", () => {
+      // lucky-cell-rps.ts: player 0's action A wins against every one of player 1's three
+      // responses; action B only wins against ONE of them (X) and loses to the other two.
+      // Marginalized over player 1, A strictly dominates (mean +1 vs mean -1/3). At this
+      // specific (budget, seed) pair — found by direct measurement, the same C36/C56
+      // discipline this fix responds to — the single most-visited JOINT cell is a B-cell
+      // (the lucky (B,X) draw), which is exactly the shape of defect C56 describes: UCB ties
+      // player 0's three A-cells and the one lucky B-cell at value 1.0 apiece, and whichever
+      // of those four happens to be first in insertion order wins the OLD rule's tie-break —
+      // here, that happens to be a B-cell, even though B's OWN marginal total (over all of
+      // player 1's responses) is decisively behind A's.
+      const engine = luckyCellRps;
+      const state = engine.setup(2, rngFromSeed("lucky-setup-a"));
+      const policy = mctsPolicy<LuckyCellRPSState, LuckyCellRPSMove>({ explorationC: 1.4 });
+      const { move, stats } = policy.chooseMove({
+        engine,
+        state,
+        player: 0,
+        rng: rngFromSeed("lucky-decision-100-a"),
+        budget: { kind: "rollouts", n: 100 },
+        clock: fakeClock(),
+      });
+
+      // The fixed policy must marginalize: A's own aggregated visits must exceed B's.
+      const byOwnMove = new Map<string, number>();
+      for (const { move: m, visits } of stats.rootVisits ?? []) {
+        const choice = (m as unknown as LuckyCellRPSMove).choice;
+        byOwnMove.set(choice, (byOwnMove.get(choice) ?? 0) + visits);
+      }
+      expect(byOwnMove.get("A")).toBeDefined();
+      expect(byOwnMove.get("B")).toBeDefined();
+      expect(byOwnMove.get("A")!).toBeGreaterThan(byOwnMove.get("B")!);
+
+      // The chosen move must be the marginal winner, A — NOT the joint-argmax pick a
+      // pre-C56-fix search would make on this exact (state, seed, budget) (empirically
+      // confirmed to be "B" against the unfixed selection rule).
+      expect(move.choice).toBe("A");
+    });
   });
 
   it("throws a clear error when called on a terminal state", () => {
