@@ -121,6 +121,36 @@ export interface GameEngine<
   score?(state: S, player: PlayerId): number;
 
   /**
+   * Declares which of score()/heuristic() a search (packages/bots's valueOfStatus, used by
+   * mcts/flat-mc/beam/determinized-flat-mc) should use to value a NON-TERMINAL, horizon-capped
+   * rollout leaf (platform-corrections.md C30). REQUIRED when the engine implements BOTH
+   * score() and heuristic() — testkit's checkHorizonValueDeclared enforces this, and
+   * valueOfStatus itself throws HorizonValueUndeclaredError if it is somehow reached anyway.
+   * The finding this closes: valueOfStatus used to default to score() unconditionally whenever
+   * it existed, which silently blinded Mine Run's Strong to its entire live-streak mechanic —
+   * score() there is `banked` ONLY (correctly: it must equal the "scored" terminal's raw
+   * value), while heuristic() carries the streak's continuation value. Only the game's own
+   * author knows which quantity is a meaningful mid-game estimate for THEIR game; the platform
+   * cannot infer it, and a silent default already produced one wrong answer.
+   *
+   * Omit this field entirely when the engine implements AT MOST ONE of score()/heuristic() —
+   * there is no ambiguity to declare, and the one available hook is used exactly as it always
+   * was.
+   *
+   * Commensurability, not preference, decides how the chosen value is COMBINED
+   * (search-utils.ts's valueOfStatus): an engine that implements score() at all has a "scored"
+   * terminal by score()'s own contract above ("MUST equal status().scores[0] at a scored
+   * terminal"), so whichever hook horizonValue names is used RAW — including
+   * horizonValue: "heuristic" — to stay commensurate with that terminal's own raw scale. An
+   * engine with no score() at all (a won/lost/draw terminal, ±1 convention) always has its
+   * heuristic() squashed via Math.tanh, exactly as before this field existed. Getting this
+   * backwards (e.g. squashing whenever "heuristic" is named, regardless of the engine's own
+   * terminal convention) would reintroduce the same scale-mixing failure this field exists to
+   * prevent, just for scored games instead of won/lost ones.
+   */
+  horizonValue?: "score" | "heuristic";
+
+  /**
    * Optional: sample a full state consistent with a view — enables determinized MCTS for
    * hidden-info games. Hook in v1; no platform consumer until the ISMCTS fast-follow.
    */

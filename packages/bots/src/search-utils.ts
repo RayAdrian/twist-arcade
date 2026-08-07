@@ -17,6 +17,50 @@
 
 import type { GameEngine, Json, PlayerId, Rng, Status, WithEffects } from "@twist-arcade/engine";
 
+/** Thrown by `valueOfStatus` when an engine implements BOTH `score()` and `heuristic()` but
+ *  declares no `horizonValue` (platform-corrections.md C30). Before this field existed,
+ *  `valueOfStatus` defaulted silently to `score()` whenever it was present — which is exactly
+ *  what blinded Mine Run's Strong to its entire live-streak mechanic: Mine Run's `score()` is
+ *  `banked` ONLY (a deliberate, correct decision — it must equal the "scored" terminal's raw
+ *  value), while `heuristic()` carries the streak's continuation value. Only the game's own
+ *  author knows which quantity is a meaningful mid-game estimate for THEIR game; the platform
+ *  cannot infer it, and a silent default already produced one wrong answer here. There is no
+ *  safe default to fall back to a second time — this throws instead. */
+export class HorizonValueUndeclaredError extends Error {
+  constructor(gameId: string) {
+    super(
+      `valueOfStatus: engine "${gameId}" implements BOTH score() and heuristic() but declares ` +
+        `no horizonValue — a search cannot know which one to trust at a non-terminal, ` +
+        `horizon-capped leaf (platform-corrections.md C30). Set horizonValue: "score" | ` +
+        `"heuristic" on the engine.`
+    );
+    this.name = "HorizonValueUndeclaredError";
+  }
+}
+
+/** Resolves the RAW (unsquashed) score()/heuristic() estimate `valueOfStatus`'s "ongoing"
+ *  branch should use, per `engine.horizonValue` (platform-corrections.md C30) — or `undefined`
+ *  when the engine implements neither. Squashing is NOT decided here: it depends on the
+ *  engine's own terminal convention (see `valueOfStatus` below), not on which hook supplied
+ *  the number. */
+function resolveHorizonEstimate<S extends WithEffects, M extends Json>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  engine: GameEngine<S, M, any>,
+  state: S,
+  player: PlayerId
+): number | undefined {
+  const hasScore = !!engine.score;
+  const hasHeuristic = !!engine.heuristic;
+  if (hasScore && hasHeuristic) {
+    if (engine.horizonValue === "score") return engine.score!(state, player);
+    if (engine.horizonValue === "heuristic") return engine.heuristic!(state, player);
+    throw new HorizonValueUndeclaredError(engine.meta.id);
+  }
+  if (hasScore) return engine.score!(state, player);
+  if (hasHeuristic) return engine.heuristic!(state, player);
+  return undefined;
+}
+
 /** Value of a (possibly non-terminal, horizon-capped) outcome, from `player`'s perspective:
  *  +1 win / -1 loss-or-lost / 0 draw / status.scores[player] for a scored terminal / a
  *  score()-or-heuristic()-based estimate (falling back to 0) when the horizon was hit before
@@ -37,29 +81,31 @@ export function valueOfStatus<S extends WithEffects, M extends Json>(
       return 0;
     case "scored":
       return status.scores[player] ?? 0;
-    case "ongoing":
-      // score() is NOT squashed: a "scored" game's terminal value (the `case "scored"` branch
-      // above) is already the raw status.scores[player] — no ±1 convention exists for these
-      // games at all — so a mid-game score() estimate stays commensurate with its OWN game's
-      // terminal by construction. Squashing it here would instead make it LESS commensurate
-      // with its own terminal, the opposite of the problem this function exists to prevent.
-      if (engine.score) return engine.score(state, player);
-      // heuristic() IS squashed, via Math.tanh (order-preserving, and bounded strictly inside
-      // (-1, 1)). `heuristic()`'s doc (packages/engine/src/types.ts) promises only "positive =
-      // good for player" — no bound on its range — and is used exclusively by won/lost/draw-
-      // style games where ±1/0 IS the terminal convention. An earlier version of this line
-      // returned the heuristic raw and pushed the "must already be ±1-commensurate" requirement
-      // onto every game author instead: a requirement nothing checks, silently violated by
-      // classic-ttt's own heuristic (span ~±8) the moment a rollout hit `rolloutCapPlies`
-      // before a terminal — a horizon-capped "ongoing" value could then outrank an actual
-      // averaged win. (An even earlier version divided by a hardcoded 9 — classic-ttt's own
-      // open-line-count max — which "fixed" that one fixture while silently mis-scaling every
-      // OTHER game's differently-ranged heuristic instead.) Squashing removes the failure mode
-      // structurally rather than documenting around it — the same call made for the masked-vs-
-      // omitted fog fixture and the decode-ordering pin elsewhere in this package's history: a
-      // contract a future game author has to remember has already failed here more than once.
-      if (engine.heuristic) return Math.tanh(engine.heuristic(state, player));
-      return 0;
+    case "ongoing": {
+      const estimate = resolveHorizonEstimate(engine, state, player);
+      if (estimate === undefined) return 0;
+      // Squashing tracks the ENGINE's own terminal convention, not which hook supplied the
+      // estimate (platform-corrections.md C30 — this is the seam the original bug lived in:
+      // conflating "prefer score()" with "don't squash" broke the instant a game wanted
+      // heuristic() to supply a horizon estimate for a SCORED game). An engine that implements
+      // score() at all has a "scored" terminal by score()'s own contract (packages/engine/src/
+      // types.ts: "MUST equal status().scores[0] at a scored terminal") — that terminal's own
+      // value (the `case "scored"` branch above) is already raw, with no ±1 convention in play,
+      // so ANY horizon estimate for that engine — score() OR heuristic() — must stay raw to
+      // remain commensurate with it. Squashing it here would make it LESS commensurate with its
+      // own terminal, the opposite of the problem this function exists to prevent.
+      //
+      // An engine with NO score() at all has a won/lost/draw terminal (±1/0 convention), and
+      // its heuristic() IS squashed via Math.tanh (order-preserving, bounded strictly inside
+      // (-1, 1)). `heuristic()`'s doc promises only "positive = good for player" — no bound on
+      // its range — so an un-squashed heuristic here could let a horizon-capped "ongoing" value
+      // outrank an actual averaged win (classic-ttt's own heuristic, span ~±8, is exactly this
+      // case). Squashing removes the failure mode structurally rather than documenting around
+      // it — the same call made for the masked-vs-omitted fog fixture and the decode-ordering
+      // pin elsewhere in this package's history: a contract a future game author has to
+      // remember has already failed here more than once.
+      return engine.score ? estimate : Math.tanh(estimate);
+    }
   }
 }
 

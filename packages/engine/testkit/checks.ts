@@ -692,6 +692,44 @@ export function checkScoreCoherence<S extends WithEffects, M extends Json, V ext
   }
 }
 
+/** Declares which of score()/heuristic() a search should use to value a NON-TERMINAL,
+ *  horizon-capped rollout leaf (platform-corrections.md C30). REQUIRED when an engine
+ *  implements BOTH: `packages/bots/src/search-utils.ts`'s `valueOfStatus` used to default
+ *  silently to score() whenever it existed, which is exactly what blinded Mine Run's Strong to
+ *  its entire live-streak mechanic (score() === banked only; heuristic() carries the streak's
+ *  continuation value) — a defect that lived BETWEEN two files, with every existing contract
+ *  property passing throughout. Static — no playout needed, so this is cheap enough to run
+ *  unconditionally alongside every other contract check, catching the C30 defect class before
+ *  any expensive gate ever runs. Also rejects the "declared but the named hook doesn't exist"
+ *  typo case: a horizonValue naming a hook the engine never implements is exactly as silent a
+ *  failure as declaring nothing at all. */
+export function checkHorizonValueDeclared<S extends WithEffects, M extends Json, V extends WithEffects>(
+  engine: GameEngine<S, M, V>
+): void {
+  const hasScore = !!engine.score;
+  const hasHeuristic = !!engine.heuristic;
+  if (hasScore && hasHeuristic && engine.horizonValue === undefined) {
+    throw new ContractViolation(
+      "horizon-value-declared",
+      `engine "${engine.meta.id}" implements BOTH score() and heuristic() but declares no ` +
+        `horizonValue — a search cannot know which one to trust at a non-terminal horizon ` +
+        `(platform-corrections.md C30). Set horizonValue: "score" | "heuristic".`
+    );
+  }
+  if (engine.horizonValue === "score" && !hasScore) {
+    throw new ContractViolation(
+      "horizon-value-declared",
+      `engine "${engine.meta.id}" declares horizonValue: "score" but implements no score()`
+    );
+  }
+  if (engine.horizonValue === "heuristic" && !hasHeuristic) {
+    throw new ContractViolation(
+      "horizon-value-declared",
+      `engine "${engine.meta.id}" declares horizonValue: "heuristic" but implements no heuristic()`
+    );
+  }
+}
+
 /** All properties, run once per fixture. Exported so a self-test (or a game with unusual
  *  needs) can run "everything" outside of vitest's describe/it registration if it ever must
  *  (not expected — engineContract() in testkit/contract.ts is the normal entry point). */
@@ -710,6 +748,7 @@ export function runAllProperties<S extends WithEffects, M extends Json, V extend
   checkRedaction(engine, opts);
   checkStatusDiscipline(engine, opts);
   checkScoreCoherence(engine, opts);
+  checkHorizonValueDeclared(engine);
 }
 
 // ---------------------------------------------------------------------------------------

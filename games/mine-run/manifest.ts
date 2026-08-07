@@ -87,7 +87,25 @@ export const mineRunManifest: GameManifest = {
   // unlike Fadeout, board-scaling relief here is capped by K, not by rollout count alone. See
   // the gate-run report for the wall-clock consequence: seed count x move count dominate this
   // game's CI cost far more than the rollout budget does, and this field cannot touch either.
-  ciGateBudget: { soloChaseCiRollouts: 750 },
+  ciGateBudget: {
+    soloChaseCiRollouts: 750,
+    // platform-corrections.md C27: Strong-dependent solo-chase gates (strongVsRandomRatio,
+    // distributionOverlap, strongVsGreedyRatio, strongScoreCV, alwaysSafeVsStrong,
+    // medianRunLength, capHitRate, ceilingPileUp) are too expensive to measure for real at
+    // suite "ci" on the real board — measured ~165s/seed at rollouts=750 (up to 83min/seed at
+    // higher search, a 7.5x seed-to-seed spread), so ~4.6h at the standard seedCount=100 floor.
+    // Deferred to nightly; CI keeps what's genuinely cheap (the contract/redaction/view-
+    // honesty/manifest suite, ~2.7s, and grindProbe, ~0.5s). This is independent of C30's fix
+    // to WHICH value Strong's rollouts consult — the cost is dominated by seed count x
+    // decisions-per-game x rollouts-per-decision, not by the value function, so the deferral
+    // was always going to be needed regardless of how C30 resolved.
+    deferGatesToNightly: {
+      reason:
+        "Strong-dependent; ~165s/seed at soloChaseCiRollouts=750 on the real 10x10/20-mine " +
+        "board (up to 83min/seed at higher search) — ~4.6h at seedCount=100 in CI — " +
+        "platform-corrections.md C27",
+    },
+  },
 };
 
 assertRuleSentenceLength(mineRunManifest);

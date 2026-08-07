@@ -10,6 +10,7 @@ import { classicTicTacToe, type TTTState } from "@twist-arcade/engine/testkit/fi
 import { createBankRun, type BankRunState } from "@twist-arcade/engine/testkit/fixtures/bank-run";
 import {
   greedyMoveSelector,
+  HorizonValueUndeclaredError,
   rankingValueOf,
   RankingValueUnavailableError,
   rolloutToHorizon,
@@ -35,14 +36,56 @@ describe("valueOfStatus: 'ongoing' (horizon-capped, no terminal reached) falls b
     expect(value).toBeLessThan(1);
   });
 
-  it("prefers score() over heuristic() when both exist", () => {
+  // platform-corrections.md C30: valueOfStatus USED TO prefer score() unconditionally whenever
+  // both existed — that silent default is exactly what blinded Mine Run's Strong to its entire
+  // live-streak mechanic (score() === banked only; heuristic() carries the streak). The engine
+  // author, not the platform, is the only party who knows which one is a meaningful mid-game
+  // estimate — so an engine implementing BOTH with neither declared is now a loud throw rather
+  // than a silent (and here, wrong) default.
+  it("throws HorizonValueUndeclaredError when both score() and heuristic() exist but the engine declares no horizonValue", () => {
     const engine = {
       ...classicTicTacToe,
       score: (_state: TTTState, _player: 0 | 1) => 42,
     };
     const state = classicTicTacToe.setup(2, { int: () => 0, next: () => 0 } as never);
+    expect(() => valueOfStatus(engine, { kind: "ongoing" }, state, 0)).toThrow(
+      HorizonValueUndeclaredError
+    );
+    expect(() => valueOfStatus(engine, { kind: "ongoing" }, state, 0)).toThrow(/classic-ttt/);
+  });
+
+  it("horizonValue: 'score' uses score() even when heuristic() also exists", () => {
+    const engine = {
+      ...classicTicTacToe,
+      score: (_state: TTTState, _player: 0 | 1) => 42,
+      horizonValue: "score" as const,
+    };
+    const state = classicTicTacToe.setup(2, { int: () => 0, next: () => 0 } as never);
     const value = valueOfStatus(engine, { kind: "ongoing" }, state, 0);
     expect(value).toBe(42);
+  });
+
+  it("horizonValue: 'heuristic' uses heuristic() RAW (unsquashed) when the engine also has score() — commensurability tracks the engine's OWN terminal convention (scored ⇒ raw), not which hook supplied the estimate", () => {
+    // bank-run stands in for Mine Run's banked/streak split, exactly as the rankingValueOf
+    // suite below already uses it. A raw heuristic value with |value| > 1 proves this isn't
+    // secretly squashed: if it were, this would come back as Math.tanh(7) ≈ 0.9999..., not 7.
+    const engine = {
+      ...createBankRun(),
+      heuristic: (state: BankRunState, _player: 0) => state.banked + state.streak,
+      horizonValue: "heuristic" as const,
+    };
+    const state: BankRunState = { banked: 2, streak: 5, round: 1, lastEffects: [] };
+    const value = valueOfStatus(engine, { kind: "ongoing" }, state, 0);
+    expect(value).toBe(7); // raw 2+5, NOT Math.tanh(7)
+  });
+
+  it("horizonValue is a no-op when the engine implements at most one of score()/heuristic() — no ambiguity exists to declare", () => {
+    // bank-run has score() only; declaring horizonValue: 'heuristic' anyway must not matter,
+    // since there is no heuristic() to prefer and nothing ambiguous about which hook to use.
+    const engine = { ...createBankRun(), horizonValue: "heuristic" as const };
+    const state: BankRunState = { banked: 2, streak: 5, round: 1, lastEffects: [] };
+    const value = valueOfStatus(engine, { kind: "ongoing" }, state, 0);
+    expect(value).toBe(2); // score() === banked, used exactly as before this field existed
   });
 
   it("falls back to 0 when neither score() nor heuristic() exists", () => {
