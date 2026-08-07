@@ -3243,3 +3243,68 @@ noise into a genuinely-called path and watching it fail at 96.11 kB, correctly a
 
 The safe-move telegraph is existence-only and never names the cell — it calibrates tension without
 solving the deduction, which is the design point C52's exact solve made available.
+
+---
+
+## C55 — Bid-Tac-Toe's bots get worse with more search. And C23's relief is granted on a condition it never checks.
+
+### The sweep
+
+```
+rollouts   strong-vs-random   FPA     meanPlies   drawRate   solved-value-reached
+  1600         93.3% PASS     46.7%      10.0       0.0%          0.0% FAIL
+  2000         96.7% PASS     50.0%       9.0       0.0%          0.0% FAIL
+  3000         88.3% FAIL     46.7%       9.1       0.0%          0.0% FAIL
+  5000         88.3% FAIL     60.0%       8.8       0.0%          0.0% FAIL
+ 10000         75.0% FAIL     33.3%       7.6       0.0%          0.0% FAIL
+```
+
+**`strong-vs-random` falls as the budget rises — 96.7% at 2,000 down to 75.0% at 10,000.** More
+search makes Strong *worse against a random opponent*, on a game proven to be a pure draw at every
+bid node (369,802/369,802 saddle points, C51).
+
+**This is the C36 signature exactly**: in Mine Run, more search converging on a *worse* result meant
+the search was accurately measuring a bad objective. The same diagnostic applies and should run
+before anything else — dump per-candidate statistics at one real decision, and compare standalone
+greedy against the full search. C36 was found that way in one run after two wrong mechanisms cost
+hours.
+
+Note what it is *not*: the plan's §7 flagged joint-space UCT converging to deterministic profiles as
+exploitable *where the true optimum is mixed*. **The solve proved the optimum is pure at every
+node**, so that specific concern does not apply here — which makes this more interesting, not less.
+
+**And self-play never draws — 0.0% at every budget**, in a game whose exact value is a draw. The
+bots are nowhere near optimal play.
+
+### The hole this exposes in C23, which I wrote this morning
+
+C23 grants relief from the decisiveness gates when a manifest declares a proven `solvedValue`: FPA,
+draw-rate and ruthless-vs-standard all report `n/a` citing the proof, on the reasoning that a drawn
+game cannot satisfy a balanced-FPA band because nobody wins.
+
+**That reasoning holds only if the bots reach the proven value.** Fadeout's did — 100% draws at
+every budget — so its FPA of 0% was correct and the band genuinely unsatisfiable.
+
+**Bid-Tac-Toe's reach it 0% of the time.** Every game is decisive, FPA is a real measurable quantity
+swinging between 33.3% and 60.0%, and **the gate is reporting `n/a` for three gates that are
+currently meaningful.** The proof silenced them; the bots' failure to reach the proof means they
+should not have been silenced.
+
+**Ruling: the decisiveness gates' `n/a` must be conditional on `solved-value-reached` passing.**
+When it fails, they report their real measured values. The relief and the check were built as a pair
+in C23 — *"the proof buys relief from gates it makes meaningless, and creates a new gate checking
+the bots actually attain the value"* — but only the relief was wired to the declaration. The check
+was left free-standing, so a game can take the relief and fail the check simultaneously, which is
+exactly what happened.
+
+This is a **two locally correct decisions, one broken seam** defect, the same shape as C30: granting
+relief on a declaration is right, and measuring attainment is right, and nothing connected them.
+
+### Consequence for Bid-Tac-Toe
+
+**No verdict on the game yet.** Its bots fail `strong-vs-random` at three of five budgets and never
+reach a proven value — so every balance number in that table describes a badly-played game, and
+C14's rule applies in its strongest form: a theorem about optimal play says nothing about the bots
+we ship, and right now the bots are the finding.
+
+The game is not in trouble; the search is. Fix the search, re-gate, then judge the game.
