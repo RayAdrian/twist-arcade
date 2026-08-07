@@ -1304,3 +1304,50 @@ defects in `PROGRESS.md` were each diagnosed as a specific oversight. This one a
 a day from two people who could not have copied each other, which is a different signal
 entirely: it means the interface makes the wrong thing natural. Fixing the two call sites and
 moving on would guarantee a third.
+
+---
+
+## C25 — I repeated C22's own mistake, in the brief that cited C22
+
+*Orchestrator error, caught by the implementer it was given to.*
+
+The Mine Run brief told the team: *"a viable scaled budget of 320 (~8.9 samples/candidate on
+the 36-cell board) is already proven in the harness tests against your real engine — start
+from that evidence."*
+
+That evidence was measured against Mine Run's **6×6 test fixture**. The real launch config is
+**10×10, 20 mines, 60 budget**, and the implementer measured its actual root branching factor:
+**87 legal moves at the opening**. At 320 rollouts that is ≈3.7 samples per candidate — well
+under the K≥8 floor the harness enforces. The number did not transfer, and the team correctly
+derived **750** (K≈8.62) from a fresh measurement on the real board instead.
+
+This is the *same* error C22 records, made by the same person who wrote C22 the same day:
+
+> *"The ratio that was safe for Wrap was unsafe for Fadeout. That kills option 1 — not because
+> the arithmetic was wrong, but because the quantity it predicts is not a function of the
+> inputs it was given."*
+
+I wrote that about board size, and then handed a fixture-derived budget to a team working on a
+board with nearly three times the branching factor, describing it as proven "against your real
+engine." It was proven against a *fixture*, and the two are not the same thing.
+
+**The rule, stated so it stops recurring:** a rollout budget is evidence **about the board it
+was measured on**, and nothing else. Test fixtures are boards too — a number measured on a 6×6
+fixture is not a number about a 10×10 launch config, even when the same engine produces both.
+Any budget handed to a team must name the board it came from, and the team must re-derive it
+against the board it will actually gate.
+
+The catch is also the process working as intended: an implementer given a wrong premise
+measured it instead of accepting it, which is precisely what *subagent claims are not evidence*
+is supposed to cut in both directions.
+
+### Related, still open: a gate metric that can be `Infinity`
+
+The same probe reported `healthy alwaysSafeVsStrong=Infinity` — Strong scored zero, so the
+ratio divided by zero. A gate metric that can be `Infinity` cannot be thresholded, cannot be
+compared across runs, and serialises to `null` in JSON, so a report can carry it onward
+silently. C4's reasoning applies: a boundary value must be a real value or a loud typed
+failure, never a plausible-looking artifact. A zero-scoring Strong is either a broken yardstick
+(C6) or a broken engine, and both deserve an explicit error rather than a float. Under
+investigation — the reading came from a deliberately reduced-scope diagnostic, so it is not yet
+known whether a full run can produce it.
