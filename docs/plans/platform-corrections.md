@@ -3375,3 +3375,65 @@ than worked around per game.
 actions. The team reverted the `ciGateBudget` placeholder it had set before the sweep — correct,
 since tuning a budget against a broken search would have frozen a number that means nothing — and
 escalated rather than patching shared code it does not own.
+
+---
+
+## C57 — The MCTS fix is real but incomplete, and Bid-Tac-Toe now needs a decision only the user can make
+
+### Before and after, same seeds
+
+```
+                        pre-fix          post-fix
+strong-vs-random @2k     96.7% PASS      100.0% PASS
+strong-vs-random @10k    75.0% FAIL       91.7% PASS
+solved-value-reached      0.0% FAIL        0.0% FAIL
+self-play drawRate        0.0%             0.0%
+self-play meanPlies      7.6 (@10k)       7.7 (@10k)
+```
+
+**Marginal aggregation fixed most of C56.** The 10,000-rollout collapse — Strong losing a quarter of
+its games to a *random* opponent — is gone, and both budgets now pass. Sequential games are
+**byte-identical**: 482 lines, no diff, verified by the orchestrator across fadeout, nine-grids and
+tilt.
+
+**What it did not fix:** `strong-vs-random` still *declines* with budget (100.0% → 91.7%), and
+**self-play still never draws** on a game proven to be a pure draw at all 369,802 bid nodes. Games
+end at ~7.7 plies — someone completes a line early, where optimal play fills the board.
+
+So the joint-argmax defect was real and was a *component* of the problem, not the whole of it. A
+tidier report would have claimed the fix and moved on; this one is more useful.
+
+### What `solved-value-reached` is actually telling us
+
+It says **our Ruthless bot does not play Bid-Tac-Toe well.** That is true, worth knowing, and not a
+statement about the game — the game is proven fair, exhaustively, at every bid node.
+
+It also exposes a calibration question in C23's own design. The inverted gate was built for Fadeout,
+whose bots reach the proven draw **100%** of the time, so a fall to 70% would be a genuine
+regression. Applied to a game whose bots reach it **0%** on day one, the gate is not detecting a
+regression — it is reporting that the search is inadequate for this tree. Both are useful, but they
+are different claims wearing the same label, and a 90% absolute floor cannot distinguish them.
+
+### The decision, and why it is not mine
+
+Under C55's pending ruling — relief conditional on attainment — Bid-Tac-Toe's suppressed gates would
+report their **real** values, and those are: **FPA 43.3% and 36.7% (both inside [35,65]), draw rate
+0.0% (well under the 60% ceiling).** As *played by imperfect bots*, the game measures decisive and
+roughly balanced. As *solved*, it is a draw.
+
+That is a coherent product: humans are not optimal either, and a bot that plays decisively at
+roughly even odds is a good opponent. But **`solved-value-reached` is a red gate**, and CLAUDE.md is
+explicit that a finding may be waived **only by the user — never by an agent, never by me.**
+
+So the options, stated plainly:
+
+1. **Invest further in the search** until the bots approach optimal play and the gate goes green.
+   Cost unknown; the remaining defect is not yet diagnosed.
+2. **Ship Bid-Tac-Toe with the gate red and the reason recorded** — a provably fair game whose bots
+   are decent opponents but far from optimal.
+3. **Recalibrate `solved-value-reached`** so it distinguishes *regression from a known baseline*
+   from *never attained*, which is the design question above and would change the gate for every
+   future solved game, not just this one.
+
+I recommend against deciding this quietly. Phase 1 needs six games and this is the sixth, which is
+exactly the pressure under which a gate gets waived by someone who should not be waiving it.
