@@ -3437,3 +3437,74 @@ So the options, stated plainly:
 
 I recommend against deciding this quietly. Phase 1 needs six games and this is the sixth, which is
 exactly the pressure under which a gate gets waived by someone who should not be waiving it.
+
+---
+
+## C58 — The MCTS fix lands. It is a real improvement and an explicitly partial one.
+
+### The rule, and why visits rather than mean value
+
+`aggregateByOwnMove` groups every joint-arm child by the acting player's own move and sums
+visits/value per group, selecting the group with the most **aggregated visits** — the marginal
+analogue of MCTS's standard robust-child rule.
+
+The reasoning is better than "it works": under UCB1, **visit allocation is itself an
+exploration-corrected value estimate**, so a marginal visit sum already encodes how much cumulative
+confidence the tree built in an action across every opponent answer. A raw marginal *mean* is more
+direct and far noisier at the sample sizes this bug produces — some own-actions get only a handful
+of joint arms explored before the budget runs out, so their mean reflects whichever few opponent
+responses happened to be sampled. And it **matches the codebase's existing convention**: the
+sequential branch and `tiers.ts`'s blunder path already select on visits. Introducing a second
+selection statistic used only by simultaneous nodes would be the larger change.
+
+### Coverage, answered by call graph rather than by trace
+
+fadeout, nine-grids and tilt: **482 lines, MD5-identical** across 12 full self-play games at all
+three tiers.
+
+crackstep and mine-run were **not traced**, and do not need to be: `mctsPolicy` is called from
+exactly one site (`tiers.ts`'s `buildPolicy` switch, reached only via `tierPolicy`), both games
+declare `difficultyTiers: []`, and their solo roster is wired to beam / flat-MC / determinized-flat-MC
+exclusively. **`aggregateByOwnMove` is dead code for both by construction**, with 282 of their own
+tests passing unchanged as corroboration.
+
+That is the right shape of answer to "you measured three of five" — a reason it cannot happen beats
+a broader sample that still only shows it did not.
+
+### The failing decision: better, and not converged
+
+```
+flat-rollout truth:  5 (0.220) > 6* (0.195) > 5* (0.190) > 4* (0.170) > 3* (0.145)
+
+              2,000 rollouts        10,000 rollouts
+pre-fix       4  — rank 7/16        1  — rank 15/16 (second-worst)
+post-fix      5* — rank 3/16        3* — rank 5/16
+```
+
+Both post-fix picks land in the good half rather than mediocre-to-worst, and both now favour the
+same qualitative move. **But the two budgets still disagree with each other, and neither matches the
+flat-rollout argmax.** The top six candidates cluster within 0.075 while per-row aggregate sample
+sizes leave a comparable standard error — so resolving among close candidates is a **budget-adequacy
+problem the marginalisation fix does not address**, exactly as B3's own arithmetic anticipated.
+
+### `strong-vs-random`, and what is still unexplained
+
+**2,000: 96.7% → 100.0%. 10,000: 75.0% → 91.7%.** Both clear the 90% gate.
+
+**Still unexplained, stated plainly rather than smoothed over:** `strong-vs-random` continues to
+*decline* with budget, and self-play still draws **0.0%** at both budgets on a game proven to be a
+pure draw at every node. **The joint-argmax defect was a real, measured component of the
+degradation — it was not the whole of it.** Something else in this search still gets worse with more
+rollouts, and that is the next open question rather than something this fix resolved.
+
+### The fixture that cannot pass vacuously
+
+`lucky-cell-rps`: player 0's action `A` beats all three of player 1's responses; `B` beats one.
+Marginally `A` strictly dominates (+1 vs −1/3), yet at `n=100` the single most-visited *joint* cell
+is a `B`-cell. Red-then-green confirmed: pre-fix returned `B`, post-fix returns `A`. A second test
+feeds synthetic entries and **asserts the joint-argmax pick and the marginal winner explicitly
+differ (B at 40 visits vs A at 45) before asserting the new behaviour** — so it cannot pass under
+the old rule.
+
+That is C41's lesson built in from the start: a test that would have passed before the fix has not
+tested the fix.
