@@ -2515,3 +2515,68 @@ that suggestion against the built output and rejected it with evidence rather th
 **Not fixed here.** It needs a deliberate look at the route shape (per-game routes, a client-side
 lazy boundary, or `next/dynamic` with explicit loading) and it is a product-performance decision,
 not a CI-guard one.
+
+---
+
+## C44 — Order vs Chaos is killed. Window density, not tempo.
+
+*Second game killed by its own gates. The pre-registered two-rung ladder fired exactly as
+written, and the confirmatory rung earned its ten minutes.*
+
+### The measurements
+
+```
+config A (Order first, n=100)   [FAIL] first-player-win-rate: 78.0%  (band [35,65])
+                                       84.0% on an independent n=100 sweep, different seed
+config B (Chaos first, n=100)   [FAIL] first-player-win-rate: 92.0%
+both: strong-vs-random 100.0% · draw-rate 0.0% · zero cap hits · pairing-probe Chaos 0.0%
+```
+
+Both rungs outside the band, on the same side. Per §3's rule fixed before any number arrived,
+**the game is killed.**
+
+### The mechanism: the win condition sets the odds, not seat order
+
+`P(a uniformly-random filled 6×6 contains a ≥5-run) = 0.8243`. So Chaos's **do-nothing baseline is
+17.6%**, and Strong MCTS Chaos measured **16–22%**.
+
+**Skilled Chaos play buys at most ~4 points over random placement.** That is not an imbalance, it
+is a *depth* failure: the Chaos side is close to strategically inert. Order wins on **any** ≥5-run
+by **either** player, so Chaos must thread 36 forced placements avoiding all 32 windows on 36
+cells, with each cell sitting in up to 9 windows. Wrap died on one arithmetic coincidence
+(`C(5,4)=5`); this dies on **window density** — the same pattern one level up.
+
+### Why running config B was worth ten minutes even though it confirmed
+
+**Giving Chaos the first move made the game *worse*: 78–84% → 92%.**
+
+Had B merely also failed, we would have two failures and a plausible story. B failing *harder* is
+positive evidence for the mechanism rather than just consistency with it: if the imbalance were
+about who builds toward a line first, handing Chaos the tempo should have narrowed the gap. It
+widened it — because moving first simply hands Chaos one extra forced placement, and every forced
+placement is another chance to complete a window it is trying to avoid.
+
+**The confirmatory run produced a better diagnosis than the original failure did.** That is the
+argument for not skipping pre-registered rungs when the answer looks obvious: C14's caution was
+warranted as discipline even in the case where the prediction held, because the cost of checking
+was ten minutes and the yield was the sharpest evidence in the file.
+
+### What survives the kill
+
+The engine, its 54 green tests, the OV0 line-probability script, and the budget-validation
+methodology (cost pilot → n=100 two-config verdict-match → validated 3,000-rollout budget
+reproducing the 10,000 verdict) are all reusable. The R1 line-probability check in particular is
+now a **general screening tool for any full-board line game**: measure `P(random fill contains a
+win)` before building, because that number is the losing side's ceiling before strategy exists.
+
+**Added to the game-theory lens as a design rule:** *for a maker-breaker game on a full board, the
+breaker's do-nothing baseline is `1 − P(random fill contains a win)`. If skilled breaker play
+cannot beat that by a wide margin, the breaker's side of the game is inert regardless of balance
+tuning.* Order vs Chaos bought 4 points. That is the number to check first, and it is cheap.
+
+### Slate consequence
+
+Two of the six two-player launch slots are now empty (Wrap → Duel Draft, and this one). Remaining
+candidates for Phase 1's **six games live** bar: Fadeout ✅, Nine Grids ✅, Crackstep ✅, plus Tilt,
+Bid-Tac-Toe, Duel Draft and Mine Run — **four candidates for three slots**, all still ungated.
+That is a thinner margin than it looks, given two of the last three gated games died.
