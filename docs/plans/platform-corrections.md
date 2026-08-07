@@ -2695,3 +2695,74 @@ claims gets re-measured against it.
 **Leg 3 is still running** — the exact expectimax on a reduced board, which tests the *mechanic*
 rather than any policy we happened to write. It cannot reverse leg 2's result but it can tell us
 whether 0.9208 is near the structural ceiling or whether a better policy has room.
+
+---
+
+## C47 — Tilt passes. And its team found that the CI budget may bias every game's measured balance.
+
+### Tilt's gate table (n=100, shipped `doubleLine:"draw"`, fresh sample per C32)
+
+```
+[PASS] strong-vs-random: 100.0% (min 90.0%)
+[PASS] first-player-win-rate: 52.0% (band [35%, 65%])
+[PASS] draw-rate: 6.0% (max 60.0%)
+[PASS] mean-plies: 18.6, 0 cap hits across all matchups
+[N/A ] ruthless-vs-standard — CI override active (C26 mechanism, not a gap)
+[PASS] mirror probe 0.0% (<40%) · [PASS] stall probe 0.0%, 0.00% cap-hit
+```
+
+**The balance hypothesis predicted 55%; the measurement is 52.0%.** Not falsified, and close. Tilt
+is the third game to clear its gates and the first non-placement family to do so — which matters
+beyond Tilt, because a launch catalogue of four variations on one idea has no "next twist"
+adjacency loop worth the name.
+
+Two mechanism plants against Tilt's *real* manifest and engine rather than shared fixtures:
+scaling the CI budget to 1000 (= standard's own) fired `TierBudgetCollapseError` **in 0ms before
+any self-play ran**, and a nightly-suite run reported a real `ruthless-vs-standard 70.0%`,
+confirming nightly genuinely ignores the override for this game specifically.
+
+### The finding that outlives Tilt: FPA drifts monotonically with the rollout budget
+
+```
+rollouts   1500   2000   3000   5000   10000
+FPA        58.0%  52.0%  48.0%  48.0%  38.0%
+```
+
+**A 20-point drift against a ~5-point binomial standard error at n=100, and strictly monotone
+across five independent points** — an ordering with probability ~1/60 under pure noise. This is
+almost certainly a real budget-dependent effect, not sampling.
+
+The team's proposed mechanism is plan-consistent and worth testing: §4's balance hypothesis says
+P2 offsets P1's initiative by *aiming placements at the imminent re-fall* — **a move that requires
+search depth to find.** At 1,500 rollouts the search may be too shallow to find it, so P1's naive
+tempo dominates (58%); at 10,000 it is found reliably (38%).
+
+**Why this is a platform problem and not a Tilt problem.** Every game's CI budget is chosen to
+reproduce the 10,000-rollout *verdict* — same side of the band. Tilt's five candidates all satisfy
+that mechanically, so the criterion as written would have accepted **1,500**, which reports the
+game as 20 points more first-player-favoured than the strength players actually face. **A cheap CI
+budget can systematically flatter a game's balance**, and the criterion cannot see it because
+"same side of a 30-point band" tolerates a 20-point drift inside that band.
+
+This is C22's cost-scaling question turned around: we asked *"is the cheap budget fast enough to
+be useful"* and never asked *"does the cheap budget measure the same quantity."*
+
+### Ruling
+
+1. **Tilt passes.** 52.0% at n=100 stands; the game proceeds to UI. Its recorded balance figure is
+   this one, measured at the CI budget.
+2. **`ciGateBudget: 3000` is provisional and requires a second seed before it freezes.** The team
+   chose 3,000 over the mechanically-cheapest 1,500 on exactly the reasoning above, and flagged it
+   as provisional rather than closing it — the right call. One more n=100 sweep on an independent
+   seed confirms or kills the drift; ~28 minutes.
+3. **If the drift replicates, the budget-validation criterion changes for every game**: reproducing
+   the baseline's *side of the band* is necessary and not sufficient. It must also reproduce the
+   baseline's **value** within sampling error, or the gate is measuring a different game from the
+   one that ships. That would send Fadeout's 3,000 and Nine Grids' 1,500 back for a check.
+4. **Nightly is authoritative for balance.** It runs shipped budgets and applies no override, so
+   whatever CI reports, the number that describes the game players meet is nightly's.
+
+**This is the second time today a team's judgment beat a criterion I wrote.** C40's decode spec
+listed conditions that were structurally unreachable; here the validation criterion would have
+accepted a budget that misreports the game by 20 points. Both were caught by someone treating the
+rule as a claim to check rather than a box to tick.
