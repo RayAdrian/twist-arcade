@@ -95,6 +95,22 @@ Every serious bug this build produced was **a guard that doesn't guard**:
 | UI | Motion One does not self-respect `prefers-reduced-motion`; `loading.tsx`'s skeleton was ungated |
 | **Crackstep** | **`/play/crackstep` returned 500 in the live app** while typecheck, lint, and 1,321 tests were green — and both files carried comments asserting it couldn't happen |
 
+### And one that runs the other way (C23)
+
+**`/play/fadeout`'s balance gate fails because the bots play correctly.** Fadeout's exact solve
+proves the root value is a **draw** under its shipped ruleset — 128,170 states, all nine
+openings drawn. Self-play measures 100% draws at every budget from 2,000 to 10,000, which is
+the bots reaching that value. Three gates demand decisive outcomes and therefore cannot pass at
+any budget, ever.
+
+Every other entry in the table above is a guard that stayed green while something was wrong.
+This is a guard that goes red while everything is right — and in one way it is worse, because a
+gate that cannot be satisfied teaches everyone to route around it.
+
+The orchestrator repeated a subagent's "the real budget doesn't produce this" framing into C22
+without opening the solve report, already in this repo, that refutes it. *Subagent claims are
+not evidence* is in the list below because of failures like this one.
+
 **The standing instructions that came out of it:**
 
 - For every gate you write, plant a violation and confirm it fires. A gate never observed failing is not a gate.
