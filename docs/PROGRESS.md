@@ -29,17 +29,20 @@ gates and is awaiting a board; the Supabase schema is now in version control.
 | UI material foundation ("ink on paper", performed) | ✅ merged |
 | **Fadeout** — exact solve, frozen ruleset, board | ✅ playable |
 | **Crackstep** — 90 certified days, board | ✅ playable |
-| **Wrap** — killed by its own gates (C20) | ☠️ worktree removed, branch archived |
-| **Nine Grids** — Ultimate Tic-Tac-Toe, **passed its balance gates** | test design in flight, then board |
-| **Mine Run** — engine merged, gate cost being scoped (C19 in the solo lane) | board gated behind gates |
-| Order vs Chaos, Tilt, Bid-Tac-Toe, Duel Draft | queued |
+| **Wrap** — killed by its own gates (C20) | ☠️ archived |
+| **Order vs Chaos** — killed by its own gates (C44) | ☠️ archived |
+| **Nine Grids** — Ultimate Tic-Tac-Toe, gates passed, **board live** | ✅ playable |
+| **Mine Run** — at leg 2 of a three-leg kill standard | board gated behind the verdict |
+| **Tilt** — engine + kill-test sweep in flight | — |
+| Bid-Tac-Toe, Duel Draft | planned, ungated |
 
-**Nine Grids passed: first-player win rate 46.0% (band 35–65%), draws 30.0%, 0 cap hits.** The
-first two-player game since Fadeout to clear the balance gates on a real 100-game sample. Its
-15-game pilot had read **13.3%** — a severe second-player advantage matching Wrap's direction —
-and that was noise (2 wins in 15). Treated as a verdict it would have killed a balanced game
-*and looked like corroboration of Wrap's pattern*. Cost measurements can run at 15 games;
-verdicts cannot.
+**Two of the last three gated games died.** Wrap on an arithmetic coincidence (`C(5,4)=5`
+equalled the wrap-window count); Order vs Chaos on window *density* — its breaker's do-nothing
+baseline was 17.6% and skilled play bought about 4 points over it. Both were killed with a
+mechanism on the record, which is what makes a kill defensible rather than a matter of taste.
+
+**The slate is thinner than it looks:** Phase 1's bar is six games live. Three are
+(Fadeout, Crackstep, Nine Grids), and four ungated candidates remain for three open slots.
 
 ### The path to Phase 1's exit bar
 
