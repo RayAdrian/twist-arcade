@@ -2042,3 +2042,83 @@ that is precisely what made them expensive, because plausibility is what stops y
 
 **When a search behaves strangely, dump its per-candidate statistics before theorising about its
 value function.** It is one run, it costs seconds, and it would have answered this at 09:00.
+
+---
+
+## C36 — The root cause is the heuristic, not the search. And the decisive test was one nobody asked for.
+
+*Refines C35. The implementer found this by designing a measurement I had not specified — the
+single most valuable thing produced today.*
+
+### The test I did not think to ask for
+
+I asked for per-candidate rollout statistics, which told us the rollout ceiling was too low. The
+implementer then asked a sharper question: **what does the heuristic do with no search at all?**
+
+Standalone Greedy — zero MCTS, zero rollouts, pure 1-ply `rankingValueOf` on the same heuristic —
+against Always-Safe, same three seeds:
+
+```
+seed    alwaysSafe   greedy   ratio
+ci-0         849         91    9.330
+ci-1         686          3  228.667
+ci-2        1247        231    5.398
+```
+
+**On ci-2, Greedy scores exactly 231 — identical to Strong@750's 231.** Strong's entire MCTS
+apparatus, 750 rollouts × 16 determinized worlds per candidate, lands precisely where bare 1-ply
+greedy would have landed anyway.
+
+That isolates the defect completely: **it is not in the search machinery** — not determinization,
+not averaging, not sample count, not the horizon valuation I spent two corrections on. It is in the
+evaluation function everything else is built on.
+
+### The mechanism, with ground truth
+
+`createMineRunHeuristic` is a **1-ply-only risk estimator** (`bankValue` vs `revealEV`, single-point
+CSP fixpoint — deliberately weaker than `safeMove`'s full joint CSP, and its own comment says so).
+It drives Greedy's decisions, every rollout-continuation step, and therefore Strong's root averages.
+Because it never accounts for the **compounding** risk of a long run of future pushes, it keeps
+recommending "push", turn after turn.
+
+A captured real decision, seed ci-0 at ply 15 — the actual applied game, not a simulation:
+**`minesExploded=5` of 20, `banked=0`.** Strong pushed through five real explosions in fifteen moves
+and never banked once.
+
+Determinization bias is ruled out by the same trace: those explosions happened against the **real**
+mine layout via the true `rngFor(seed, ply)` transition, not a resampled hypothetical world.
+
+### A correction to my own C35
+
+I wrote that more samples "average that noise more confidently." **That is backwards, and the
+implementer's version is right:** more samples *reduce* noise, converging the root average more
+precisely onto the true expected value of *"follow this myopic heuristic's continuation."* At low n,
+sampling noise occasionally lets a locally-better estimate through; at high n it converges cleanly
+onto the heuristic's actual mediocre mean.
+
+**The search is accurately measuring a bad policy, and measuring it more accurately makes the
+badness more visible, not less.** That is a better sentence than mine and it explains 630→378 and
+231→105 exactly.
+
+### What is still open — and what this is not
+
+**This is a bot-quality finding, not evidence about Mine Run's design.** Only a risk-*blind* policy
+has ever been measured against Always-Safe. Whether a risk-*aware* one — joint-CSP informed, or an
+EV model that discounts for the compounding chance of hitting a mine before the next bank — can beat
+always-banking **remains untested**, and it is exactly C29's original question.
+
+So C29 is neither confirmed nor refuted. It has been made *answerable* for the first time.
+
+**Mine Run still gets no board** (C16), and the standing question is now precise: *does any
+risk-aware policy beat Always-Safe on this board?*
+
+### The pattern worth keeping
+
+Four mechanisms were proposed for one dataset (C29 design, C30 horizon, C35 rollout ceiling, C36
+heuristic). The three I authored came from reading code and reasoning about it. **The one that
+isolated the cause came from an implementer designing a measurement that removed a variable I had
+not thought to remove** — strip the search entirely and see whether the evaluation function alone
+reproduces the failure.
+
+When a system built of layers misbehaves, delete layers until it stops. That is cheaper than
+explaining any single layer, and it does not depend on guessing which one is wrong.
