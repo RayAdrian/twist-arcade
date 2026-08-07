@@ -2830,3 +2830,66 @@ independent test-design stage — and it would not be survivable in a project wi
    mirroring is provably not value-preserving, the probe cannot measure its claim — the same
    argument as C26's override and C23's solved-value relief. A WARN invites someone to tune away a
    number that never meant anything. Implement at B3.
+
+---
+
+## C49 — The drift did not replicate. C47 was my error, and the real finding is noisier gates.
+
+### The replication
+
+```
+rollouts    1500   2000   3000   5000   10000
+seed A      58.0   52.0   48.0   48.0   38.0    strictly monotone decreasing
+seed B      52.0   38.0   52.0   36.0   50.0    neither monotone in any direction
+```
+
+**No directional echo at any matching budget.** Seed B's cheapest candidate reads *lower* than
+seed A's; its baseline reads *higher*. Pre-registered outcome 2 fires: **`ciGateBudget: 3000`
+stands, the criterion is unchanged, and Fadeout's 3,000 and Nine Grids' 1,500 do not go back for
+review.**
+
+### Where C47 went wrong, precisely
+
+I called the monotone ordering "almost certainly a real budget-dependent effect" on a 1-in-60
+argument. Two errors:
+
+**1. The `p ≈ 1/60` was computed post-hoc on a pattern I had already seen.** Monotonicity is
+1-in-60 *if you name it in advance*. I named it after looking at the numbers — and a U-shape, a
+plateau-then-drop, or a single outlier would each have prompted a mechanism story too. **A pattern
+noticed in data is not a hypothesis test; the replication is.** The replication failed.
+
+**2. I used the wrong null.** I quoted a 5.0-point binomial standard error at n=100, which assumes
+each reading is an independent draw. The true seed-to-seed variability is larger, because games
+within one seed set share boards and openings.
+
+### The finding that replaces it, and it matters more
+
+Seed A and seed B measured **the identical 10,000-rollout configuration** and got **38.0% and
+50.0%** — a **12-point gap**, implying a per-reading standard deviation around **8.5 points**,
+roughly **1.7× the binomial SE I assumed.**
+
+The FPA band is 30 points wide. So **a genuinely balanced game reads outside [35, 65] in about 8%
+of runs — roughly one gate run in thirteen false-fails a perfectly fine game.**
+
+That is a real property of every gate verdict this project has issued, and it was invisible until
+someone ran the same configuration twice. It also sharpens the team's own second flag: seed B's
+5,000-rollout point read **36.0%**, one point off the floor — not a balance signal, just variance,
+and exactly the reading that would get mistaken for a mechanism problem the way the drift almost
+was.
+
+**No verdict flips.** Order vs Chaos measured 78–92%, far outside anything noise explains. Tilt
+sits mid-band on both seeds (36–58%, mass comfortably central). Nine Grids read 40–46% across two
+independent runs. The margins were real — they are just thinner than the numbers suggested.
+
+**Required, and I own it:** any gate result **within ~10 points of a band edge is provisional until
+replicated on a second seed.** That is cheap for the two-player lane and it converts a coin flip
+into a measurement. It should also be stated in the gate report itself, so a future reader sees
+"provisional, near edge" rather than a bare pass or fail.
+
+### The process lesson
+
+This is the second time today I have been wrong about a mechanism in a way an implementer's
+measurement corrected — C34/C36 for Mine Run's horizon valuation, and now this. Both times the
+error had the same shape: **a coherent story built from reading numbers, believed before it was
+tested.** The team's instinct to ask for a second seed rather than accept my endorsement of its own
+finding is what caught it.
