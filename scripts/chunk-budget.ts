@@ -4,53 +4,103 @@
 // chunk — the thing the budget exists to bound, and the reason the registry uses import() at
 // all — is measured by nothing. Every game could exceed it silently."
 //
-// WHY THIS SHAPE (three options were weighed, see the C38 fix-up report for the full
-// reasoning):
+// REWRITTEN (platform-corrections.md C50) after the original approach broke the same day a
+// fourth game (Tilt) was registered. See "WHY THE REWRITE" below for the full story — short
+// version: the original probe assumed the registry's compiled `{gameId: {...}}` map stayed
+// inlined as a single object literal inside ONE specific file
+// (`.next/static/chunks/app/play/[gameId]/page-*.js`). Registering a fourth game changed
+// webpack's automatic chunk-splitting heuristic (`SplitChunksPlugin`'s `minChunks` threshold):
+// once the module backing that object literal is referenced by four separately-generated
+// static pages instead of three, webpack decided it was worth extracting into its own shared
+// chunk. The object literal didn't change shape — it just moved to a different file — but the
+// probe only ever looked in one place, found zero matches, and (correctly) refused to guess.
 //
-//   1. A Playwright network-transfer capture of `/play/<id>` (C38's own suggested "cheapest
-//      honest answer") turns out NOT to isolate per-game bytes in THIS app: `next build`'s
-//      static export for `/play/[gameId]` emits the IDENTICAL <script async> tag list into
-//      EVERY generated game's HTML (verified by diffing `.next/server/app/play/{crackstep,
-//      nine-grids,fadeout}.html` — byte-identical script src lists). Next can't statically
-//      narrow "reachable chunks" per `generateStaticParams()` value, so it unions every game's
-//      async chunks into every game's page. A network capture would show every game "costing"
-//      the sum of ALL games' code, and a planted regression in one game would move every
-//      game's number identically — useless for pinning a violation to the game that caused it.
-//      (This union-prefetch behavior is itself a separate, real finding — see the report; not
-//      fixed here, since fixing it is a Next.js/webpack code-splitting change, not a CI guard.)
-//   2. `@size-limit/webpack`-style resolution needs a second, non-production webpack pass with
-//      its own entry graph — new build machinery, and it wouldn't match what `next build`
-//      (the artifact CI already produces and size-limit already reads) actually emitted.
-//   3. **What this script does**: parse the ALREADY-BUILT, ALREADY-MEASURED shell chunk
-//      (`.next/static/chunks/app/play/*/page-*.js` — the exact file `.size-limit.json`'s
-//      "game route" entry targets) and read the real per-game dynamic-import graph out of it
-//      directly. The registry's `loadEngine`/`loadPresentation`/`loadSolver` closures compile
-//      to literal `n.e(<chunkId>)` webpack-chunk-ensure calls inside one object keyed by game
-//      id — that object IS the source of truth for "which chunk(s) does playing game X pull
-//      in," decided by the bundler, not guessed at by this script. No new build step, no
-//      browser, no webpack config change: it re-reads output CI already has on disk after
-//      `pnpm build`.
+// WHY THE REWRITE, NOT A PATCH: the old probe's failure mode wasn't "wrong file name," it was
+// "assumes it knows which file webpack will put the registry map in, at all." Widening the
+// search to "grep every chunk file for the object literal" would have fixed *this* break but
+// remains hostage to the same class of assumption at five, six, or eight games — webpack's
+// splitting heuristics are threshold-driven, not fixed, so where things land keeps changing.
+// The rewrite below stops asking webpack "where did you put this" and instead asks Next
+// "which files does this specific import() call site pull in," which Next already tracks and
+// answers directly regardless of chunk topology.
 //
-// PER-GAME ATTRIBUTION: a chunk id referenced by EVERY registered game (shared UI-kit code —
-// e.g. a Radix dialog used by every game's presentation) is shell-equivalent and excluded from
-// every game's total, same as the existing shell budget already covers it. A chunk id
-// referenced by fewer than all games is charged in full to every game that references it —
+// THE MECHANISM: `next build` writes `.next/react-loadable-manifest.json`, keyed
+// `"<file containing the import() call> -> <import specifier text>"`, each value `{ id,
+// files[] }` — this is Next's own accounting of every dynamic `import()` call site in the app
+// (the mechanism it uses to preload the right chunks for SSR; it is NOT limited to
+// `next/dynamic()`-wrapped imports, confirmed empirically: this repo's registry uses plain
+// `import()` with no `next/dynamic` wrapper, and every call site still gets an entry). Example
+// from a real 4-game build:
+//
+//   "games/registry.ts -> @twist-arcade/tilt": {
+//     "id": 2309,
+//     "files": ["static/chunks/678-....js", ..., "static/chunks/487-....js", "static/chunks/309-....js"]
+//   }
+//
+// This is keyed by (source file, import specifier) — a fact about the AUTHORED source, fixed
+// at the moment `games/registry.ts` is written, and completely insensitive to which file(s)
+// webpack later decides to put the resulting code in. It survives chunk-splitting-topology
+// changes by construction, because it isn't describing chunk topology at all.
+//
+// TWO EXTRACTION STEPS, TWO PURE FUNCTIONS (unit-tested independently in
+// scripts/test/chunk-budget.test.ts, no build required for either):
+//
+//   1. `extractGameImportSpecifiers` — parses the ALREADY-AUTHORED, NEVER-MINIFIED source of
+//      games/registry.ts with the TypeScript compiler API and reads, per registered game id,
+//      the string-literal specifiers passed to every `import(...)` call inside that game's
+//      `loadEngine` / `loadPresentation` / `loadSolver`. Registry-derived per C33: the
+//      `registry` object literal is located BOTH by name (`const registry = ...`) AND by exact
+//      property-key-set match against `Object.keys(registry)` (the runtime-imported registry,
+//      same as before) — belt and suspenders, and a key-set mismatch fails loud rather than
+//      silently reading a partial or wrong object.
+//
+//   2. `attributeOwnFiles` — looks up each game's specifiers in `react-loadable-manifest.json`
+//      (`"games/registry.ts -> <specifier>"`), unions the `files[]` per game, then excludes any
+//      file referenced by EVERY registered game (shell-equivalent shared infra — e.g. a Radix
+//      dialog every game's presentation happens to use — same exclusion rule and rationale as
+//      the original script, just computed over manifest file lists instead of parsed chunk
+//      ids). A specifier with no matching manifest entry fails loud, naming the game and the
+//      specifier — the build doesn't know about an import the source declares, which means the
+//      build is stale relative to games/registry.ts or Next changed this manifest's format.
+//
+// FRAGILITY, STATED PLAINLY: this depends on (a) `games/registry.ts` keeping its current
+// `export const registry: Registry = { <id>: { loadEngine, loadPresentation, loadSolver? } }`
+// shape — a deliberate choice by whoever edits that file, not a build artifact, so it changes
+// far less often than webpack's internal chunk-splitting decisions did; and (b) Next continuing
+// to emit `react-loadable-manifest.json` keyed `"<file> -> <specifier>"`. Both are load-bearing
+// assumptions, both are checked, and both fail loud — never a silent 0-byte report — exactly
+// the property that made C50 a repairable finding instead of a lie. A future Next major that
+// removes or reshapes this manifest will break this script exactly as loudly as the old one
+// broke at four games; it is a different assumption, not a sturdier guarantee that no
+// assumption exists.
+//
+// WHY NOT `.next/build-manifest.json` / `.next/app-build-manifest.json`: checked both against
+// the real 4-game build before choosing react-loadable-manifest.json. They record, PER ROUTE,
+// the chunks needed to render that route's initial HTML/RSC payload — accurate for "what does
+// visiting /play/tilt cost on first paint" but NOT keyed by individual `import()` call site, so
+// they cannot attribute a specific chunk to "the code loadEngine('tilt') pulls in" versus
+// "code some other part of the route needs." They also reproduce the C43 finding verbatim: the
+// `/play/[gameId]/page` entry in app-build-manifest.json is IDENTICAL for every generated game
+// param (same file list for crackstep, tilt, nine-grids, fadeout), because
+// `generateStaticParams()` can't statically narrow per-param reachable chunks — so a
+// route-manifest-only approach would still report every game as costing the sum of all games',
+// naming no offender, same as the Playwright network-capture option C43 already rejected.
+// `react-loadable-manifest.json` is the one Next artifact keyed at the right granularity (the
+// import() call site itself, not the route).
+//
+// PER-GAME ATTRIBUTION / UNIVERSAL-CHUNK EXCLUSION: unchanged rationale from the original
+// script. A file referenced by EVERY registered game (shared UI-kit code) is shell-equivalent
+// and excluded from every game's total, same as the existing shell budget already covers it. A
+// file referenced by fewer than all games is charged in full to every game that references it —
 // deliberately conservative: a player whose FIRST visit is to that specific game downloads it
-// regardless of whether some other game happens to share it, so "shared by some, not all" must
-// still count as "this game's own download cost," not get a shared-cost discount.
+// regardless of whether some other game happens to share it.
 //
-// REGISTRY-DERIVED, NEVER HARDCODED (C33's lesson applied here): the set of game ids to check
-// comes from `games/registry.ts` itself. If the compiled chunk's own id set doesn't match that
-// exactly, this script fails loud rather than silently reporting partial or zero data for the
-// missing id — the same shape C33 required of the registry-drift guard, applied to this guard.
-//
-// FRAGILITY, STATED PLAINLY: this depends on webpack's current on-demand-chunk codegen shape
-// (`<callee>.e(<NumericLiteral>)`, `<id>.<hash>.js` / `<id>-<hash>.js` filenames). A Next.js
-// major bump or a switch to Turbopack for production builds changes this and will make the
-// object-literal probe below find zero or multiple candidates — which is exactly the loud
-// failure mode built in (see `findRegistryObjectLiterals`), not a silent pass.
+// KNOWN LIMITATION, CARRIED OVER FROM THE ORIGINAL SCRIPT: with exactly ONE registered game,
+// "referenced by every game" and "this game's own code" are the same set, so the universal-file
+// exclusion would zero out that game's entire total. Not a practical concern at 4+ games
+// (current registry size), but worth stating rather than leaving implicit a second time.
 
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -59,12 +109,14 @@ import type { Registry } from "@twist-arcade/game-spec";
 import { DEFAULT_HARNESS_THRESHOLDS } from "@twist-arcade/game-spec";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
-const CHUNKS_DIR = path.join(REPO_ROOT, ".next/static/chunks");
-// Same glob `.size-limit.json`'s "game route (/play/[gameId])" entry targets. Kept as a
-// literal here (not read out of .size-limit.json) because the two checks are intentionally
-// independent guards over related-but-different artifacts; if this path pattern ever needs to
-// change, `.size-limit.json` needs the matching change made deliberately, not silently forked.
-const SHELL_CHUNK_GLOB_DIR = path.join(REPO_ROOT, ".next/static/chunks/app/play");
+const REGISTRY_SOURCE_PATH = path.join(REPO_ROOT, "games/registry.ts");
+// The key prefix react-loadable-manifest.json uses for every import() call site declared in
+// games/registry.ts — a fact about OUR source layout (stable; we control it), not a webpack
+// build artifact. See attributeOwnFiles() for how a mismatch here is handled without silently
+// matching nothing: it's matched by suffix, not strict equality, specifically so an unexpected
+// prefix format is diagnosable instead of indistinguishable from "no imports found."
+const REGISTRY_SOURCE_REL = "games/registry.ts";
+const LOADABLE_MANIFEST_PATH = path.join(REPO_ROOT, ".next/react-loadable-manifest.json");
 
 // "kB" here means 1000 bytes (decimal), matching `.size-limit.json` / the `bytes` npm package's
 // default parse of "kB" — NOT 1024. `DEFAULT_HARNESS_THRESHOLDS.maxBundleKb` (packages/
@@ -76,232 +128,259 @@ const BUDGET_BYTES = DEFAULT_HARNESS_THRESHOLDS.maxBundleKb * 1000;
 export class ChunkBudgetProbeError extends Error {}
 
 async function loadRegistry(): Promise<Registry> {
-  const registryUrl = pathToFileURL(path.join(REPO_ROOT, "games/registry.ts")).href;
+  const registryUrl = pathToFileURL(REGISTRY_SOURCE_PATH).href;
   const mod = (await import(registryUrl)) as { registry: Registry };
   return mod.registry;
 }
 
-/** Locate the built `/play/[gameId]` route chunk — the one file `.size-limit.json` already
- *  measures. Requires exactly one match: zero means the build is missing or Next changed its
- *  route-chunk naming; more than one means an assumption here (single dynamic route under
- *  app/play) no longer holds. Either way, loud failure beats silently picking one. */
-function findShellChunkFile(): string {
-  let paramDirs: string[];
-  try {
-    paramDirs = readdirSync(SHELL_CHUNK_GLOB_DIR, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name);
-  } catch (err) {
-    throw new ChunkBudgetProbeError(
-      `chunk-budget: cannot read ${path.relative(REPO_ROOT, SHELL_CHUNK_GLOB_DIR)} — run "pnpm build" before "pnpm chunk-budget" (same ordering size-limit requires). Underlying error: ${String(err)}`
-    );
-  }
-  const matches: string[] = [];
-  for (const dir of paramDirs) {
-    const full = path.join(SHELL_CHUNK_GLOB_DIR, dir);
-    for (const f of readdirSync(full)) {
-      if (/^page-[0-9a-f]+\.js$/.test(f)) matches.push(path.join(full, f));
-    }
-  }
-  if (matches.length !== 1) {
-    throw new ChunkBudgetProbeError(
-      `chunk-budget: expected exactly 1 built "/play/[gameId]" route chunk, found ${matches.length}: ${matches.map((m) => path.relative(REPO_ROOT, m)).join(", ") || "(none)"}. ` +
-        `This script's chunk-id extraction assumes a single dynamic game route — if that structure changed, this script needs a deliberate update, not a silent partial read.`
-    );
-  }
-  return matches[0]!;
+const LOAD_KEYS = new Set(["loadEngine", "loadPresentation", "loadSolver"]);
+const REQUIRED_LOAD_KEYS = new Set(["loadEngine", "loadPresentation"]);
+
+function propertyName(name: ts.PropertyName): string | undefined {
+  if (ts.isIdentifier(name)) return name.text;
+  if (ts.isStringLiteral(name)) return name.text;
+  return undefined;
 }
 
-interface GameLoadChunks {
-  gameId: string;
-  /** webpack chunk ids referenced by this game's loadEngine/loadPresentation/loadSolver. */
-  chunkIds: Set<number>;
-}
-
-/** Find every top-level ObjectLiteralExpression in `sourceFile` whose property-name set is
- *  exactly `expectedIds` — structurally locating the registry's compiled `{gameId: {...}}` map
- *  by SHAPE, not by a minified variable name (which webpack/SWC are free to rename on any
- *  build). Requiring exact-set equality against 3+ specific ids makes an accidental collision
- *  with an unrelated object literal in the same minified file astronomically unlikely. */
-function findRegistryObjectLiterals(sourceFile: ts.SourceFile, expectedIds: Set<string>): ts.ObjectLiteralExpression[] {
-  const found: ts.ObjectLiteralExpression[] = [];
-
-  function propertyName(name: ts.PropertyName): string | undefined {
-    if (ts.isIdentifier(name)) return name.text;
-    if (ts.isStringLiteral(name)) return name.text;
-    return undefined;
-  }
+/** Locate `games/registry.ts`'s exported registry object literal by BOTH signals: the
+ *  identifier it's assigned to (`const registry = ...`) and, independently, an exact match of
+ *  its top-level property-key set against `expectedIds` (the runtime-imported registry's own
+ *  `Object.keys()` — same cross-check C33 required of the original script). Either signal
+ *  drifting from the other — a `registry` binding whose keys don't match, or no `registry`
+ *  binding shaped this way at all — fails loud rather than guessing which one is right. */
+function findRegistryObjectLiteral(sourceFile: ts.SourceFile, expectedIds: Set<string>): ts.ObjectLiteralExpression {
+  const candidates: ts.ObjectLiteralExpression[] = [];
 
   function visit(node: ts.Node) {
-    if (ts.isObjectLiteralExpression(node)) {
-      const names = new Set<string>();
-      let allNamed = true;
-      for (const prop of node.properties) {
-        if (!ts.isPropertyAssignment(prop)) {
-          allNamed = false;
-          break;
-        }
-        const n = propertyName(prop.name);
-        if (n === undefined) {
-          allNamed = false;
-          break;
-        }
-        names.add(n);
-      }
-      if (allNamed && names.size === expectedIds.size && [...expectedIds].every((id) => names.has(id))) {
-        found.push(node);
-      }
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === "registry" &&
+      node.initializer &&
+      ts.isObjectLiteralExpression(node.initializer)
+    ) {
+      candidates.push(node.initializer);
     }
     ts.forEachChild(node, visit);
   }
-
   visit(sourceFile);
-  return found;
-}
 
-/** Within one game's compiled registry-entry object, collect webpack chunk ids referenced by
- *  `loadEngine` / `loadPresentation` / `loadSolver` — i.e. every `<expr>.e(<NumericLiteral>)`
- *  call reachable inside those three properties' initializers. `n.e(id)` is webpack's own
- *  generated "ensure this chunk is loaded" call; the numeric argument IS the chunk id, and
- *  built chunk filenames are `<id>.<hash>.js` / `<id>-<hash>.js` — see `resolveChunkFile`. */
-function extractChunkIds(entryObject: ts.ObjectLiteralExpression): Set<number> {
-  const ids = new Set<number>();
-  const loadKeys = new Set(["loadEngine", "loadPresentation", "loadSolver"]);
-
-  function propertyName(name: ts.PropertyName): string | undefined {
-    if (ts.isIdentifier(name)) return name.text;
-    if (ts.isStringLiteral(name)) return name.text;
-    return undefined;
-  }
-
-  function collectFrom(node: ts.Node) {
-    if (
-      ts.isCallExpression(node) &&
-      ts.isPropertyAccessExpression(node.expression) &&
-      node.expression.name.text === "e" &&
-      node.arguments.length === 1 &&
-      ts.isNumericLiteral(node.arguments[0]!)
-    ) {
-      ids.add(Number(node.arguments[0]!.text));
-    }
-    ts.forEachChild(node, collectFrom);
-  }
-
-  for (const prop of entryObject.properties) {
-    if (!ts.isPropertyAssignment(prop)) continue;
-    const name = propertyName(prop.name);
-    if (name !== undefined && loadKeys.has(name)) collectFrom(prop.initializer);
-  }
-
-  return ids;
-}
-
-/** Resolve a webpack chunk id to its built file. Anchored so id `1` cannot match `13-*.js` —
- *  the character immediately after the id must be `.` or `-` (the two hash-separator styles
- *  Next emits, e.g. `152.4cb6f...js` vs `855-70d7c...js`). */
-function resolveChunkFile(id: number): string {
-  const re = new RegExp(`^${id}[.-][0-9a-f]+\\.js$`);
-  const matches = readdirSync(CHUNKS_DIR).filter((f) => re.test(f));
-  if (matches.length !== 1) {
+  if (candidates.length !== 1) {
     throw new ChunkBudgetProbeError(
-      `chunk-budget: webpack chunk id ${id} (referenced via n.e(${id}) in the compiled registry) resolved to ${matches.length} files in ${path.relative(REPO_ROOT, CHUNKS_DIR)}, expected exactly 1: ${matches.join(", ") || "(none)"}.`
+      `chunk-budget: expected exactly 1 "const registry = {...}" declaration in ${REGISTRY_SOURCE_REL}, found ${candidates.length}. ` +
+        `This script's extraction assumes that exact authored shape — if games/registry.ts was restructured, this script needs a deliberate update, not a silent partial read.`
     );
   }
-  return path.join(CHUNKS_DIR, matches[0]!);
+  const registryObject = candidates[0]!;
+
+  const keys = new Set<string>();
+  for (const prop of registryObject.properties) {
+    if (!ts.isPropertyAssignment(prop)) {
+      throw new ChunkBudgetProbeError(
+        `chunk-budget: a property of the "registry" object literal in ${REGISTRY_SOURCE_REL} is not a plain "key: value" assignment (e.g. a spread or shorthand) — this script's extraction assumes every entry is a named property. Update this script deliberately if that assumption no longer holds.`
+      );
+    }
+    const n = propertyName(prop.name);
+    if (n === undefined) {
+      throw new ChunkBudgetProbeError(
+        `chunk-budget: a property key of the "registry" object literal in ${REGISTRY_SOURCE_REL} is neither a plain identifier nor a string literal (e.g. computed) — cannot read the game id.`
+      );
+    }
+    keys.add(n);
+  }
+  const missing = [...expectedIds].filter((id) => !keys.has(id));
+  const extra = [...keys].filter((id) => !expectedIds.has(id));
+  if (missing.length > 0 || extra.length > 0) {
+    throw new ChunkBudgetProbeError(
+      `chunk-budget: ${REGISTRY_SOURCE_REL}'s "registry" object literal's keys (${[...keys].sort().join(", ")}) don't exactly match the runtime-imported registry's Object.keys() (${[...expectedIds].sort().join(", ")}). ` +
+        `Missing: ${missing.join(", ") || "(none)"}. Unexpected: ${extra.join(", ") || "(none)"}. Source and the loaded module have drifted apart.`
+    );
+  }
+
+  return registryObject;
+}
+
+/** Collect every string-literal specifier passed to a dynamic `import(...)` call reachable
+ *  inside `node` — i.e. `ts.isCallExpression(node) && node.expression.kind ===
+ *  ts.SyntaxKind.ImportKeyword`, TypeScript's AST shape for `import(...)` as an expression
+ *  (distinct from a static `ImportDeclaration`). This is what `loadEngine`/`loadPresentation`/
+ *  `loadSolver`'s arrow function bodies compile from — see games/registry.ts itself. */
+function collectImportSpecifiers(node: ts.Node, out: Set<string>) {
+  if (
+    ts.isCallExpression(node) &&
+    node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+    node.arguments.length >= 1 &&
+    ts.isStringLiteralLike(node.arguments[0]!)
+  ) {
+    out.add(node.arguments[0]!.text);
+  }
+  ts.forEachChild(node, (c) => collectImportSpecifiers(c, out));
+}
+
+/** Pure parse step, no filesystem access beyond the source text handed in — unit-testable
+ *  against a small synthetic TS source shaped like games/registry.ts, no `pnpm build` needed
+ *  (scripts/test/chunk-budget.test.ts). Returns, per registered game id, the sorted list of
+ *  dynamic-import specifiers its loadEngine/loadPresentation/loadSolver reference. Throws
+ *  ChunkBudgetProbeError on every structural-assumption break rather than a partial result
+ *  (C33's lesson: never report a missing/malformed entry as if it simply cost nothing). */
+export function extractGameImportSpecifiers(registrySourceText: string, gameIds: string[]): Map<string, string[]> {
+  const sourceFile = ts.createSourceFile(REGISTRY_SOURCE_REL, registrySourceText, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS);
+  const expectedIds = new Set(gameIds);
+  const registryObject = findRegistryObjectLiteral(sourceFile, expectedIds);
+
+  const result = new Map<string, string[]>();
+  for (const prop of registryObject.properties) {
+    if (!ts.isPropertyAssignment(prop)) continue; // already validated above; narrows for TS
+    const gameId = propertyName(prop.name)!;
+    if (!ts.isObjectLiteralExpression(prop.initializer)) {
+      throw new ChunkBudgetProbeError(
+        `chunk-budget: registry entry for "${gameId}" in ${REGISTRY_SOURCE_REL} is not an object literal — cannot find its load functions.`
+      );
+    }
+
+    const foundLoadKeys = new Set<string>();
+    const specifiers = new Set<string>();
+    for (const entryProp of prop.initializer.properties) {
+      if (!ts.isPropertyAssignment(entryProp) && !ts.isMethodDeclaration(entryProp)) continue;
+      const name = ts.isPropertyAssignment(entryProp) || ts.isMethodDeclaration(entryProp) ? propertyName(entryProp.name) : undefined;
+      if (name === undefined || !LOAD_KEYS.has(name)) continue;
+      foundLoadKeys.add(name);
+      const body = ts.isPropertyAssignment(entryProp) ? entryProp.initializer : entryProp.body;
+      if (body) collectImportSpecifiers(body, specifiers);
+    }
+
+    const missingRequired = [...REQUIRED_LOAD_KEYS].filter((k) => !foundLoadKeys.has(k));
+    if (missingRequired.length > 0) {
+      throw new ChunkBudgetProbeError(
+        `chunk-budget: registry entry for "${gameId}" in ${REGISTRY_SOURCE_REL} is missing required propert${missingRequired.length === 1 ? "y" : "ies"}: ${missingRequired.join(", ")} (RegistryEntry requires loadEngine and loadPresentation — see packages/game-spec/src/registry.ts).`
+      );
+    }
+
+    result.set(gameId, [...specifiers].sort());
+  }
+  return result;
+}
+
+export interface LoadableManifestEntry {
+  id: number;
+  files: string[];
+}
+export type LoadableManifest = Record<string, LoadableManifestEntry>;
+
+/** Pure attribution step, no filesystem access — unit-testable against a small synthetic
+ *  manifest object (scripts/test/chunk-budget.test.ts), no `pnpm build` needed. For each game,
+ *  looks up its specifiers (from extractGameImportSpecifiers) in the real
+ *  react-loadable-manifest.json, keyed `"<file> -> <specifier>"`. Matches by SUFFIX on the file
+ *  part (`key.endsWith(registrySourceRel)`, backslash-normalized) rather than strict equality —
+ *  deliberately, so if Next ever emits an absolute path or a different root-relative prefix,
+ *  this still matches instead of reporting every specifier as missing; if truly nothing
+ *  matches, the missing-specifier error below lists exactly what was searched for, which is
+ *  diagnosable in a way "every specifier reports missing" alone would not be. */
+export function attributeOwnFiles(
+  specifiersByGame: Map<string, string[]>,
+  manifest: LoadableManifest,
+  registrySourceRel: string = REGISTRY_SOURCE_REL
+): Map<string, string[]> {
+  const normalizedRel = registrySourceRel.replace(/\\/g, "/");
+  const bySpecifier = new Map<string, string[]>();
+  for (const [key, entry] of Object.entries(manifest)) {
+    const sep = key.indexOf(" -> ");
+    if (sep === -1) continue;
+    const filePart = key.slice(0, sep).replace(/\\/g, "/");
+    const specifierPart = key.slice(sep + 4);
+    if (filePart.endsWith(normalizedRel)) {
+      bySpecifier.set(specifierPart, entry.files);
+    }
+  }
+
+  const filesByGame = new Map<string, Set<string>>();
+  for (const [gameId, specifiers] of specifiersByGame) {
+    const files = new Set<string>();
+    for (const specifier of specifiers) {
+      const entryFiles = bySpecifier.get(specifier);
+      if (entryFiles === undefined) {
+        throw new ChunkBudgetProbeError(
+          `chunk-budget: ${registrySourceRel} dynamically imports "${specifier}" for game "${gameId}", but the built react-loadable-manifest.json has no matching "${registrySourceRel} -> ${specifier}" entry (searched by suffix match on ${filesByGameSearchKeys(bySpecifier)}). ` +
+            `Either the build is stale (rerun "pnpm build") or Next.js changed this manifest's key format — see this script's header.`
+        );
+      }
+      for (const f of entryFiles) files.add(f);
+    }
+    filesByGame.set(gameId, files);
+  }
+
+  // A file referenced by EVERY registered game is shell-equivalent shared infrastructure,
+  // excluded from every game's own total — same exclusion rule as the original script, now
+  // computed over manifest file lists instead of parsed webpack chunk ids. See header's "KNOWN
+  // LIMITATION" note for the single-game edge case.
+  const gameFileSets = [...filesByGame.values()];
+  const universal = new Set<string>();
+  if (gameFileSets.length > 0) {
+    for (const f of gameFileSets[0]!) {
+      if (gameFileSets.every((set) => set.has(f))) universal.add(f);
+    }
+  }
+
+  const result = new Map<string, string[]>();
+  for (const [gameId, files] of filesByGame) {
+    result.set(gameId, [...files].filter((f) => !universal.has(f)).sort());
+  }
+  return result;
+}
+
+function filesByGameSearchKeys(bySpecifier: Map<string, string[]>): string {
+  const specifiers = [...bySpecifier.keys()];
+  return specifiers.length === 0 ? "(no registry.ts entries found in the manifest at all)" : `${specifiers.length} known specifier(s) in the manifest`;
 }
 
 function gzipSize(filePath: string): number {
   return gzipSync(readFileSync(filePath)).length;
 }
 
-/** Pure parse-and-attribute step: no filesystem access beyond the source text handed in, so
- *  this is the unit-testable core (scripts/test/chunk-budget.test.ts) — it can be exercised
- *  against a small synthetic source string shaped like webpack's real output without needing a
- *  real `pnpm build` on disk. Returns, per registered game id, the webpack chunk ids that are
- *  "its own" (referenced by that game but not by every registered game — see header comment).
- *  Throws `ChunkBudgetProbeError` on every ambiguous/drifted shape rather than returning a
- *  partial or best-guess result (C33's lesson: a guard that loops over a list must fail loud on
- *  a missing entry, never report as if that entry simply cost 0 bytes). */
-export function attributeOwnChunkIds(sourceText: string, gameIds: string[]): Map<string, number[]> {
-  const sourceFile = ts.createSourceFile("page.js", sourceText, ts.ScriptTarget.ES2022, true, ts.ScriptKind.JS);
-  const expectedIds = new Set(gameIds);
-
-  const candidates = findRegistryObjectLiterals(sourceFile, expectedIds);
-  if (candidates.length !== 1) {
-    throw new ChunkBudgetProbeError(
-      `chunk-budget: expected exactly 1 object literal in the compiled route chunk whose keys exactly match games/registry.ts's ids (${[...expectedIds].sort().join(", ")}), found ${candidates.length}. ` +
-        `Either the build's registry object no longer has this shape (webpack/Next version change — see this script's header), or games/registry.ts and the built output have drifted apart.`
-    );
-  }
-  const registryObject = candidates[0]!;
-
-  const perGame: GameLoadChunks[] = [];
-  for (const prop of registryObject.properties) {
-    if (!ts.isPropertyAssignment(prop)) continue;
-    const name = ts.isIdentifier(prop.name) ? prop.name.text : ts.isStringLiteral(prop.name) ? prop.name.text : undefined;
-    if (name === undefined || !expectedIds.has(name)) continue;
-    if (!ts.isObjectLiteralExpression(prop.initializer)) {
-      throw new ChunkBudgetProbeError(`chunk-budget: registry entry for "${name}" in the compiled chunk is not an object literal — cannot extract its load functions.`);
-    }
-    perGame.push({ gameId: name, chunkIds: extractChunkIds(prop.initializer) });
-  }
-  const foundIds = new Set(perGame.map((g) => g.gameId));
-  const missing = gameIds.filter((id) => !foundIds.has(id));
-  if (missing.length > 0) {
-    throw new ChunkBudgetProbeError(`chunk-budget: games/registry.ts registers ${missing.join(", ")} but the compiled route chunk has no matching entry for ${missing.length === 1 ? "it" : "them"}.`);
-  }
-
-  // A chunk id referenced by EVERY registered game is shell-equivalent infrastructure
-  // (verified in this build to be e.g. a shared Radix dialog used by every presentation) —
-  // excluded from every game's own total, same as it's already excluded from the shell budget
-  // by never appearing there either. Anything referenced by fewer than all games is charged in
-  // full to every game that references it (see header comment for why: no shared-cost
-  // discount for a cold first-time visitor).
-  const universal = new Set<number>();
-  if (perGame.length > 0) {
-    for (const id of perGame[0]!.chunkIds) {
-      if (perGame.every((g) => g.chunkIds.has(id))) universal.add(id);
-    }
-  }
-
-  const result = new Map<string, number[]>();
-  for (const g of perGame) {
-    result.set(
-      g.gameId,
-      [...g.chunkIds].filter((id) => !universal.has(id)).sort((a, b) => a - b)
-    );
-  }
-  return result;
-}
-
 export interface GameBudgetResult {
   gameId: string;
-  ownChunkIds: number[];
   ownFiles: string[];
   gzipBytes: number;
   overBudget: boolean;
 }
 
-/** Orchestrates the pure step above with the filesystem: resolves each own-chunk-id to its
- *  built file under `.next/static/chunks/` and gzips it. This half is exercised by the real
- *  `pnpm build && pnpm chunk-budget` integration path, not the unit test — it needs real
- *  webpack output on disk to mean anything. */
-export function computeBudgets(sourceText: string, gameIds: string[]): GameBudgetResult[] {
-  const ownIdsByGame = attributeOwnChunkIds(sourceText, gameIds);
+/** Orchestrates the two pure steps above with the filesystem: resolves each own-file to its
+ *  path under `.next/` and gzips it. This half is exercised by the real
+ *  `pnpm build && pnpm chunk-budget` integration path, not the unit tests — it needs real
+ *  Next.js output on disk to mean anything. */
+export function computeBudgets(registrySourceText: string, manifest: LoadableManifest, gameIds: string[]): GameBudgetResult[] {
+  const specifiersByGame = extractGameImportSpecifiers(registrySourceText, gameIds);
+  const ownFilesByGame = attributeOwnFiles(specifiersByGame, manifest);
 
-  return [...ownIdsByGame.entries()]
-    .map(([gameId, ownIds]) => {
-      const ownFiles = ownIds.map(resolveChunkFile);
-      const gzipBytes = ownFiles.reduce((sum, f) => sum + gzipSize(f), 0);
+  return [...ownFilesByGame.entries()]
+    .map(([gameId, files]) => {
+      const gzipBytes = files.reduce((sum, f) => sum + gzipSize(path.join(REPO_ROOT, ".next", f)), 0);
       return {
         gameId,
-        ownChunkIds: ownIds,
-        ownFiles: ownFiles.map((f) => path.relative(REPO_ROOT, f)),
+        ownFiles: files,
         gzipBytes,
         overBudget: gzipBytes > BUDGET_BYTES,
       };
     })
     .sort((a, b) => a.gameId.localeCompare(b.gameId));
+}
+
+function loadLoadableManifest(): LoadableManifest {
+  let raw: string;
+  try {
+    raw = readFileSync(LOADABLE_MANIFEST_PATH, "utf8");
+  } catch (err) {
+    throw new ChunkBudgetProbeError(
+      `chunk-budget: cannot read ${path.relative(REPO_ROOT, LOADABLE_MANIFEST_PATH)} — run "pnpm build" before "pnpm chunk-budget" (same ordering size-limit requires). Underlying error: ${String(err)}`
+    );
+  }
+  try {
+    return JSON.parse(raw) as LoadableManifest;
+  } catch (err) {
+    throw new ChunkBudgetProbeError(
+      `chunk-budget: ${path.relative(REPO_ROOT, LOADABLE_MANIFEST_PATH)} is not valid JSON — Next.js may have changed this manifest's format (see this script's header). Underlying error: ${String(err)}`
+    );
+  }
 }
 
 async function main() {
@@ -312,12 +391,12 @@ async function main() {
     return;
   }
 
-  const shellChunkFile = findShellChunkFile();
-  const sourceText = readFileSync(shellChunkFile, "utf8");
-  const results = computeBudgets(sourceText, gameIds);
+  const manifest = loadLoadableManifest();
+  const registrySourceText = readFileSync(REGISTRY_SOURCE_PATH, "utf8");
+  const results = computeBudgets(registrySourceText, manifest, gameIds);
 
-  console.log(`chunk-budget: per-game dynamic-import chunk budget (platform-corrections.md C38), budget = ${DEFAULT_HARNESS_THRESHOLDS.maxBundleKb} kB gzip/game`);
-  console.log(`  measured from: ${path.relative(REPO_ROOT, shellChunkFile)}`);
+  console.log(`chunk-budget: per-game dynamic-import chunk budget (platform-corrections.md C38/C50), budget = ${DEFAULT_HARNESS_THRESHOLDS.maxBundleKb} kB gzip/game`);
+  console.log(`  measured from: ${path.relative(REPO_ROOT, LOADABLE_MANIFEST_PATH)} (react-loadable-manifest, per-import-site attribution — see script header)`);
   console.log("");
 
   let anyOver = false;
@@ -325,7 +404,7 @@ async function main() {
     const kb = (r.gzipBytes / 1000).toFixed(2);
     const status = r.overBudget ? "OVER BUDGET" : "ok";
     if (r.overBudget) anyOver = true;
-    console.log(`  ${r.gameId}: ${kb} kB gzip [${status}]  (chunks: ${r.ownFiles.join(", ") || "(none — game route holds no game-specific code)"})`);
+    console.log(`  ${r.gameId}: ${kb} kB gzip [${status}]  (files: ${r.ownFiles.join(", ") || "(none — game route holds no game-specific code)"})`);
   }
   console.log("");
 
