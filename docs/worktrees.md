@@ -31,6 +31,7 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 | chunkbudget (C38: per-game dynamic-import chunk budget, `docs/plans/platform-corrections.md` C38) | `../claude-project-chunkbudget` | `feature/chunk-budget` | `twistarcade_chunkbudget` | 55621–55629 | not started (no DB) — CI/build-tooling work only, no game code touches Postgres | ACTIVE |
 | tilt (Tilt — T1 engine + T2 kill-test sweep, `docs/plans/tilt.md`) | `../claude-project-tilt` | `feature/tilt` | `twistarcade_tilt` | 55721–55729 | not started (no DB) — engine-only work, gate-before-UI (C16), no game code touches Postgres | ACTIVE |
 | bidtactoe (Bid-Tac-Toe — B1 engine + simultaneous-turn platform spike, `docs/plans/bid-tac-toe.md`) | `../claude-project-bid-tac-toe` | `feature/bid-tac-toe` | `twistarcade_bidtactoe` | 55821–55829 | not started (no DB) — engine-only work, gate-before-UI (C16), no game code touches Postgres | ACTIVE |
+| chunkfix (C50: repair `scripts/chunk-budget.ts`'s registry-object-literal probe, broken by Tilt's fourth-game chunk-splitting topology change; `docs/plans/platform-corrections.md` C43/C50) | `../claude-project-chunkfix` | `feature/chunk-budget-fix` | `twistarcade_chunkfix` | 55921–55929 | not started (no DB) — CI/build-tooling work only, no game code touches Postgres | ACTIVE — verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
 
 ## Port blocks
 
@@ -52,6 +53,7 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 | 55621–55629 (team 13) | chunkbudget | CLAIMED — verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
 | 55721–55729 (team 14) | tilt | CLAIMED — verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
 | 55821–55829 (team 15) | bidtactoe | CLAIMED — verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
+| 55921–55929 (team 16) | chunkfix | CLAIMED — verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
 
 **Host note (2026-08-02):** Docker on this machine already runs Supabase stacks for
 unrelated projects (`mento-h0`, `prequal-and405`, `prequal-and473-450`). All four blocks

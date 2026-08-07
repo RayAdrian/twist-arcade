@@ -3089,3 +3089,81 @@ condition was written as *"every policy"* rather than something I could argue ab
 **One methodological note carried forward:** leg 3's 5×5 arm recorded `infeasibleCount=1` — one seed
 exceeded the enumeration budget and was excluded. The spec pre-registered that fallback, and the
 result is reported as n=4/5 rather than silently pooled over four as though five had run.
+
+---
+
+## C53 — The chunk guard is repaired, and the repair was proved to generalise rather than assumed to
+
+### Root cause: the shape didn't change, the location did
+
+At three games the compiled registry object literal lived in the `/play/[gameId]` route chunk. At
+four, it crossed webpack's `SplitChunksPlugin` `minChunks` threshold — referenced by four
+separately-generated static pages instead of three — and was **extracted into a shared chunk**. The
+old probe searched only the route chunk, found nothing, and refused.
+
+Confirmed by grep: the route chunk (1.4 KB) contained none of the four game ids; `194-*.js`
+contained all four, in the same object-literal shape as before.
+
+### The fix asks Next where things are instead of guessing
+
+`.next/react-loadable-manifest.json` is keyed **`<file containing the import() call> → <import
+specifier>`** — Next's own record of every dynamic `import()` site, fixed when `games/registry.ts`
+is authored and **completely insensitive to which chunk webpack later chooses.**
+
+**My suggested alternative was tested and rejected with evidence.** I pointed at
+`build-manifest.json` / `app-build-manifest.json`; the team checked them first and found they are
+*route*-keyed, reproducing C43's original finding verbatim — `/play/[gameId]/page` is byte-identical
+across all four params, so they cannot attribute a chunk to an offender. Only the loadable manifest
+is keyed at the right granularity. That is the fourth time today an implementer checked a suggestion
+of mine against the artifact rather than acting on it.
+
+Every failure mode still refuses to guess — drifted key sets, unmatched specifiers, missing or
+malformed manifest all throw a named error rather than reporting a silent 0 kB.
+
+### The measurement validates itself against the old one
+
+```
+crackstep   7.21 kB    fadeout  8.26 kB    nine-grids  4.83 kB    tilt  5.34 kB
+```
+
+**crackstep, fadeout and nine-grids reproduce this morning's baseline exactly, at a four-game
+topology.** A rewritten probe using a completely different artifact landing on the same three
+numbers is strong evidence it measures the same real thing rather than an artifact of either
+method's assumptions. Tilt gets a real number for the first time — the earlier ~4.5 kB was a
+fallback grep, explicitly labelled as not the sanctioned methodology.
+
+No game is within 60% of the 75 kB budget. **Nothing to flag, no waiver needed.**
+
+### The plant, and the two traps it avoided
+
+A **133 kB base64-noise payload** (genuinely incompressible — a repeated-character string would have
+gzipped to nothing), gated on `Date.now() < 0` rather than the `NOISE.length > 0` pattern the
+minifier constant-folded away this morning, wired into `boardSummaryText()` which `announce()`
+genuinely calls. The needle was verified present in exactly one built file *before* any number was
+trusted, and verified to sit inside Tilt's own `loadPresentation` graph — the code path under test,
+not a dead branch.
+
+```
+tilt: 107.09 kB gzip [OVER BUDGET] — over the 75 kB budget by 32.09 kB   exit=1
+.size-limit.json throughout: 621 B gzipped, green
+```
+
+**The old shell-chunk check stayed green through a 101 kB regression**, reproducing C43's blind spot
+against the repaired guard's own plant.
+
+### Why this is a fix and not a new constant
+
+I said a repair that works only at four games is the same defect with a new number. The team
+**changed the registered-game count and rebuilt, twice**:
+
+- **N=3** (dropped nine-grids): passed, reported the three remaining games, nine-grids correctly
+  absent rather than silently wrong.
+- **N=5** (alias entry reusing Tilt's specifiers): passed, and charged the shared files **in full to
+  both** — proving the shared-but-not-universal attribution logic, *the part most likely to break
+  silently*, still holds.
+
+Testing the sensitivity that caused the original break, rather than testing that the fix works
+today, is the difference between a repair and a rescheduled failure.
+
+150/150 test files, 1,729 passed, plus 10 new unit tests covering the fail-loud paths without
+requiring a build.
