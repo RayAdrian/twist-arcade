@@ -1351,3 +1351,63 @@ failure, never a plausible-looking artifact. A zero-scoring Strong is either a b
 (C6) or a broken engine, and both deserve an explicit error rather than a float. Under
 investigation — the reading came from a deliberately reduced-scope diagnostic, so it is not yet
 known whether a full run can produce it.
+
+---
+
+## C26 — Nine Grids survives. And its one WARN exposes a hole in C19's tier-collapse guard.
+
+### The verdict: Nine Grids passes
+
+```
+CI suite (ci) for "nine-grids" — OK
+  [PASS] strong-vs-random: 100.0% (min 90.0%)
+  [PASS] first-player-win-rate: 46.0% (band [35%, 65%])
+  [PASS] draw-rate: 30.0% (max 60.0%)
+  [PASS] mean-plies: mean 50.2 plies, 0 cap hits across all matchups
+  [WARN] ruthless-vs-standard: 42.0% (min 60.0%, ci)
+  [N/A ] solved-value-reached: no proven manifest.solvedValue — nothing to confirm
+```
+
+**First-player win rate 46.0%, near the centre of the band, with a 30% draw rate.** Ultimate
+Tic-Tac-Toe is decisive and balanced under this engine. It is the first two-player game since
+Fadeout to clear the balance gates, and unlike Wrap it did so on a real 100-game sample.
+
+**The pilot said 13.3%.** A 15-game pilot read a *severe second-player advantage* — the same
+direction as Wrap's 76% — and the full run says 46.0%. The pilot was noise: 13.3% is 2 wins in
+15, with a confidence interval spanning roughly 2–40%. Had that been treated as a verdict,
+a balanced game would have been killed, and the kill would have looked like corroboration of
+Wrap's pattern. **A directional read from a sample that small is not weak evidence; it is no
+evidence.** Cost measurements can run at 15 games. Verdicts cannot.
+
+### The hole: the tier-collapse guard checks budgets, not strength
+
+`ruthless-vs-standard` measured **42.0%** — the *harder* tier losing to the easier one. Nine
+Grids' tiers are `standard` 1,000 rollouts and shipped `ruthless` 10,000, with
+`ciGateBudget.twoPlayerCiRollouts: 1500`. So under suite `"ci"` the comparison is **1,500
+versus 1,000 — a 1.5× gap**, where the shipped game is 10×.
+
+C19's `TierBudgetCollapseError` fired correctly on Wrap and refuses when the scaled `ruthless`
+budget is **≤** `standard`'s. 1,500 > 1,000, so it passed. But **strict inequality is nowhere
+near sufficient**: MCTS strength grows roughly with the *logarithm* of rollouts, so a 1.5×
+budget gap is a strength difference easily swamped by noise. The guard verifies budget
+separation as a **proxy for strength separation, and this is direct evidence the proxy fails.**
+
+The measured number is not a finding about Nine Grids. It is an artifact of the CI substitution:
+at the shipped 10,000-vs-1,000 the tiers are genuinely 10× apart, and nightly — which never
+applies the override — is where that comparison is real.
+
+### Ruling
+
+**When a CI rollout override is active, `ruthless-vs-standard` must report `n/a`, citing the
+override — not `WARN` with a number.** The gate cannot measure what it claims once the
+substitution has changed the very quantity under comparison, and per C2/C23 a gate that cannot
+measure its claim says so rather than emitting a figure people will read as a result.
+
+Nightly keeps the gate at shipped budgets, unchanged, where it means something. This also
+removes a live hazard: `ruthless-vs-standard` is a **hard fail at nightly**, so as things stand
+Nine Grids would pass CI and fail nightly on a number that was never meaningful in CI.
+
+Strengthening the existing error to demand a *ratio* rather than strict inequality is the
+obvious alternative, and it is worse: any threshold would be a guess about how strength scales
+with rollouts for an unknown game, which is exactly the assumption C22 and C25 have already
+punished twice.
