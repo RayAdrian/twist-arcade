@@ -1251,3 +1251,56 @@ by the orchestrator: a `solvedValue` with **no proof pointer** is refused; a **w
 proof is refused; and a **false claim** — `"p0-win"` asserted with a proof pointer on this
 provably drawn game — **fails** with `self-play reached the proven "p0-win" 0.0% of the time
 (floor 90%)`. A game cannot buy gate relief by naming a convenient value.
+
+---
+
+## C24 — Two independent agents wrote the same confounded seed. That is a platform defect.
+
+*Observed twice in one day, in unrelated worktrees, by agents who never saw each other's code.*
+
+Both the Fadeout budget sweep and the Nine Grids budget pilot seeded their comparison runs by
+templating the varying parameter into the seed:
+
+```
+seed: `c22-sweep:${label}:games=${games}:rollouts=${rollouts}`     // Fadeout
+seed: `pilot:nine-grids:${n}:${games}`                             // Nine Grids
+```
+
+`runner.ts:201` derives game *i* as `${seed}:${i}`. So **every budget plays a different set of
+games**, and any measured difference between two budgets conflates the budget's effect with
+seed variance. The comparison cannot distinguish signal from sample.
+
+Both were caught before they produced a wrong conclusion — the Fadeout one before launch, the
+Nine Grids one mid-flight. Neither agent was careless; **both wrote the natural thing.** When
+two independent authors reach for the same wrong construction, the defect is in the tool, not
+in them.
+
+### Why the shipped path is fine and the ad-hoc path is not
+
+`scripts/ci-gates.ts` seeds `ci:${gameId}:${opts.suite}` — fixed per game and suite, correct,
+never varying with a budget. The gates that actually run in CI have never had this problem.
+
+The trap is that `RunCiSuiteOptions.seed` is **required with no default**. An author writing a
+one-off comparison must invent a seed, and the most natural way to make it "descriptive" is to
+interpolate exactly the parameters under comparison — which is precisely what must stay
+constant. The API asks a question whose obvious answer is wrong.
+
+### Fix, in preference order
+
+1. **Provide the comparison as a first-class harness helper** — something like
+   `compareBudgets(engine, manifest, budgets[], { seed, games })` that takes **one** seed and
+   varies only the budget. Make the correct thing the easy thing; nobody hand-rolls the loop,
+   nobody invents a seed. This is the C15 lesson (a scaffold gap is fixed by changing what the
+   scaffold generates, not by documenting the gap).
+2. **Document the rule at the field itself**, not in a plan: on `RunCiSuiteOptions.seed`, state
+   that game *i* derives from `${seed}:${i}`, so a seed that varies across compared runs changes
+   which games are played and invalidates the comparison. A comment on the field is read at the
+   moment the mistake is made; a comment in a document is not.
+
+### The general lesson, which outlives this API
+
+**A recurrence across independent authors is evidence about the tool.** The twenty-three
+defects in `PROGRESS.md` were each diagnosed as a specific oversight. This one arrived twice in
+a day from two people who could not have copied each other, which is a different signal
+entirely: it means the interface makes the wrong thing natural. Fixing the two call sites and
+moving on would guarantee a third.
