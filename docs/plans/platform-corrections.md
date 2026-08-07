@@ -1643,3 +1643,83 @@ weak.
 **Cost note for whoever runs the next sweep:** these three seeds took ~2 hours for six Strong
 runs, with a single seed's `strong@3000` taking 83 minutes against another's 11. Any projection
 from a small sample carries far more uncertainty than its mean suggests.
+
+---
+
+## C30 — Strong cannot see Mine Run's central mechanic. Two correct decisions, one broken seam.
+
+**This is a platform defect, not a game defect. Mine Run has not been tested yet.**
+
+### The mechanism, found by reading rather than by another multi-hour run
+
+Mine Run is hidden-information, so Strong is a **determinized flat Monte Carlo** with
+`rolloutCapPlies = 60` (`agents.ts:133`). Measured game length is **38–60 decisions** (C27), and
+seed ci-2 hit exactly 60 — **so rollouts routinely hit the cap while still `ongoing`** rather
+than reaching a terminal.
+
+A horizon-capped leaf is valued by `valueOfStatus`, whose `"ongoing"` branch is:
+
+```ts
+if (engine.score) return engine.score(state, player);          // preferred
+if (engine.heuristic) return Math.tanh(engine.heuristic(...)); // fallback only
+```
+
+And Mine Run's engine defines:
+
+```ts
+score(state) { return state.banked; }   // banked ONLY — not the live streak
+```
+
+with a comment, written by the game's own author, stating that **`heuristic()` exists precisely
+because "bare score() (== banked) is blind to the entire press-your-luck decision."**
+
+**So Strong evaluates every truncated rollout by banked score alone.** Points held in the live
+streak — the entire substance of the push-or-bank decision — are worth **exactly zero** to its
+search. It cannot distinguish "sitting on a huge live streak" from "holding nothing."
+
+That explains every number in C29, including the one that made no sense: **more search made
+Strong worse** (630→378, 231→105). Additional samples do not correct a blind valuation; they
+average it more confidently. And it explains why Always-Safe wins — Always-Safe banks, so its
+score is real, while Strong optimises a quantity that ignores the mechanic it is playing.
+
+### Neither file is wrong. The seam is.
+
+`search-utils.ts:112–114` documents the priority split deliberately: **`valueOfStatus` prefers
+`score()`** because a horizon-capped leaf must stay commensurate with the terminal `scored`
+value (no ±1 squashing), while **`rankingValueOf` prefers `heuristic()`**. That reasoning is
+sound in general.
+
+Mine Run's split is also sound: `score()` must equal `banked` because the terminal
+`{ kind: "scored", scores: [state.banked] }` is banked, and `heuristic()` carries the
+continuation value.
+
+**Each decision is correct locally, and together they produce a Strong that cannot see the
+game.** This is the same species as the twenty-three catalogued defects — nothing failed, no
+test went red, both authors documented their reasoning — but it is the first where the defect
+lives *between* two files rather than inside one.
+
+### Why every guard missed it
+
+- `strong-vs-random` passes: Strong still beats random, because banked-only is a *bad* objective,
+  not a random one.
+- `probeViewHonesty` passes: Strong is scrupulously view-honest. It is honest and blind.
+- The engine's own tests pass: `score()` returns `banked`, exactly as specified.
+- **`alwaysSafeVsStrong` is the one gate that caught it** — and it is precisely the gate C6
+  installed as the yardstick check. It has been reporting 1.3–11.9 against a 0.95 threshold and
+  was, until this read, being interpreted as evidence about the *game*.
+
+### Ruling
+
+**The engine must declare which value a search should use at a non-terminal horizon.** Only the
+game author knows whether `score()` is a meaningful mid-game estimate; the platform cannot infer
+it, and defaulting to `score()` silently produced a blind bot here. Any game whose `score()` is
+a poor mid-game estimate has this defect latent — Mine Run is simply the first solo score-chase
+to expose it.
+
+Do **not** fix it by making Mine Run's `score()` include the live streak: that breaks the
+terminal contract, and a game bending its own semantics to satisfy a search convention is the
+tail wagging the dog.
+
+**C29 is superseded on its central question.** Mine Run is not known to have a design problem.
+Its yardstick was pointed at the wrong quantity, and the game must be re-gated once Strong can
+see the streak.
