@@ -1,0 +1,34 @@
+Tilt T4 — gate table at the validated 3000-rollout CI budget
+100 games/matchup, shipped 7x7/win-4/period-4/cw/draw config.
+
+CI suite (ci) for "tilt" — OK
+  [PASS] strong-vs-random: 100.0% (min 90.0%)
+  [PASS] first-player-win-rate: 52.0% (band [35%, 65%])
+  [PASS] draw-rate: 6.0% (max 60.0%)
+  [PASS] mean-plies: mean 18.6 plies, 0 cap hits across all matchups
+  [N/A ] ruthless-vs-standard: manifest.ciGateBudget.twoPlayerCiRollouts is active for this CI-suite run — "ruthless" is measured at 3000 rollouts vs "standard"'s shipped 1000 — the override has changed the very quantity under comparison, so this gate cannot measure its claim at suite "ci" (C26). Nightly measures it at the real shipped budgets, where it means something.
+  [N/A ] solved-value-reached: no proven manifest.solvedValue — nothing to confirm
+
+ruthless vs random — 100 games
+  first-player win rate:   50.0%
+  draw rate:               0.0%
+  win rate by seat:        [50.0%, 50.0%]
+  plies (mean/median/p95): 11.1 / 11 / 16
+  mean branching factor:   6.98
+  cap-hit rate:            0.00%
+  throughput:              2.1 games/sec
+
+ruthless vs ruthless — 100 games
+  first-player win rate:   52.0%
+  draw rate:               6.0%
+  win rate by seat:        [52.0%, 42.0%]
+  plies (mean/median/p95): 18.6 / 18 / 24
+  mean branching factor:   6.95
+  cap-hit rate:            0.00%
+  throughput:              0.8 games/sec
+
+[PASS] mirror probe (P2, vs ruthless@3000): 0.0% win rate (gate: <40%) — plan §5.4 predicted this SHOULD fail-to-win (fixed-CW tilt is not reflection-invariant, so mirroring is not value-preserving here)
+
+[PASS] stall probe (P2, vs ruthless@3000): 0.0% win rate, cap-hit rate 0.00% (expect trivial pass — stalling is structurally impossible, plan §5.4)
+
+Overall CI suite: OK

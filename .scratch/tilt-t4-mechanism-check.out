@@ -1,0 +1,3 @@
+[FIRED CORRECTLY] TierBudgetCollapseError: runCiSuite: game "tilt"'s CI-suite ruthless rollout budget (1000, possibly scaled via manifest.ciGateBudget.twoPlayerCiRollouts) is not stri...
+nightly ruthless-vs-standard row: status=pass detail=70.0% (min 60.0%, nightly)
+[CORRECT] nightly ignored the CI override and measured for real

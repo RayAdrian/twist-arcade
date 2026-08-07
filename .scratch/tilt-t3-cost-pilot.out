@@ -1,0 +1,10 @@
+Tilt T3 cost pilot — seed="tilt-t3-cost-pilot", 15 games/candidate, candidates=[1500, 2000, 3000, 5000, 10000]
+TIMING ONLY. No verdict is drawn from this run (C26).
+
+rollouts=  1500  elapsed=21.1s   gates: strong-vs-random=pass first-player-win-rate=fail draw-rate=pass mean-plies=pass ruthless-vs-standard=n/a solved-value-reached=n/a
+rollouts=  2000  elapsed=28.2s   gates: strong-vs-random=pass first-player-win-rate=pass draw-rate=pass mean-plies=pass ruthless-vs-standard=n/a solved-value-reached=n/a
+rollouts=  3000  elapsed=40.9s   gates: strong-vs-random=pass first-player-win-rate=pass draw-rate=pass mean-plies=pass ruthless-vs-standard=n/a solved-value-reached=n/a
+rollouts=  5000  elapsed=61.4s   gates: strong-vs-random=pass first-player-win-rate=fail draw-rate=pass mean-plies=pass ruthless-vs-standard=n/a solved-value-reached=n/a
+rollouts= 10000  elapsed=105.6s   gates: strong-vs-random=pass first-player-win-rate=pass draw-rate=pass mean-plies=pass ruthless-vs-standard=n/a solved-value-reached=n/a
+
+Done. Use this to decide which candidates are affordable for the n=100 validation sweep.

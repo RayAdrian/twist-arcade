@@ -1,0 +1,9 @@
+Tilt doubleLine:"mover-wins" self-play check — seed="tilt-t2-kill-sweep", 200 games
+  seat0 win rate: 57.0%
+  seat1 win rate: 43.0%
+  draw rate: 0.0%  (shipped "draw" config measured 9.0% here)
+  mean plies: 18.3  median: 18
+  cap-hit rate: 0.00%
+  mcts1k win rate (both seats pooled): 100.0%
+
+Comparison: shipped 'draw' config drew 9.0% of self-play games (all double-lines). Under 'mover-wins', those same double-line positions instead resolve to a winner — draw rate here (0.0%) reflects only genuine full-board no-line draws.
