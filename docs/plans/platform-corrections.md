@@ -2122,3 +2122,67 @@ reproduces the failure.
 
 When a system built of layers misbehaves, delete layers until it stops. That is cheaper than
 explaining any single layer, and it does not depend on guessing which one is wrong.
+
+---
+
+## C37 — Mine Run risk-policy rulings, and two gaps the Nine Grids board found
+
+### Rulings on `docs/plans/mine-run-risk-aware-policy.md` (in the plan's §8)
+
+R1 the seam is an **engine hook, not manifest data** (the manifest carries data; a policy is
+code, and the engine already exports `safeMove`/`sampleConsistentState`/`heuristic`). R2 Greedy-
+tier redefinition approved — a tier scoring 3 points on a real seed is not a difficulty rung —
+and the in-world one-ply leak is recorded platform-wide **now**, because C31 established that a
+hazard left for later gets rediscovered expensively. R3 the three-leg kill standard is approved
+**including its one-round sweep bound**, which is the point: open-ended tuning after a
+pre-registered failure is how a kill decision becomes unfalsifiable. R4 approved.
+
+The spec's own contribution beyond C36 is worth naming. It found a **structural second half** to
+the defect: `greedyMoveSelector` applies each candidate to the sampled world and evaluates the
+*resolved* next state, so a reveal's risk is settled before evaluation — a surviving reveal is
+worth `B+V+gain`, banking `B+V`, and the argmax over ~80 cells almost always finds a survivor.
+**Bank is near-dominated at every ply in every sampled world, no matter how good `heuristic()`
+is.** That explains `banked=0` through ply 15 *and* C35's bank sitting flat at 456. And it was
+flagged as a code-read inference with a named five-minute confirming measurement rather than
+asserted — C34's lesson applied by someone who had only read about it.
+
+### C38 — two guards that don't guard, found by building the board
+
+**1. The 75 kB route budget is not measured for game chunks.** `.size-limit.json` measures only
+the shared `/play/[gameId]` shell chunk (1.64 kB). A game's own dynamically-imported chunk — the
+thing the budget exists to bound, and the reason the registry uses `import()` at all — **is
+measured by nothing.** Every game could exceed it silently. This is the C33 shape again: a
+budget that reports on the wrong artifact reads exactly like a budget that passes.
+
+**2. Two accessibility cases cannot be tested end-to-end, and were flagged rather than faked.**
+`/play/[gameId]` has no hotseat entry point (`resolveMode()` always picks `solo-bot` for
+two-player games) and no scripted bot-driver seam, so both seats cannot be driven through the
+UI. The team marked them `test.fixme` with the content proven at the engine + `announce()` level
+— the correct call. Fadeout's own e2e suite documents the same gap, which means it has been open
+since the first game shipped and nobody wrote it down.
+
+### The find that justifies real-browser testing
+
+While building the send-pulse, the team hit a bug **jsdom could never have caught**: a ref-based
+"just sent" comparison was silently erased by an unrelated second React commit — `useGame.ts`'s
+`dispatchBotIfNeeded` setting `botThinking: true` — before paint. Confirmed by instrumenting a
+real render log in Chromium, then fixed by switching to a per-ply React `key` (Fadeout's remount
+pattern). The reduced-motion violation was then re-planted against the *fixed* code and
+reproduced the same exact failure.
+
+That is the C17 lesson generalising: **test the thing that runs.** A component test asserts what
+a component does in isolation; only a browser shows what two commits do to each other.
+
+### The 81-cell problem, solved without shrinking anything
+
+A flat 9×9 at the 48 px floor needs `9×48 + 8×4 = 464 px`; the frame at a 320 px viewport is
+~288 px. **61% over.** The team reported the arithmetic *before* building, evaluated a two-tap
+macro→micro picker, and rejected it because the test plan's FREE-005/A11Y-006 require every open
+board's cells actionable **simultaneously** — a picker cannot satisfy that. Instead `BoardShell`
+now sizes to its natural minimum and the frame becomes a scrollable pan region: pure CSS, no JS
+measurement, zero effect on existing games whose natural size always fit. Verified in a real
+320 px browser with all 81 cells ≥48×48.
+
+Worth contrasting with Tilt, which was granted a floor *exception* for column strips. Nine Grids
+needed no exception because a different layout existed — and the reason we know that is that the
+arithmetic was done before the board, not after.
