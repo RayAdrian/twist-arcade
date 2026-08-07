@@ -2318,3 +2318,61 @@ follow. That is the behaviour to keep — and the reason to keep writing specs p
 but its `<40% vs Strong` measurement is OV2 work; `ciGateBudget` is left unset so `runCiSuite`
 **refuses** the ci suite until OV2's sweep sets it (C22's refusal working as designed, not a gap);
 and the game is unregistered.
+
+---
+
+## C41 — The principled policy lands at parity too. And a planted mutant that agreed *vacuously*.
+
+### The measurement
+
+`riskAwareMove` — §2's survival-discounted plan-then-bank model, Tier B exact posteriors, scanning
+every `m`, no search — against Always-Safe on S0b's identical 23 seeds, both metrics carried
+together:
+
+```
+alwaysSafeMedian = 686    riskAwareMedian = 715
+gateRatio (alwaysSafe/riskAware) = 0.959   — the hard-fail threshold is >= 0.95; this FAILS
+PAIRED win/loss/tie = 11/11/1  →  win fraction 0.478
+```
+
+**Unlike S0b, the two metrics agree**, and that agreement is the informative part. S0b's threshold
+family passed the gate at 0.946 while losing 70% of paired boards — a split that made the result
+unreadable. Here a properly-engineered model reads near-parity on *both*: it fails the gate by
+0.009 and wins essentially half its boards.
+
+Per-seed variance runs both ways (up to +40% and −37%; `ci-2`: 1247 vs 788, `pilot-16`: 367 vs
+231), with no cap hits, no crashes, no degenerate scores. This is a **working policy that does not
+beat always-banking**, not a broken one.
+
+**This is C29's suspicion arriving on far better evidence than S0a/S0b could give it.** The best
+standalone risk model the spec calls for sits at the gate's fail boundary and a coin-flip paired
+win rate.
+
+**It is still not a verdict.** n=23 is exactly the regime C26 exists to distrust, and the three-leg
+kill standard (C37/R3) is the decision mechanism: the n=100 frozen-param batch, the one-round lever
+sweep, and the reduced-board exact check. None has run. The team said so plainly and tuned nothing
+— which is what I asked for and what makes the number worth having.
+
+### The catch worth more than the measurement: a plant that applied and still proved nothing
+
+Verifying view-honesty, the team built a deliberately dishonest selector that peeks at
+`state.mines` to dodge real mines. **The first attempt agreed with the honest policy on every
+resampled world** — and the reason was not that the guard worked. The scripted state happened to
+land on a *provably safe* cell, where honest and cheating policies necessarily choose alike. The
+plant had applied correctly and the test was still vacuous.
+
+They caught it, found a genuinely ambiguous state instead (`bestPosterior = 0.182`, no provably-safe
+cell), and reran: honest agreed across all five worlds (`cell 19` every time), the dishonest peek
+diverged (`2,1,1,1,2`). **The check bites.**
+
+This sharpens the standing instruction, which until now has been *"verify the plant actually
+applied."* That is necessary and **not sufficient**. A plant can apply perfectly and still land
+somewhere the guard cannot distinguish — a position with only one sensible move, a board where
+every policy agrees, an input outside the branch under test. The instruction becomes:
+
+> **Verify the plant applied, and verify it landed somewhere the guard could have failed.**
+> A guard that passes on an input where cheating and honesty coincide has not been tested.
+
+Five of my own probes failed the first half today. This is the first documented instance of the
+second half, and it is subtler: nothing looks wrong. A green result on a correctly-applied plant is
+the most convincing wrong answer available.
