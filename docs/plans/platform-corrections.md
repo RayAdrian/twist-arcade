@@ -1959,3 +1959,19 @@ the right one is not effort — C30 was the most carefully argued of the three. 
 C30 were both explanations built from reading, and only instrumentation ever settles which code
 runs.** The cheap test (`is this branch reached?`) was available at every step and was reached for
 only after a fix demonstrably did nothing.
+
+### C34 confirmed by instrumentation — the branch never runs
+
+```
+RESULT seed=ci:mine-run:ci-0 finalScore=630 decisions=40 capHit=false
+BRANCH_COUNTS ongoing=0 terminal=29194 total=29194 ongoingPct=0.0000%
+```
+
+**Zero out of 29,194 leaf evaluations took the `ongoing` branch.** Every rollout terminated
+naturally, exactly as the budget arithmetic predicts. C30's mechanism is refuted outright, not
+merely doubted — `horizonValue` cannot have changed Strong's play because the code path it
+governs never executed.
+
+The number also settles *why* the fix was inert without any further measurement, which is what a
+discriminating experiment buys: one 3-minute instrumented run replaced a 4-seed paired re-gate
+that would have taken 12 minutes to say "identical" four times.
