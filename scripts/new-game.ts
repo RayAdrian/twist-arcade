@@ -196,6 +196,14 @@ export function insertRegistryEntry(registrySource: string, insertion: RegistryI
 export interface GenerateGameOptions {
   id: string;
   solo?: SoloFlavor;
+  /**
+   * platform-corrections.md C15 (scaffold gap 4) / C28: registering a game makes `/play/<id>`
+   * routable, which C16's gate-before-UI rule says must not happen before the engine has passed
+   * its CI gates. Defaults to `false` — the scaffold stamps the game tree UNREGISTERED, and
+   * registration is a separate, explicit step a team takes later (re-run with `register: true`,
+   * same id, once gates are green — that path skips re-stamping if `games/<id>` already exists).
+   */
+  register?: boolean;
   templatesRoot: string; // e.g. path.join(repoRoot, "templates")
   gamesDir: string; // e.g. path.join(repoRoot, "games") — the PARENT dir; games/<id> is created inside it
   registryPath: string; // e.g. path.join(repoRoot, "games/registry.ts")
@@ -211,30 +219,49 @@ async function pathExists(p: string): Promise<boolean> {
 }
 
 /**
- * Validates, stamps the template tree, and updates the registry. Throws
- * `GameAlreadyExistsError` if `games/<id>` already exists OR the registry already mentions the
- * id (a defensive belt-and-braces check — the directory check alone would miss a hand-edited
- * registry entry pointing at a not-yet-created directory).
+ * Stamps the template tree and, only when `register: true` is passed, updates the registry —
+ * two separable actions (C15/C28), not one:
+ *
+ *   - `register` omitted/false (the default): stamps `games/<id>` and leaves
+ *     `games/registry.ts` byte-for-byte untouched. This is the normal case now that
+ *     gate-before-UI (C16) is mandatory — a team builds and gates the engine first, with no
+ *     route ever pointing at it, and only registers once CI is green.
+ *   - `register: true` with `games/<id>` not yet existing: stamps AND registers in one step
+ *     (the historical all-in-one behavior, kept as an explicit opt-in).
+ *   - `register: true` with `games/<id>` ALREADY existing and not yet registered: registers
+ *     only, without touching the already-stamped files — this is the "later, once gates are
+ *     green" half of the two-step flow (`pnpm new-game <id> --register`, id unchanged).
+ *
+ * Throws `GameAlreadyExistsError` if the id is already registered (always checked, regardless
+ * of `register`, so two teams can never silently collide on one id), or — when NOT registering
+ * — if `games/<id>` already exists (a bare re-scaffold of an existing directory is still a
+ * mistake; only the explicit registration path may target an existing directory).
  */
 export async function generateGame(opts: GenerateGameOptions): Promise<string> {
   validateGameId(opts.id);
 
   const destDir = path.join(opts.gamesDir, opts.id);
-  if (await pathExists(destDir)) {
-    throw new GameAlreadyExistsError(opts.id, destDir);
-  }
   const registrySource = await readFile(opts.registryPath, "utf8");
   if (registrySource.includes(`"${opts.id}"`)) {
     throw new GameAlreadyExistsError(opts.id, opts.registryPath);
   }
 
-  const vars = templateVarsFor(opts.id);
-  const templateDir = path.join(opts.templatesRoot, opts.solo ? "game-solo" : "game");
-  await copyTemplateTree(templateDir, destDir, vars, opts.solo);
+  const destExists = await pathExists(destDir);
+  if (destExists && !opts.register) {
+    throw new GameAlreadyExistsError(opts.id, destDir);
+  }
 
-  const insertion = buildRegistryInsertion(vars, opts.solo);
-  const updatedRegistry = insertRegistryEntry(registrySource, insertion);
-  await writeFile(opts.registryPath, updatedRegistry);
+  const vars = templateVarsFor(opts.id);
+  if (!destExists) {
+    const templateDir = path.join(opts.templatesRoot, opts.solo ? "game-solo" : "game");
+    await copyTemplateTree(templateDir, destDir, vars, opts.solo);
+  }
+
+  if (opts.register) {
+    const insertion = buildRegistryInsertion(vars, opts.solo);
+    const updatedRegistry = insertRegistryEntry(registrySource, insertion);
+    await writeFile(opts.registryPath, updatedRegistry);
+  }
 
   return destDir;
 }
@@ -243,36 +270,54 @@ export async function generateGame(opts: GenerateGameOptions): Promise<string> {
 // CLI entry point
 // ---------------------------------------------------------------------------------------
 
-function parseCliArgs(argv: readonly string[]): { id: string; solo?: SoloFlavor } {
+function parseCliArgs(argv: readonly string[]): { id: string; solo?: SoloFlavor; register: boolean } {
   const [id, ...rest] = argv;
   if (!id) {
-    throw new Error('new-game: missing <id> — usage: pnpm new-game <id> [--solo puzzle|chase]');
+    throw new Error(
+      'new-game: missing <id> — usage: pnpm new-game <id> [--solo puzzle|chase] [--register]'
+    );
   }
+  const register = rest.includes("--register");
   const soloFlagIdx = rest.indexOf("--solo");
-  if (soloFlagIdx === -1) return { id };
+  if (soloFlagIdx === -1) return { id, register };
   const value = rest[soloFlagIdx + 1];
   if (value !== "puzzle" && value !== "chase") {
     throw new Error(`new-game: --solo must be "puzzle" or "chase", got ${JSON.stringify(value)}`);
   }
-  return { id, solo: value };
+  return { id, solo: value, register };
 }
 
 async function main(): Promise<void> {
-  const { id, solo } = parseCliArgs(process.argv.slice(2));
+  const { id, solo, register } = parseCliArgs(process.argv.slice(2));
   const destDir = await generateGame({
     id,
     ...(solo ? { solo } : {}),
+    register,
     templatesRoot: path.join(REPO_ROOT, "templates"),
     gamesDir: path.join(REPO_ROOT, "games"),
     registryPath: path.join(REPO_ROOT, "games/registry.ts"),
   });
 
-  console.log(`new-game: stamped ${path.relative(REPO_ROOT, destDir)}/ (${solo ? `solo ${solo}` : "two-player"})`);
+  const flavor = solo ? `solo ${solo}` : "two-player";
+  console.log(
+    `new-game: stamped ${path.relative(REPO_ROOT, destDir)}/ (${flavor}${register ? ", registered" : ", UNREGISTERED"})`
+  );
   console.log("");
   console.log("Next steps:");
   console.log(`  1. Read ${path.relative(REPO_ROOT, destDir)}/CHECKLIST.md`);
   console.log(`  2. pnpm --filter @twist-arcade/${id} test    # watch engineContract fail red (termination)`);
   console.log(`  3. Implement engine.ts's status() TODO, then watch it turn green`);
+  if (!register) {
+    console.log(
+      `  4. games/registry.ts is untouched on purpose (C15/C28: gate before UI) — /play/${id} is NOT` +
+        " routable yet. Once `pnpm harness:ci-gates -- --game " +
+        id +
+        '` is green, run `pnpm new-game ' +
+        id +
+        (solo ? ` --solo ${solo}` : "") +
+        ' --register` (same id — this re-run registers without re-stamping your files).'
+    );
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

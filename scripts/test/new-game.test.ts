@@ -176,15 +176,66 @@ describe("generateGame — end-to-end stamping against the REAL templates/ tree"
       expect(raw.length, f).toBeGreaterThan(0);
       expect(raw, `${f} should have no leftover placeholders`).not.toMatch(/__[A-Z_]+__/);
     }
+  });
+
+  // platform-corrections.md C15 (scaffold gap 4) / C28: `new-game` used to insert the registry
+  // entry unconditionally, which makes `/play/<id>` routable at SCAFFOLD time — before an
+  // engine exists, before any gate has run. That inverts C16's gate-before-UI rule. The default
+  // (no `register` option) must leave `games/registry.ts` completely untouched; registration is
+  // a separate, explicit opt-in a team reaches for only after its CI gates are green.
+  it("C15/C28: a freshly scaffolded game is registered NOWHERE — registry.ts is byte-identical to before", async () => {
+    const before = await readFile(registryPath, "utf8");
+    const destDir = await generateGame({
+      id: "demo",
+      templatesRoot: path.join(REPO_ROOT, "templates"),
+      gamesDir,
+      registryPath,
+    });
+    // The engine tree itself was still stamped for real...
+    const engineSrc = await readFile(path.join(destDir, "engine.ts"), "utf8");
+    expect(engineSrc.length).toBeGreaterThan(0);
+    // ...but the registry is untouched: not just "no demo entry" (which a partial insert bug
+    // could still satisfy) — genuinely byte-identical to its pre-scaffold contents.
+    const after = await readFile(registryPath, "utf8");
+    expect(after).toBe(before);
+    expect(after).not.toContain('"demo": {');
+    expect(after).not.toContain("demoManifest");
+  });
+
+  it("register: true stamps AND registers in one step (the historical all-in-one behavior, opt-in)", async () => {
+    const destDir = await generateGame({
+      id: "demo",
+      register: true,
+      templatesRoot: path.join(REPO_ROOT, "templates"),
+      gamesDir,
+      registryPath,
+    });
+    expect((await readFile(path.join(destDir, "engine.ts"), "utf8")).length).toBeGreaterThan(0);
     const registryOut = await readFile(registryPath, "utf8");
     expect(registryOut).toContain('"demo": {');
     expect(registryOut).not.toContain("loadSolver"); // two-player: no solver slot at all
+  });
+
+  it("register: true on an ALREADY-scaffolded, still-unregistered game registers it without re-stamping (the two-step path: scaffold now, register later once gates are green)", async () => {
+    const destDir = await generateGame({ id: "demo", templatesRoot: path.join(REPO_ROOT, "templates"), gamesDir, registryPath });
+    const stampedEngine = await readFile(path.join(destDir, "engine.ts"), "utf8");
+
+    const registryBefore = await readFile(registryPath, "utf8");
+    expect(registryBefore).not.toContain('"demo": {');
+
+    await generateGame({ id: "demo", register: true, templatesRoot: path.join(REPO_ROOT, "templates"), gamesDir, registryPath });
+
+    const registryAfter = await readFile(registryPath, "utf8");
+    expect(registryAfter).toContain('"demo": {');
+    // Re-registering did not re-stamp (and therefore did not clobber) the game's own files.
+    expect(await readFile(path.join(destDir, "engine.ts"), "utf8")).toBe(stampedEngine);
   });
 
   it("stamps a solo CHASE tree: probes.ts present (safeMove), solver.ts absent", async () => {
     const destDir = await generateGame({
       id: "demo-chase",
       solo: "chase",
+      register: true,
       templatesRoot: path.join(REPO_ROOT, "templates"),
       gamesDir,
       registryPath,
@@ -201,6 +252,7 @@ describe("generateGame — end-to-end stamping against the REAL templates/ tree"
     const destDir = await generateGame({
       id: "demo-puzzle",
       solo: "puzzle",
+      register: true,
       templatesRoot: path.join(REPO_ROOT, "templates"),
       gamesDir,
       registryPath,
@@ -213,10 +265,17 @@ describe("generateGame — end-to-end stamping against the REAL templates/ tree"
     expect(manifest).toContain('format: "daily-puzzle"');
   });
 
-  it("refuses to stamp over an existing game directory", async () => {
+  it("refuses to stamp over an existing game directory (unregistered default)", async () => {
     await generateGame({ id: "demo", templatesRoot: path.join(REPO_ROOT, "templates"), gamesDir, registryPath });
     await expect(
       generateGame({ id: "demo", templatesRoot: path.join(REPO_ROOT, "templates"), gamesDir, registryPath })
+    ).rejects.toThrow(GameAlreadyExistsError);
+  });
+
+  it("refuses to register an id that is already registered", async () => {
+    await generateGame({ id: "demo", register: true, templatesRoot: path.join(REPO_ROOT, "templates"), gamesDir, registryPath });
+    await expect(
+      generateGame({ id: "demo", register: true, templatesRoot: path.join(REPO_ROOT, "templates"), gamesDir, registryPath })
     ).rejects.toThrow(GameAlreadyExistsError);
   });
 
