@@ -1411,3 +1411,76 @@ Strengthening the existing error to demand a *ratio* rather than strict inequali
 obvious alternative, and it is worse: any threshold would be a guess about how strength scales
 with rollouts for an unknown game, which is exactly the assumption C22 and C25 have already
 punished twice.
+
+---
+
+## C27 — Mine Run's gate is unaffordable, there is no status for "deferred", and Always-Safe may be beating Strong
+
+### Measured, not projected
+
+At the real `moveCap=400`, `soloChaseCiRollouts=750`, real 10×10/20-mine/60-budget board:
+
+```
+seed ci-0  strong: 178.3s, 40 decisions, finalScore=630, capHit=false
+seed ci-1  strong: 152.3s, 37 decisions, finalScore=91,  capHit=false
+always-safe (both seeds): 6ms, scores=[849, 686]
+```
+
+**165.3s per seed → ~4.6 hours at `seedCount=100`; ~1.8 hours even at 40.** Not a CI gate at any
+seed count near G-14's floor of 100.
+
+The cost model, with the axis that actually binds:
+
+`cost ≈ seedCount × decisionsPerGame × rolloutsPerDecision × per-rollout-ms`
+
+- **`decisionsPerGame` (~38) is set by the *budget* of 60, not by `moveCap`.** `moveCap=400` is
+  slack — neither seed came close, `capHit=false` both times. So `moveCap` is not a lever, and
+  cutting it below natural game length is what produced the zero-scoring pathology that made
+  `alwaysSafeVsStrong` read `Infinity` earlier.
+- **`soloChaseCiRollouts` is barely a lever.** 750 already sits at K≈8.6 against the empirical
+  floor of 8 (branching factor 87). Cutting further trips `HiddenInfoBudgetTooLowError` or
+  produces a Strong too weak to trust (C6). Floor-to-750 saves ~7%.
+- **`seedCount` is the only real axis, and it is a resolution tradeoff, not free.**
+
+**Ruled: Mine Run's Strong-dependent solo-chase gates run at nightly only.** CI keeps what is
+genuinely cheap and already proven — the contract/redaction/view-honesty/manifest suite (136
+tests, ~2.7s) and `grindProbe` (~0.5s, verified against real planted violations).
+
+### The platform gap the team found and correctly declined to fix
+
+The gate vocabulary is `pass | warn | fail | n/a`, and `n/a` means **"does not apply to this
+format"** (C2). Reporting a Strong-dependent row as `n/a` in a CI-tier run would conflate *"this
+gate does not apply"* with *"this gate is too expensive to measure at this tier."*
+
+That is the **exact silent-conflation shape C2 and C23 exist to prevent, appearing in a third
+place.** C2's own words: *a skipped gate and a passed gate must never look the same in a report.*
+A deferred gate and an inapplicable gate must not look the same either — the first will be
+measured tonight, the second never will be, and a reader cannot tell them apart.
+
+**Required: a distinct `deferred` status** naming the tier where the gate does run. Until it
+exists, no Strong-dependent Mine Run row may be reported as `n/a`.
+
+### The finding that actually matters: Always-Safe outscored Strong on both seeds
+
+**849 vs 630, and 686 vs 91.** `alwaysSafeVsStrong` is a ratio that must stay **below 0.95**;
+these are ~1.35 and ~7.5. The team flagged it as low-confidence (n=2) rather than concluding
+from it, which is right. But two readings both matter:
+
+1. **Yardstick collapse (C6).** Strong at 750/K≈8.6 is too weak *on the real 100-cell board*.
+   Every prior C6 validation was on 36-cell fixtures — and **C25 established two days' running
+   that fixture-derived numbers do not transfer.** If this is the cause, the fix is a larger
+   budget, which makes an already-unaffordable gate worse.
+2. **A game-design problem.** Mine Run genuinely does not reward skilled play over always
+   banking. That would be a Wrap-class finding about the game, not the harness.
+
+**Ruling: Mine Run does not get a board until this is resolved** (C16, gate before UI). An n=2
+signal is not a verdict, but it sits on the game's *central* solo gate, and building UI on an
+unresolved central gate is exactly what C16 forbids — Wrap had a complete board before anyone
+measured it.
+
+**The discriminating experiment is cheap and should run before any expensive one.** Raise Strong's
+budget (750 → ~3,000) on a handful of seeds and re-measure against the same Always-Safe scores.
+If Strong overtakes, it is hypothesis 1 and the yardstick was too weak. If Always-Safe still
+wins at 4× the search, it is hypothesis 2 and the game has a design problem no budget will fix.
+~5 seeds × ~660s ≈ **under an hour to discriminate**, against ~1.8 hours to merely restate the
+question at higher n.
