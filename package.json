@@ -18,6 +18,7 @@
     "certify:crackstep": "tsx scripts/certify-crackstep.ts",
     "verify:fadeout-tier-strength": "tsx scripts/verify-fadeout-tier-strength.ts",
     "size-limit": "size-limit",
+    "chunk-budget": "tsx scripts/chunk-budget.ts",
     "dev": "next dev",
     "build": "next build",
     "test:e2e": "playwright test",
