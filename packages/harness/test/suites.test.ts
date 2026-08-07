@@ -16,6 +16,7 @@ import { classicTicTacToe } from "@twist-arcade/engine/testkit/fixtures/classic-
 import { DEFAULT_HARNESS_THRESHOLDS } from "@twist-arcade/game-spec";
 import type { GameManifest, SolvedValueClaim } from "@twist-arcade/game-spec";
 import {
+  compareBudgets,
   EmptyExceptionJustificationError,
   evaluateCiGates,
   MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE,
@@ -771,5 +772,182 @@ describe("runCiSuite() — C23 end-to-end: a real proven-draw fixture (classicTi
     const solvedGate = report.gates.find((g) => g.gate === "solved-value-reached")!;
     expect(solvedGate.status).toBe("pass");
     expect(report.ok).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// platform-corrections.md C26: Nine Grids' first real gate run passed its balance gates
+// (FPA 46.0%, draws 30.0%) but reported `[WARN] ruthless-vs-standard: 42.0% (min 60.0%, ci)` —
+// the HARDER tier losing to the EASIER one. Nine Grids ships standard=1,000 / ruthless=10,000
+// (a real 10x gap) but its ciGateBudget.twoPlayerCiRollouts scales ruthless down to 1,500 for
+// suite "ci" — a 1.5x gap against standard's 1,000. `TierBudgetCollapseError`'s strict
+// inequality (1500 > 1000) correctly does not fire, but MCTS strength grows roughly with the
+// LOG of rollouts, so a 1.5x budget gap is a strength difference noise swallows whole. The
+// measured 42.0% is an artifact of the substitution, not a finding about the game — and nightly
+// (which never applies the override) would have hard-failed Nine Grids on a number that was
+// never meaningful in CI. Fix: when the override is active, this gate reports n/a, naming both
+// budgets, instead of a WARN that reads as a real result.
+// ---------------------------------------------------------------------------------------
+
+describe("evaluateCiGates/runCiSuite — C26: ruthless-vs-standard reports n/a (not a number) when a CI rollout override is active", () => {
+  it("PURE evaluator: n/a, naming BOTH budgets, for Nine Grids' exact numbers (1,500 vs standard's 1,000, measured 42.0%)", () => {
+    const gates = evaluateCiGates(
+      { ...HEALTHY, ruthlessVsStandardWinRate: 0.42 },
+      DEFAULT_HARNESS_THRESHOLDS,
+      [],
+      "ci",
+      undefined,
+      { active: true, ruthlessN: 1500, standardN: 1000 }
+    );
+    const gate = gates.find((g) => g.gate === "ruthless-vs-standard")!;
+    expect(gate.status).toBe("n/a");
+    expect(gate.detail).toContain("1500");
+    expect(gate.detail).toContain("1000");
+    expect(gate.detail).not.toMatch(/42/); // the misleading figure itself must not appear
+  });
+
+  it("PURE evaluator: WITHOUT an active override, the SAME 42.0% still measures normally (warns at ci) — the fix never suppresses a real measurement", () => {
+    const gates = evaluateCiGates({ ...HEALTHY, ruthlessVsStandardWinRate: 0.42 }, DEFAULT_HARNESS_THRESHOLDS, [], "ci");
+    const gate = gates.find((g) => g.gate === "ruthless-vs-standard")!;
+    expect(gate.status).toBe("warn");
+    expect(gate.detail).toContain("42.0%");
+  });
+
+  function nineGridsLikeManifest(ruthlessPolicy: "mcts" | "random" = "mcts"): GameManifest {
+    return {
+      id: "nine-grids-fixture",
+      title: "Nine Grids Fixture",
+      classic: "Ultimate Tic-Tac-Toe",
+      ruleSentence: "suites.test.ts C26 fixture — Nine Grids' exact tier/override shape.",
+      tags: [],
+      estMinutes: 3,
+      modes: { bot: true, hotseat: false, asyncLink: false },
+      players: { min: 2, max: 2 },
+      difficultyTiers: [
+        { id: "standard", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 1000 }, minReplyMs: 0 },
+        { id: "ruthless", policy: { kind: ruthlessPolicy }, budget: { kind: "rollouts", n: 10000 }, minReplyMs: 0 },
+      ],
+      ciGateBudget: { twoPlayerCiRollouts: 1500 },
+    };
+  }
+
+  it("real runCiSuite, Nine Grids' EXACT manifest shape: suite 'ci' (1,500-rollout override active) reports n/a, never a percentage", () => {
+    const report = runCiSuite(classicTicTacToe, nineGridsLikeManifest(), { games: 20, seed: "suites-test:c26:nine-grids-ci" });
+    const gate = report.gates.find((g) => g.gate === "ruthless-vs-standard")!;
+    expect(gate.status).toBe("n/a");
+    expect(gate.detail).toContain("1500");
+    expect(gate.detail).toContain("1000");
+    expect(gate.detail).not.toMatch(/%/);
+  });
+
+  it("real runCiSuite, SAME manifest, suite 'nightly': the override is ignored — ruthless-vs-standard measures the REAL shipped 10,000-vs-1,000 gap for real, not n/a", () => {
+    const report = runCiSuite(classicTicTacToe, nineGridsLikeManifest(), {
+      games: 20,
+      seed: "suites-test:c26:nine-grids-nightly",
+      suite: "nightly",
+    });
+    const gate = report.gates.find((g) => g.gate === "ruthless-vs-standard")!;
+    expect(gate.status).not.toBe("n/a");
+    expect(gate.detail).toMatch(/%/); // a real, measured percentage
+  });
+
+  it("nightly still HARD-FAILS a genuine tier inversion — the exact hazard C26 names ('Nine Grids would pass CI and fail nightly on a number that was never meaningful in CI')", () => {
+    // Sabotaged on purpose: ruthless is a RANDOM policy (genuinely the weaker agent) against a
+    // real mcts "standard" — nightly ignores ciGateBudget entirely, so this is a real,
+    // unscaled measurement, and it MUST still be a hard fail (roadmap §6), proving C26's fix
+    // narrows the false-warn case without blinding nightly to a real one.
+    const report = runCiSuite(classicTicTacToe, nineGridsLikeManifest("random"), {
+      games: 20,
+      seed: "suites-test:c26:nightly-real-inversion",
+      suite: "nightly",
+    });
+    const gate = report.gates.find((g) => g.gate === "ruthless-vs-standard")!;
+    expect(gate.status).toBe("fail");
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// platform-corrections.md C24: two independent agents, in unrelated worktrees on the same day,
+// both hand-rolled a budget comparison by templating the varying rollout count INTO the seed
+// string (`c22-sweep:${label}:...rollouts=${rollouts}`, `pilot:nine-grids:${n}:${games}`).
+// Since runner.ts derives game i as `${seed}:${i}`, that means every candidate played a
+// DIFFERENT set of games, conflating the budget's effect with seed variance. `compareBudgets`
+// is the fix: one seed, many candidates, the loop nobody has to hand-roll (or get wrong) again.
+// ---------------------------------------------------------------------------------------
+
+describe("compareBudgets — C24: one seed, many rollout candidates, never a hand-rolled per-candidate seed", () => {
+  const manifest: GameManifest = {
+    id: "classic-ttt-fixture",
+    title: "Compare Budgets TTT",
+    classic: "Tic-Tac-Toe",
+    ruleSentence: "suites.test.ts C24 fixture.",
+    tags: [],
+    estMinutes: 1,
+    modes: { bot: true, hotseat: false, asyncLink: false },
+    players: { min: 2, max: 2 },
+    difficultyTiers: [
+      { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 10000 }, minReplyMs: 0 },
+    ],
+    // Deliberately declares NO ciGateBudget of its own — compareBudgets must supply one per
+    // candidate regardless (proving it never depends on the manifest already having one).
+  };
+
+  it("returns one point per candidate, in the SAME order, each carrying its own rollout count", () => {
+    const points = compareBudgets(classicTicTacToe, manifest, [500, 2000, 5000], {
+      seed: "suites-test:c24:order",
+      games: 10,
+    });
+    expect(points.map((p) => p.rollouts)).toEqual([500, 2000, 5000]);
+    expect(points).toHaveLength(3);
+  });
+
+  it("uses the IDENTICAL seed across every candidate — two candidates with the SAME rollout count produce byte-identical reports, proving determinism and same-seed usage together", () => {
+    const points = compareBudgets(classicTicTacToe, manifest, [3000, 3000], {
+      seed: "suites-test:c24:same-seed-proof",
+      games: 15,
+    });
+    // Every DECISION-derived field must match exactly (same seed -> same games, same outcomes,
+    // same gate verdicts) — `throughputGamesPerSec` is the one field runner.ts's own
+    // MatchupReport carries that is NOT decision-derived (report.ts's toMatchupReportJson has
+    // the identical exclusion, and for the identical reason: it is a real elapsed-time
+    // measurement, expected to vary run to run under a fixed seed).
+    const strip = (report: (typeof points)[number]["report"]) =>
+      JSON.parse(
+        JSON.stringify(report, (key, value: unknown) => (key === "throughputGamesPerSec" ? undefined : value))
+      );
+    expect(strip(points[0]!.report)).toEqual(strip(points[1]!.report));
+  });
+
+  it("never mutates the manifest passed in — shipped difficultyTiers and any pre-existing ciGateBudget are untouched after the call", () => {
+    const manifestWithOwnBudget: GameManifest = {
+      ...manifest,
+      ciGateBudget: { twoPlayerCiRollouts: 999 }, // must survive the call unchanged
+    };
+    const tiersBefore = JSON.stringify(manifestWithOwnBudget.difficultyTiers);
+    const budgetBefore = JSON.stringify(manifestWithOwnBudget.ciGateBudget);
+    compareBudgets(classicTicTacToe, manifestWithOwnBudget, [1000, 4000], { seed: "suites-test:c24:no-mutation", games: 10 });
+    expect(JSON.stringify(manifestWithOwnBudget.difficultyTiers)).toBe(tiersBefore);
+    expect(JSON.stringify(manifestWithOwnBudget.ciGateBudget)).toBe(budgetBefore);
+  });
+
+  it("always runs at suite 'ci' — a rollout-budget comparison is a CI-suite-only concept (nightly ignores the override, so every candidate would be identical there)", () => {
+    // A candidate low enough that, if suite were somehow "nightly" (which ignores the
+    // override), strong-vs-random would run at the full 10,000-rollout shipped budget and pass
+    // comfortably. At "ci" it must actually apply the low candidate and can regress for real.
+    const points = compareBudgets(classicTicTacToe, manifest, [1], { seed: "suites-test:c24:always-ci", games: 20 });
+    const gate = points[0]!.report.gates.find((g) => g.gate === "strong-vs-random")!;
+    expect(gate.status).toBe("fail");
+    expect(points[0]!.report.suite).toBe("ci");
+  });
+
+  it("each candidate's report reflects ITS OWN rollout count, not the previous one (a real, observable difference across the sweep)", () => {
+    const points = compareBudgets(classicTicTacToe, manifest, [1, 8000], {
+      seed: "suites-test:c24:real-difference",
+      games: 20,
+    });
+    const weak = points[0]!.report.gates.find((g) => g.gate === "strong-vs-random")!;
+    const strong = points[1]!.report.gates.find((g) => g.gate === "strong-vs-random")!;
+    expect(weak.status).toBe("fail");
+    expect(strong.status).toBe("pass");
   });
 });
