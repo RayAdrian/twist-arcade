@@ -2446,3 +2446,72 @@ The team followed the **codebase** over my prose: the spec said seeds derive as 
 It used the code and flagged the discrepancy rather than silently choosing. That is C31 working
 exactly as intended — and the reason the bridge check reproduced byte-exact instead of quietly
 measuring a different seed set.
+
+---
+
+## C43 — The chunk budget now measures the right artifact. And the code-splitting it measures does not actually split.
+
+### The fix, and the number that proves the old gate was blind
+
+`scripts/chunk-budget.ts` parses the **already-built** shell chunk with the TypeScript compiler
+API and reads each game's real dynamic-import graph — `loadEngine`/`loadPresentation`/`loadSolver`
+compile to `n.e(<chunkId>)` calls inside one object, located **structurally** by exact
+property-key-set match against `Object.keys(registry)` rather than by a minified variable name. So
+it is registry-derived per C33: a new game is covered automatically, and a key-set mismatch fails
+loud instead of silently reporting 0 bytes.
+
+Measured, nothing adjusted: **crackstep 7.21 kB · fadeout 8.26 kB · nine-grids 4.83 kB** gzip, all
+far under 75 kB.
+
+**`DEFAULT_HARNESS_THRESHOLDS.maxBundleKb` had zero readers anywhere in the codebase.** The
+threshold existed, was documented, was cited in game plans — and nothing consumed it. This script
+is its first reader. Another guard that never guarded, found only because someone went looking for
+what enforced the number.
+
+**The planted violation demonstrates the defect exactly.** A 300 kB payload added to Nine Grids:
+
+```
+size-limit:    game route (/play/[gameId])  1.64 kB gzipped   [exit 0 — stayed GREEN]
+chunk-budget:  nine-grids: 168.35 kB gzip [OVER BUDGET]       [exit 1, names the game and overage]
+```
+
+The old gate sailed through a 300 kB regression. The new one caught it, named the offender, and
+gave the exact excess.
+
+### The plant's first attempt failed to apply — and the check that caught it
+
+The payload was first gated on `NOISE.length > 0`, statically `true`, so the minifier
+constant-folded the branch and dead-code-eliminated the whole payload. **The source file was on
+disk and the bytes were not in the build.** Caught by grepping the *built* `.next/` output for a
+needle and finding zero matches, then fixed with `Date.now() < 0` — a call the minifier cannot
+evaluate — and re-verified present before any number was trusted.
+
+That is C41's sharpened instruction applied one layer deeper: not just *did my edit apply to the
+source*, but *did it survive to the artifact under test*. A build step sits between the two, and it
+is allowed to delete your plant.
+
+### The finding that matters more than the fix
+
+Confirmed while building it: **Next unions every game's async-chunk `<script>` tags into every
+generated `/play/<id>` page.** The built HTML for `crackstep`, `nine-grids` and `fadeout` have
+**byte-identical script lists.**
+
+So the code-splitting the registry exists to provide is real at the *bundler* level — each game's
+factory only executes on demand — and **not real at the network level**. A cold visitor to any one
+game downloads *every* registered game's code. `generateStaticParams()` cannot statically narrow
+reachable chunks per param value, so it unions them.
+
+This scales the wrong way. Three games is 20 kB of waste; the launch catalogue is **six**, and the
+roadmap's Phase 4 target is more. It also directly threatens a Phase 1 exit criterion — Lighthouse
+green on a mid-tier Android over 4G — and it silently negates the entire reason
+`games/registry.ts` uses `import()` and the reason the lint boundary bans static game imports from
+`app/**`.
+
+It is also why the "cheapest honest answer" I suggested — measuring transferred bytes in the
+Playwright route pass — **would not have worked**: every game would report the sum of all games,
+and a regression in one would move every number identically, naming no offender. The team tested
+that suggestion against the built output and rejected it with evidence rather than attempting it.
+
+**Not fixed here.** It needs a deliberate look at the route shape (per-game routes, a client-side
+lazy boundary, or `next/dynamic` with explicit loading) and it is a product-performance decision,
+not a CI-guard one.
