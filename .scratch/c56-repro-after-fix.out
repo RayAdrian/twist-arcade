@@ -1,0 +1,15 @@
+Bid node: 16 rows (seat 0) x 10 cols (seat 1) = 160 joint arms.
+
+Flat-rollout ranking (best to worst):
+5:0.220, 6*:0.195, 5*:0.190, 4*:0.170, 3*:0.145, 2*:0.120, 4:0.115, 7:0.105, 6:0.090, 7*:0.087, 1*:0.055, 3:0.055, 0*:0.052, 2:0.052, 1:0.028, 0:-0.105
+Flat-rollout argmax: amount=5 (mean=0.220)
+
+==== FIXED MCTS @ 2000 rollouts ====
+chosen move: amount=5*
+own-action (marginal) entries: 16 (one per seat-0 row, NOT per joint arm)
+marginal visits by row (sorted): 5*:165, 2*:144, 6*:144, 1*:143, 4*:141, 4:138, 2:128, 3:127, 6:123, 3*:117, 1:116, 0*:112, 7*:111, 5:109, 7:102, 0:80
+
+==== FIXED MCTS @ 10000 rollouts ====
+chosen move: amount=3*
+own-action (marginal) entries: 16 (one per seat-0 row, NOT per joint arm)
+marginal visits by row (sorted): 3*:945, 4*:828, 1:774, 2*:765, 5*:713, 1*:676, 6*:661, 4:631, 7:604, 7*:595, 5:583, 3:576, 6:526, 0*:457, 2:446, 0:220
