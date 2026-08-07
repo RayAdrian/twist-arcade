@@ -1550,3 +1550,59 @@ Three details worth keeping:
 - **A11Y-008 requires asserting `matchMedia('(prefers-reduced-motion: reduce)').matches` inside
   the page** before trusting any reduced-motion result — because Playwright's emulation has
   silently failed to apply in this repo before, and the assertion then checked the wrong state.
+
+---
+
+## C29 — Quadrupling Strong's search did not close the gap. Mine Run has a design problem.
+
+*The discriminating experiment from C27. Interim result on two seeds; the run is still adding
+seeds, but both budgets already point the same way.*
+
+```
+seed   alwaysSafe   strong@750   strong@3000   ratio@750   ratio@3000
+ci-0         849          630           378       1.348       2.246
+ci-1         686           91           276       7.538       2.486
+```
+
+`alwaysSafeVsStrong` must stay **below 0.95**. At 4× the search it is **2.2–2.5**.
+
+**Hypothesis 1 (C6 yardstick collapse) predicted Strong would overtake Always-Safe at a larger
+budget. It did not.** The ratio moved in *opposite directions* on the two seeds — worse on ci-0
+(1.35 → 2.25), better on ci-1 (7.54 → 2.49) — and stayed roughly 2.4× outside the threshold on
+both. A too-weak yardstick gets stronger with more search; this did not.
+
+**On seed ci-0, four times the search made Strong actively worse: 630 → 378.** That is not a
+strength story at all. More search converging on a *lower* score means Strong is optimising
+something that does not track the score it is judged by.
+
+### The mechanism, stated as a hypothesis to be tested rather than a conclusion
+
+Mine Run is press-your-luck: accumulate, then bank before hitting a mine. `Always-Safe` banks at
+the first safe opportunity. If banking early dominates deep search by 2.4×, then **the
+press-your-luck decision the game is built around may not be a real decision** — the safe line
+simply wins, and the "should I push?" tension is cosmetic. That is a Wrap-class finding about the
+game, not its harness, and no rollout budget fixes it.
+
+The alternative reading, still open: Strong's rollout policy or value estimate rewards survival
+over banked score, so more search buys more caution. That would be a *bot* defect rather than a
+game defect, and it is distinguishable — compare Strong's banked total against a policy that
+simply pushes N steps then banks, across a sweep of N. If some fixed-N policy beats both, the
+game's risk curve is the problem; if Strong trails a fixed-N policy it should dominate, the bot's
+objective is the problem.
+
+### What this does not yet justify
+
+**n=2.** Two seeds, and the direction is consistent across two budgets, which is stronger than n=2
+at one budget — but it is not a verdict, and Mine Run is not killed on it. **C26's lesson is one
+day old: Nine Grids' 15-game pilot read a severe second-player advantage that vanished at 100
+games.** A small sample that agrees with a plausible story is exactly when to be most careful.
+
+**Standing: Mine Run gets no board** (C16). The gate that would catch this is the game's central
+solo gate, and it is failing by a factor of 2.4 at every budget measured.
+
+### The cost, which is now its own finding
+
+Seed ci-1's `strong@3000` run took **4,977,176 ms — 83 minutes for a single seed.** Seed ci-0's
+took 11 minutes at the same budget. **A 7.5× spread between two seeds of the same configuration**
+means Mine Run's per-seed cost is wildly variable, so any wall-clock projection from a small
+sample — including C27's 165.3s/seed average — carries far more uncertainty than a mean suggests.
