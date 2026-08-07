@@ -1,0 +1,43 @@
+Tilt T3 validation sweep — seed="tilt-t3-validation", 100 games/candidate, candidates=[1500, 2000, 3000, 5000, 10000]
+Criterion: reproduce the 10,000-rollout baseline's VERDICT, not raw-number closeness.
+
+--- rollouts=1500 ---
+  first-player-win-rate: pass — 58.0% (band [35%, 65%])
+  draw-rate:             pass — 8.0% (max 60.0%)
+  mean-plies:            pass — mean 19.1 plies, 0 cap hits across all matchups
+  cap-hit rate (all matchups): 0.00%
+
+--- rollouts=2000 ---
+  first-player-win-rate: pass — 52.0% (band [35%, 65%])
+  draw-rate:             pass — 12.0% (max 60.0%)
+  mean-plies:            pass — mean 19.2 plies, 0 cap hits across all matchups
+  cap-hit rate (all matchups): 0.00%
+
+--- rollouts=3000 ---
+  first-player-win-rate: pass — 48.0% (band [35%, 65%])
+  draw-rate:             pass — 8.0% (max 60.0%)
+  mean-plies:            pass — mean 18.8 plies, 0 cap hits across all matchups
+  cap-hit rate (all matchups): 0.00%
+
+--- rollouts=5000 ---
+  first-player-win-rate: pass — 48.0% (band [35%, 65%])
+  draw-rate:             pass — 14.0% (max 60.0%)
+  mean-plies:            pass — mean 19.4 plies, 0 cap hits across all matchups
+  cap-hit rate (all matchups): 0.00%
+
+--- rollouts=10000 ---
+  first-player-win-rate: pass — 38.0% (band [35%, 65%])
+  draw-rate:             pass — 18.0% (max 60.0%)
+  mean-plies:            pass — mean 20.2 plies, 0 cap hits across all matchups
+  cap-hit rate (all matchups): 0.00%
+
+=== VALIDATION VERDICTS (vs 10,000-rollout baseline) ===
+Baseline (10000): first-player-win-rate=pass, mean-plies=pass, cap-hit=0.00%
+
+rollouts=  1500: FPA-verdict-match=true mean-plies-verdict-match=true zero-cap-hits=true => REPRODUCES BASELINE
+rollouts=  2000: FPA-verdict-match=true mean-plies-verdict-match=true zero-cap-hits=true => REPRODUCES BASELINE
+rollouts=  3000: FPA-verdict-match=true mean-plies-verdict-match=true zero-cap-hits=true => REPRODUCES BASELINE
+rollouts=  5000: FPA-verdict-match=true mean-plies-verdict-match=true zero-cap-hits=true => REPRODUCES BASELINE
+rollouts= 10000: FPA-verdict-match=true mean-plies-verdict-match=true zero-cap-hits=true => REPRODUCES BASELINE
+
+Cheapest budget reproducing the baseline verdict: 1500
