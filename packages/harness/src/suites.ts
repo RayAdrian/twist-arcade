@@ -309,10 +309,14 @@ export function evaluateCiGates(
     if (deferral?.active) {
       results.push(deferredGate("first-player-win-rate", deferral.reason));
     } else if (attainment && attainment.reached) {
+      // Byte-identical to the pre-C55 text on purpose (Fadeout's own real output): the "reached"
+      // branch is the UNCHANGED case (C23's original guarantee, still true here), so it carries
+      // none of C55's new machinery in its wording — only the withheld branch below, which never
+      // existed before C55, gets new text.
       results.push({
         gate: "first-player-win-rate",
         status: "n/a",
-        detail: `manifest.solvedValue is a proven "${solvedValue!.value}" (${solvedValue!.proof}) — a balanced-FPA band does not apply to a solved game (self-play reached it ${(attainment.achieved * 100).toFixed(1)}% of the time)`,
+        detail: `manifest.solvedValue is a proven "${solvedValue!.value}" (${solvedValue!.proof}) — a balanced-FPA band does not apply to a solved game`,
       });
     } else {
       const [lo, hi] = thresholds.firstPlayerWinRateRange;
@@ -340,10 +344,11 @@ export function evaluateCiGates(
     if (deferral?.active) {
       results.push(deferredGate("draw-rate", deferral.reason));
     } else if (drawAttainment && drawAttainment.reached) {
+      // Byte-identical to the pre-C55 text on purpose — see the FPA block's own comment above.
       results.push({
         gate: "draw-rate",
         status: "n/a",
-        detail: `manifest.solvedValue is a proven draw (${solvedValue!.proof}) — a draw-rate ceiling is unsatisfiable by construction for a drawn game (self-play reached it ${(drawAttainment.achieved * 100).toFixed(1)}% of the time)`,
+        detail: `manifest.solvedValue is a proven draw (${solvedValue!.proof}) — a draw-rate ceiling is unsatisfiable by construction for a drawn game`,
       });
     } else {
       const pass = inputs.drawRate <= thresholds.maxDrawRate;
@@ -396,10 +401,11 @@ export function evaluateCiGates(
       // relief applies is unmeasured too (same reasoning as draw-rate/FPA above).
       results.push(deferredGate("ruthless-vs-standard", deferral.reason));
     } else if (drawAttainment && drawAttainment.reached) {
+      // Byte-identical to the pre-C55 text on purpose — see the FPA block's own comment above.
       results.push({
         gate: "ruthless-vs-standard",
         status: "n/a",
-        detail: `manifest.solvedValue is a proven draw (${solvedValue!.proof}) — ruthless cannot out-win standard when neither can win (self-play reached it ${(drawAttainment.achieved * 100).toFixed(1)}% of the time)`,
+        detail: `manifest.solvedValue is a proven draw (${solvedValue!.proof}) — ruthless cannot out-win standard when neither can win`,
       });
     } else if (ruthlessBudgets?.active) {
       // C26 (Nine Grids): TierBudgetCollapseError's strict-inequality check (ruthlessN >
