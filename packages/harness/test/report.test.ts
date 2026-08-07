@@ -161,3 +161,77 @@ describe("formatGameCiGateReport() / toGameCiGateReportJson() — dispatch by re
     expect(output).toContain("[PASS] strong-vs-random");
   });
 });
+
+// ---------------------------------------------------------------------------------------
+// platform-corrections.md C27: "deferred" ≠ "n/a" ≠ "pass" in the RENDERED report — the whole
+// point is what a human reads, tested directly against report.ts's own formatters (not merely
+// via the status enum, and not merely via an end-to-end suites.test.ts render).
+// ---------------------------------------------------------------------------------------
+
+const DEFER_DETAIL = "measured at nightly (Strong-dependent; ~4.6h at seedCount=100 in CI — platform-corrections.md C27)";
+
+describe("formatCiSuiteTable() / formatSoloGateTable() — C27: '[DEFER]' is a DIFFERENT label from '[N/A ]' and '[PASS]'", () => {
+  const mixedTwoPlayerGates: readonly GateResult[] = [
+    { gate: "strong-vs-random", status: "deferred", detail: DEFER_DETAIL },
+    { gate: "first-player-win-rate", status: "n/a", detail: "manifest.solvedValue is a proven \"draw\" — a balanced-FPA band does not apply" },
+    { gate: "mean-plies", status: "pass", detail: "mean 20.0 plies, 0 cap hits across all matchups" },
+  ];
+
+  it("two-player table: three visually distinct labels for three distinct statuses on the SAME report", () => {
+    const output = formatCiSuiteTable(fakeSuiteReport(mixedTwoPlayerGates));
+    const lines = output.split("\n");
+    const deferLine = lines.find((l) => l.includes("strong-vs-random"))!;
+    const naLine = lines.find((l) => l.includes("first-player-win-rate"))!;
+    const passLine = lines.find((l) => l.includes("mean-plies"))!;
+    expect(deferLine).toContain("[DEFER]");
+    expect(naLine).toContain("[N/A ]");
+    expect(passLine).toContain("[PASS]");
+    // Pairwise distinct as rendered strings — not just distinct labels floating unattached.
+    expect(new Set([deferLine, naLine, passLine]).size).toBe(3);
+    expect(deferLine).not.toContain("[N/A ]");
+    expect(deferLine).not.toContain("[PASS]");
+    expect(naLine).not.toContain("[DEFER]");
+  });
+
+  it("two-player header: 'OK (provisional — ...)' when ok=true and a deferred row is present — visibly distinguishable from a fully-measured 'OK'", () => {
+    const provisional = formatCiSuiteTable(fakeSuiteReport(mixedTwoPlayerGates));
+    const fullyMeasured = formatCiSuiteTable(fakeSuiteReport([{ gate: "strong-vs-random", status: "pass", detail: "95.0%" }]));
+    expect(provisional).toContain("OK (provisional");
+    expect(fullyMeasured).toMatch(/— OK$/m); // bare "OK", nothing appended
+    expect(fullyMeasured).not.toContain("provisional");
+  });
+
+  const mixedSoloGates: readonly SoloGateResult[] = [
+    { name: "alwaysSafeVsStrong", status: "deferred", detail: DEFER_DETAIL },
+    { name: "suicideProbe", status: "n/a", detail: "not misère-tagged" },
+    { name: "greedyVsRandomRatio", status: "pass", detail: "1.800 (fail if < 1.5)" },
+  ];
+
+  it("solo table: three visually distinct labels for three distinct statuses on the SAME report", () => {
+    const output = formatSoloGateTable("mine-run-fixture", "score-chase", true, mixedSoloGates);
+    const lines = output.split("\n");
+    const deferLine = lines.find((l) => l.includes("alwaysSafeVsStrong"))!;
+    const naLine = lines.find((l) => l.includes("suicideProbe"))!;
+    const passLine = lines.find((l) => l.includes("greedyVsRandomRatio"))!;
+    expect(deferLine).toContain("[DEFER]");
+    expect(naLine).toContain("[N/A ]");
+    expect(passLine).toContain("[PASS]");
+    expect(new Set([deferLine, naLine, passLine]).size).toBe(3);
+  });
+
+  it("solo header: also reports 'OK (provisional — ...)', matching the two-player lane's rule", () => {
+    const output = formatSoloGateTable("mine-run-fixture", "score-chase", true, mixedSoloGates);
+    expect(output).toContain('for "mine-run-fixture" — OK (provisional');
+  });
+
+  it("a FAILED report with a deferred row still says FAILED, never 'provisional' (provisional only ever qualifies a PASS)", () => {
+    const output = formatCiSuiteTable(
+      fakeSuiteReport([
+        { gate: "strong-vs-random", status: "deferred", detail: DEFER_DETAIL },
+        { gate: "mean-plies", status: "fail", detail: "mean 900.0 plies (band [10, 40])" },
+      ])
+    );
+    expect(output).toContain("— FAILED");
+    expect(output).not.toContain("provisional");
+  });
+});

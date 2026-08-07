@@ -19,6 +19,7 @@ import {
   compareBudgets,
   EmptyExceptionJustificationError,
   evaluateCiGates,
+  hasDeferredGates,
   MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE,
   MissingCiRolloutBudgetError,
   MissingSolvedValueProofError,
@@ -26,6 +27,7 @@ import {
   SOLVED_VALUE_SELF_PLAY_FLOOR,
   SuiteFailedError,
   TierBudgetCollapseError,
+  TwoPlayerDeferredGateAtNightlyError,
   worstCapHitRate,
   type GateInputs,
 } from "../src/suites";
@@ -949,5 +951,212 @@ describe("compareBudgets — C24: one seed, many rollout candidates, never a han
     const strong = points[1]!.report.gates.find((g) => g.gate === "strong-vs-random")!;
     expect(weak.status).toBe("fail");
     expect(strong.status).toBe("pass");
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// platform-corrections.md C27: Order vs Chaos, Tilt, and Bid-Tac-Toe (docs/plans/) each name
+// the `"deferred"` status as a load-bearing dependency for their own balance-gate reporting at
+// PR tier — the two-player analogue of Mine Run's solo-chase problem. `manifest.ciGateBudget.
+// deferGatesToNightly` skips self-play ENTIRELY at suite "ci" (not scaled down — skipped), and
+// every affected row reports `"deferred"`, naming nightly and the manifest's own reason.
+// ---------------------------------------------------------------------------------------
+
+const DEFERRAL_REASON = "balance rows cost ~25 min at 100 games/matchup in CI — platform-corrections.md C27";
+
+describe("evaluateCiGates — C27: 'deferred' status, pure evaluator", () => {
+  it("every deferrable row reports 'deferred', naming nightly and the reason, when a deferral is active", () => {
+    const gates = evaluateCiGates(
+      HEALTHY,
+      DEFAULT_HARNESS_THRESHOLDS,
+      [],
+      "ci",
+      undefined,
+      undefined,
+      { active: true, reason: DEFERRAL_REASON }
+    );
+    for (const name of ["strong-vs-random", "first-player-win-rate", "draw-rate", "mean-plies", "ruthless-vs-standard"]) {
+      const g = gates.find((x) => x.gate === name)!;
+      expect(g.status, `gate ${name}`).toBe("deferred");
+      expect(g.detail).toContain("nightly");
+      expect(g.detail).toContain(DEFERRAL_REASON);
+    }
+    // solved-value-reached: HEALTHY carries no solvedValue, so it is n/a (a DIFFERENT, prior
+    // reason) rather than "deferred" — proven directly below with its own manifest.
+    expect(gates.find((g) => g.gate === "solved-value-reached")!.status).toBe("n/a");
+  });
+
+  it("solved-value-reached ALSO defers when the manifest has a proven value and deferral is active", () => {
+    const gates = evaluateCiGates(
+      HEALTHY,
+      DEFAULT_HARNESS_THRESHOLDS,
+      [],
+      "ci",
+      { value: "draw", proof: SOLVE_REPORT_PROOF },
+      undefined,
+      { active: true, reason: DEFERRAL_REASON }
+    );
+    expect(gates.find((g) => g.gate === "solved-value-reached")!.status).toBe("deferred");
+  });
+
+  it("'deferred' !== 'n/a': a proven-draw's structural n/a rows (FPA, draw-rate, ruthless-vs-standard) stay n/a even with an active deferral — deferral never relabels a row that was already n/a for an unrelated reason", () => {
+    const gates = evaluateCiGates(
+      HEALTHY,
+      DEFAULT_HARNESS_THRESHOLDS,
+      [],
+      "ci",
+      { value: "draw", proof: SOLVE_REPORT_PROOF },
+      undefined,
+      { active: true, reason: DEFERRAL_REASON }
+    );
+    expect(gates.find((g) => g.gate === "first-player-win-rate")!.status).toBe("n/a");
+    expect(gates.find((g) => g.gate === "draw-rate")!.status).toBe("n/a");
+    expect(gates.find((g) => g.gate === "ruthless-vs-standard")!.status).toBe("n/a"); // proven-draw reason, not deferral
+    // strong-vs-random and mean-plies have no such structural exemption — they DO defer.
+    expect(gates.find((g) => g.gate === "strong-vs-random")!.status).toBe("deferred");
+    expect(gates.find((g) => g.gate === "mean-plies")!.status).toBe("deferred");
+  });
+
+  it("ruthless-vs-standard stays n/a ('no standard tier'), never 'deferred', when the manifest genuinely has no standard tier — deferral never invents a row to defer", () => {
+    const gates = evaluateCiGates(
+      { ...HEALTHY, ruthlessVsStandardWinRate: null },
+      DEFAULT_HARNESS_THRESHOLDS,
+      [],
+      "ci",
+      undefined,
+      undefined,
+      { active: true, reason: DEFERRAL_REASON }
+    );
+    const gate = gates.find((g) => g.gate === "ruthless-vs-standard")!;
+    expect(gate.status).toBe("n/a");
+    expect(gate.detail).toContain("standard");
+    expect(gate.detail).not.toContain("nightly");
+  });
+
+  it("allGatesPass-equivalent (report.ok) is TRUE for a fully-deferred report — CI can go green with deferred rows; hasDeferredGates is what tells the two apart", () => {
+    const gates = evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [], "ci", undefined, undefined, {
+      active: true,
+      reason: DEFERRAL_REASON,
+    });
+    expect(gates.every((g) => g.status !== "fail")).toBe(true);
+    expect(hasDeferredGates(gates)).toBe(true);
+  });
+
+  it("hasDeferredGates is false for a fully-measured (non-deferred) report", () => {
+    const gates = evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [], "ci");
+    expect(hasDeferredGates(gates)).toBe(false);
+  });
+
+  it("N/A is provably distinguishable from DEFERRED in the RENDERED report — plant-and-observe of the actual formatter, not just the status enum", () => {
+    const gates = evaluateCiGates(
+      HEALTHY,
+      DEFAULT_HARNESS_THRESHOLDS,
+      [],
+      "ci",
+      { value: "draw", proof: SOLVE_REPORT_PROOF },
+      undefined,
+      { active: true, reason: DEFERRAL_REASON }
+    );
+    const ok = gates.every((g) => g.status !== "fail");
+    const rendered = formatCiSuiteTable({ gameId: "ovc-fixture", suite: "ci", ok, gates, matchups: null });
+    const lines = rendered.split("\n");
+    const fpwrLine = lines.find((l) => l.includes("first-player-win-rate"))!;
+    const strongVsRandomLine = lines.find((l) => l.includes("strong-vs-random"))!;
+    expect(fpwrLine).toContain("[N/A ]"); // structural, unaffected by deferral
+    expect(fpwrLine).not.toContain("[DEFER]");
+    expect(strongVsRandomLine).toContain("[DEFER]"); // Strong-dependent, deferred
+    expect(strongVsRandomLine).not.toContain("[N/A ]");
+    expect(strongVsRandomLine).not.toContain("[PASS]");
+  });
+
+  it("ABUSE GUARD: suite 'nightly' with an active deferral throws TwoPlayerDeferredGateAtNightlyError — a row deferred at every tier must be a loud failure, not a quiet status", () => {
+    expect(() =>
+      evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [], "nightly", undefined, undefined, {
+        active: true,
+        reason: DEFERRAL_REASON,
+      })
+    ).toThrow(TwoPlayerDeferredGateAtNightlyError);
+    expect(() =>
+      evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [], "nightly", undefined, undefined, {
+        active: true,
+        reason: DEFERRAL_REASON,
+      })
+    ).toThrow(/never runs/);
+  });
+
+  it("nightly with an INACTIVE (or absent) deferral is unaffected by the guard", () => {
+    expect(() =>
+      evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [], "nightly", undefined, undefined, {
+        active: false,
+        reason: DEFERRAL_REASON,
+      })
+    ).not.toThrow();
+    expect(() => evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [], "nightly")).not.toThrow();
+  });
+});
+
+describe("runCiSuite — C27: real wiring, no self-play at all when deferral is active", () => {
+  function deferrableManifest(withStandardTier: boolean): GameManifest {
+    return {
+      id: "c27-two-player-fixture",
+      title: "C27 Two-Player Fixture",
+      classic: "Tic-Tac-Toe",
+      ruleSentence: "suites.test.ts C27 fixture.",
+      tags: [],
+      estMinutes: 1,
+      modes: { bot: true, hotseat: false, asyncLink: false },
+      players: { min: 2, max: 2 },
+      difficultyTiers: [
+        ...(withStandardTier
+          ? [{ id: "standard" as const, policy: { kind: "mcts" as const }, budget: { kind: "rollouts" as const, n: 1000 }, minReplyMs: 0 }]
+          : []),
+        { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 10000 }, minReplyMs: 0 },
+      ],
+      ciGateBudget: { deferGatesToNightly: { reason: DEFERRAL_REASON } },
+    };
+  }
+
+  it("suite 'ci': matchups is null, every deferrable row is 'deferred', and NO MissingCiRolloutBudgetError fires despite the shipped ruthless budget (10,000) exceeding MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE with no twoPlayerCiRollouts override set — because self-play never runs at all", () => {
+    const report = runCiSuite(classicTicTacToe, deferrableManifest(true), {
+      seed: "suites-test:c27:ci-deferred",
+      games: 100,
+    });
+    expect(report.matchups).toBeNull();
+    expect(report.gates.find((g) => g.gate === "strong-vs-random")!.status).toBe("deferred");
+    expect(report.gates.find((g) => g.gate === "ruthless-vs-standard")!.status).toBe("deferred");
+    expect(report.ok).toBe(true); // no fail — a provisional pass
+  });
+
+  it("a manifest with NO standard tier still reports ruthless-vs-standard as n/a (not deferred) under an active deferral", () => {
+    const report = runCiSuite(classicTicTacToe, deferrableManifest(false), {
+      seed: "suites-test:c27:ci-deferred-no-standard",
+      games: 100,
+    });
+    expect(report.gates.find((g) => g.gate === "ruthless-vs-standard")!.status).toBe("n/a");
+  });
+
+  it("suite 'nightly' IGNORES deferGatesToNightly entirely — real self-play runs, matchups is non-null, every row is measured for real (never 'deferred')", () => {
+    const report = runCiSuite(classicTicTacToe, deferrableManifest(true), {
+      seed: "suites-test:c27:nightly-measures-for-real",
+      games: 20,
+      suite: "nightly",
+    });
+    expect(report.matchups).not.toBeNull();
+    for (const g of report.gates) {
+      expect(g.status, `gate ${g.gate}`).not.toBe("deferred");
+    }
+  }, 30_000);
+
+  it("PLANTED VIOLATION: a deferred CI run can still be a REAL fail if grind/whatever else the manifest declares stays wired — proven here via a manifest exception's own presence being irrelevant to a hard-coded sabotage: deferral covers self-play rows, so a manifest requiring a 'standard' tier that doesn't exist still throws its OWN unrelated error, proving deferral doesn't swallow other real errors", () => {
+    // Sanity/negative-space check: deferral must not become a blanket try/catch that silently
+    // absorbs unrelated configuration errors. A manifest with NO 'ruthless' tier at all still
+    // throws the pre-existing, unrelated "no ruthless tier" error even with deferral declared.
+    const manifest: GameManifest = {
+      ...deferrableManifest(true),
+      difficultyTiers: [], // no ruthless tier at all
+    };
+    expect(() => runCiSuite(classicTicTacToe, manifest, { seed: "suites-test:c27:no-ruthless-tier", games: 10 })).toThrow(
+      /no "ruthless" difficulty tier/
+    );
   });
 });

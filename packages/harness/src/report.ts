@@ -57,10 +57,34 @@ export function formatMatchupTable(report: MatchupReport): string {
   ].join("\n");
 }
 
-const STATUS_LABEL: Record<string, string> = { pass: "PASS", warn: "WARN", fail: "FAIL", "n/a": "N/A " };
+// "DEFER" (platform-corrections.md C27) is deliberately as visually distinct from "N/A " and
+// "PASS" as every other status already is from every other — the whole point of the status is
+// that a human reading this table can tell "doesn't apply" (N/A), "measured, healthy" (PASS),
+// and "applies, runs at nightly, not measured here" (DEFER) apart at a glance, never conflating
+// the second and third the way C2/C23 exist to prevent for the first and second.
+const STATUS_LABEL: Record<string, string> = {
+  pass: "PASS",
+  warn: "WARN",
+  fail: "FAIL",
+  "n/a": "N/A ",
+  deferred: "DEFER",
+};
+
+/** C27: a run can be `ok` (no `"fail"` row) while still containing `"deferred"` rows — a
+ *  PROVISIONAL pass, not the same claim a fully-measured green makes. Decision (see
+ *  `docs/plans/platform-corrections.md` C27 and this module's own report for the full
+ *  argument): `ok` stays `true` so CI is not blocked by a gate that is working exactly as
+ *  designed, but the rendered header must say so explicitly — "OK" alone, unqualified, would
+ *  read identically to a nightly run that measured everything, and a reader has no way to tell
+ *  a provisional pass from a real one without opening every row. */
+function verdictLabel(ok: boolean, hasDeferred: boolean): string {
+  if (!ok) return "FAILED";
+  return hasDeferred ? "OK (provisional — deferred rows not yet measured at this tier)" : "OK";
+}
 
 export function formatCiSuiteTable(report: CiSuiteReport): string {
-  const lines = [`CI suite (${report.suite}) for "${report.gameId}" — ${report.ok ? "OK" : "FAILED"}`];
+  const hasDeferred = report.gates.some((g) => g.status === "deferred");
+  const lines = [`CI suite (${report.suite}) for "${report.gameId}" — ${verdictLabel(report.ok, hasDeferred)}`];
   for (const gate of report.gates) {
     const label = STATUS_LABEL[gate.status] ?? gate.status;
     // Keyed on PRESENCE (`!== undefined`), not truthiness — an empty-string justification must
@@ -74,10 +98,10 @@ export function formatCiSuiteTable(report: CiSuiteReport): string {
 }
 
 /**
- * The solo-lane analogue of `formatCiSuiteTable` — same `STATUS_LABEL` mapping (so "N/A " is
- * visually as distinct from "PASS"/"FAIL"/"WARN" here as it is on the two-player table; C2's
- * whole point is that a skipped gate and a passed gate must never look the same in a report,
- * in EITHER lane's rendering).
+ * The solo-lane analogue of `formatCiSuiteTable` — same `STATUS_LABEL` mapping (so "N/A " and
+ * "DEFER" are as visually distinct from "PASS"/"FAIL"/"WARN" here as they are on the two-player
+ * table; C2's whole point is that a skipped gate and a passed gate must never look the same in
+ * a report, in EITHER lane's rendering — C27 extends that to "deferred" vs "n/a" vs "pass").
  */
 export function formatSoloGateTable(
   gameId: string,
@@ -85,7 +109,8 @@ export function formatSoloGateTable(
   ok: boolean,
   gates: readonly SoloGateResult[]
 ): string {
-  const lines = [`solo-ci (${format}) for "${gameId}" — ${ok ? "OK" : "FAILED"}`];
+  const hasDeferred = gates.some((g) => g.status === "deferred");
+  const lines = [`solo-ci (${format}) for "${gameId}" — ${verdictLabel(ok, hasDeferred)}`];
   for (const gate of gates) {
     const label = STATUS_LABEL[gate.status] ?? gate.status;
     lines.push(`  [${label}] ${gate.name}: ${gate.detail}`);

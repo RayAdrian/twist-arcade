@@ -53,6 +53,7 @@ export type { MatchupReport, RunMatchupOptions } from "./runner";
 export { HiddenInformationUnsupportedError, runMatchup } from "./runner";
 
 export type {
+  CiGateDeferral,
   CiSuiteReport,
   CompareBudgetsPoint,
   GateInputs,
@@ -66,6 +67,7 @@ export {
   compareBudgets,
   EmptyExceptionJustificationError,
   evaluateCiGates,
+  hasDeferredGates as twoPlayerHasDeferredGates,
   MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE,
   MissingCiRolloutBudgetError,
   MissingSolvedValueProofError,
@@ -73,6 +75,7 @@ export {
   SOLVED_VALUE_SELF_PLAY_FLOOR,
   SuiteFailedError,
   TierBudgetCollapseError,
+  TwoPlayerDeferredGateAtNightlyError,
   worstCapHitRate,
 } from "./suites";
 
@@ -110,6 +113,7 @@ export {
 export type {
   ComputeSoloDistributionMetricsOptions,
   SoloDistributionMetrics,
+  SoloDistributionMetricsCiTier,
 } from "./solo-metrics";
 export {
   coefficientOfVariation,
@@ -130,9 +134,11 @@ export type {
   GateResult,
   GateStatus,
   SoloGateChaseInputs,
+  SoloGateChaseInputsDeferred,
+  SoloGateChaseInputsFull,
   SoloGatePuzzleInputs,
 } from "./solo-gates";
-export { allGatesPass, evaluateSoloGates } from "./solo-gates";
+export { allGatesPass, evaluateSoloGates, hasDeferredGates as soloHasDeferredGates, SoloDeferredGateAtNightlyError } from "./solo-gates";
 
 export type { SoloHeuristic } from "./solver/generic-solo";
 export { dfsSolver, idaStarSolver, StochasticEngineUnsupportedError } from "./solver/generic-solo";

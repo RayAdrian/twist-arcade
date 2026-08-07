@@ -8,11 +8,14 @@ import type { GameManifest } from "@twist-arcade/game-spec";
 import {
   allGatesPass,
   evaluateSoloGates,
+  hasDeferredGates,
+  SoloDeferredGateAtNightlyError,
   type EvaluateSoloGatesInput,
   type SoloGateChaseInputs,
+  type SoloGateChaseInputsDeferred,
   type SoloGatePuzzleInputs,
 } from "../src/solo-gates";
-import type { SoloDistributionMetrics } from "../src/solo-metrics";
+import type { SoloDistributionMetrics, SoloDistributionMetricsCiTier } from "../src/solo-metrics";
 
 function healthyMetrics(overrides: Partial<SoloDistributionMetrics> = {}): SoloDistributionMetrics {
   return {
@@ -48,6 +51,26 @@ const healthyChaseInputs: SoloGateChaseInputs = {
   metrics: healthyMetrics(),
   grind: { found: false },
   alwaysSafeVsStrong: 0.6,
+};
+
+function healthyCiTierMetrics(overrides: Partial<SoloDistributionMetricsCiTier> = {}): SoloDistributionMetricsCiTier {
+  return {
+    greedyVsRandomRatio: 1.8,
+    randomMedian: 30,
+    greedyMedian: 55,
+    randomP75: 40,
+    randomP90: 45,
+    ...overrides,
+  };
+}
+
+const DEFER_REASON = "Strong-dependent; ~4.6h at seedCount=100 in CI — platform-corrections.md C27";
+
+const deferredChaseInputs: SoloGateChaseInputsDeferred = {
+  metrics: healthyCiTierMetrics(),
+  grind: { found: false },
+  deferredToTier: "nightly",
+  deferredReason: DEFER_REASON,
 };
 
 const healthyPuzzleInputs: SoloGatePuzzleInputs = {
@@ -321,5 +344,114 @@ describe("daily-puzzle gate thresholds (docs/plans/crackstep.md §5)", () => {
     const row = results.find((r) => r.name === "fogDeductionOnly")!;
     expect(row.status).toBe("fail");
     expect(allGatesPass(results)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// C27 (platform-corrections.md): the `"deferred"` status. Mine Run's real-board Strong-
+// dependent solo-chase gates cost ~4.6h at seedCount=100 (measured) — unaffordable in CI.
+// `"deferred"` names the tier that measures the row for real; it must never look like `"n/a"`
+// (does not apply) or `"pass"` (measured, healthy) in either the TYPE or the rendered report.
+// ---------------------------------------------------------------------------------------
+
+const STRONG_DEPENDENT_ROWS = [
+  "strongVsRandomRatio",
+  "distributionOverlap",
+  "strongVsGreedyRatio",
+  "strongScoreCV",
+  "alwaysSafeVsStrong",
+  "medianRunLength",
+  "capHitRate",
+  "ceilingPileUp",
+];
+
+describe("C27 — the 'deferred' status: distinct from both 'n/a' and 'pass'", () => {
+  it("every Strong-dependent row reports 'deferred', naming the tier and the reason, when Strong never ran", () => {
+    const results = evaluateSoloGates({ manifest: chaseManifest(), chase: deferredChaseInputs, suite: "ci" });
+    const byName = new Map(results.map((r) => [r.name, r]));
+
+    for (const name of STRONG_DEPENDENT_ROWS) {
+      const row = byName.get(name)!;
+      expect(row.status, `gate ${name}`).toBe("deferred");
+      expect(row.detail).toContain("nightly");
+      expect(row.detail).toContain(DEFER_REASON);
+      // Never collapses into n/a's or pass's own detail shape — spot-checked against a couple
+      // of representative rows below with exact strings, this is the general "always distinct"
+      // sweep across every deferred row.
+    }
+  });
+
+  it("'deferred' is a DIFFERENT status value from 'n/a', not merely a different detail string on n/a — a Strong-dependent row never reports n/a, and an n/a row (e.g. suicideProbe, not misère-tagged) never reports deferred", () => {
+    const results = evaluateSoloGates({ manifest: chaseManifest(), chase: deferredChaseInputs, suite: "ci" });
+    const byName = new Map(results.map((r) => [r.name, r]));
+
+    for (const name of STRONG_DEPENDENT_ROWS) {
+      expect(byName.get(name)?.status, `gate ${name}`).not.toBe("n/a");
+    }
+    // suicideProbe (not misère-tagged) and the puzzle-only rows are STILL n/a under deferred
+    // chase inputs — deferral only ever touches the Strong-dependent rows, never the rows that
+    // were already n/a for an unrelated, format/tagging reason.
+    expect(byName.get("suicideProbe")?.status).toBe("n/a");
+    expect(byName.get("certificatePresent")?.status).toBe("n/a");
+    expect("deferred").not.toBe("n/a"); // the literal values themselves are distinct
+  });
+
+  it("greedyVsRandomRatio and grindProbe are evaluated for REAL under deferred inputs, not deferred themselves (only Strong-dependent rows defer)", () => {
+    const results = evaluateSoloGates({ manifest: chaseManifest(), chase: deferredChaseInputs, suite: "ci" });
+    expect(results.find((r) => r.name === "greedyVsRandomRatio")?.status).toBe("pass");
+    expect(results.find((r) => r.name === "grindProbe")?.status).toBe("pass");
+  });
+
+  it("PLANTED VIOLATION: the partial path's greedyVsRandomRatio still fails for real under deferred inputs — proves the deferred path is not a blanket free pass", () => {
+    const degenerate: SoloGateChaseInputsDeferred = {
+      ...deferredChaseInputs,
+      metrics: healthyCiTierMetrics({ greedyVsRandomRatio: 1.0 }), // < minGreedyVsRandomRatio (1.5 default)
+    };
+    const results = evaluateSoloGates({ manifest: chaseManifest(), chase: degenerate, suite: "ci" });
+    const row = results.find((r) => r.name === "greedyVsRandomRatio")!;
+    expect(row.status).toBe("fail");
+    expect(allGatesPass(results)).toBe(false); // a deferred report can still be a REAL fail
+  });
+
+  it("PLANTED VIOLATION: the partial path's grindProbe still fails for real under deferred inputs", () => {
+    const grindTripped: SoloGateChaseInputsDeferred = {
+      ...deferredChaseInputs,
+      grind: { found: true, cycle: [], scoreDelta: 0, startSeed: "s" },
+    };
+    const results = evaluateSoloGates({ manifest: chaseManifest(), chase: grindTripped, suite: "ci" });
+    expect(results.find((r) => r.name === "grindProbe")?.status).toBe("fail");
+    expect(allGatesPass(results)).toBe(false);
+  });
+
+  it("hasDeferredGates is true for a deferred report and false for a fully-measured one", () => {
+    const deferred = evaluateSoloGates({ manifest: chaseManifest(), chase: deferredChaseInputs, suite: "ci" });
+    const full = evaluateSoloGates({ manifest: chaseManifest(), chase: healthyChaseInputs, suite: "nightly" });
+    expect(hasDeferredGates(deferred)).toBe(true);
+    expect(hasDeferredGates(full)).toBe(false);
+  });
+
+  it("allGatesPass is TRUE for a healthy deferred report — a deferred row is not a fail (CI can go green with deferred rows)", () => {
+    const results = evaluateSoloGates({ manifest: chaseManifest(), chase: deferredChaseInputs, suite: "ci" });
+    expect(allGatesPass(results)).toBe(true);
+    expect(hasDeferredGates(results)).toBe(true); // green, but NOT the same as a fully-measured green
+  });
+
+  it("ABUSE GUARD: suite 'nightly' with still-deferred chase inputs throws SoloDeferredGateAtNightlyError — a row deferred at every tier must be a loud failure, not a quiet status", () => {
+    expect(() =>
+      evaluateSoloGates({ manifest: chaseManifest(), chase: deferredChaseInputs, suite: "nightly" })
+    ).toThrow(SoloDeferredGateAtNightlyError);
+    expect(() =>
+      evaluateSoloGates({ manifest: chaseManifest(), chase: deferredChaseInputs, suite: "nightly" })
+    ).toThrow(/never runs/);
+  });
+
+  it("nightly with FULL (non-deferred) chase inputs is unaffected by the guard", () => {
+    expect(() =>
+      evaluateSoloGates({ manifest: chaseManifest(), chase: healthyChaseInputs, suite: "nightly" })
+    ).not.toThrow();
+  });
+
+  it("suite omitted (defaults to 'ci') never trips the nightly guard even with deferred inputs", () => {
+    expect(() => evaluateSoloGates({ manifest: chaseManifest(), chase: deferredChaseInputs })).not.toThrow();
   });
 });
