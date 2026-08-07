@@ -26,6 +26,10 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 | ui-material ("ink on paper" material foundation) | — removed | — deleted | `twistarcade_ui` | — | never started (no DB) | **CLOSED** — fully merged into `main`, 0 unique commits, worktree and branch removed |
 | wrap (killed game) | — removed | `feature/wrap` retained | `twistarcade_wrap` | — | never started (no DB) | **CLOSED — GAME KILLED (C20).** Worktree removed; branch and tag `archive/wrap-killed-by-c20` kept: its 5 commits are the measurement evidence that killed it |
 | deferstatus (C27: `deferred` gate status + Mine Run CI-tier wiring) | `../claude-project-deferstatus` | `feature/defer-status` | `twistarcade_deferstatus` | 55321–55329 | not started (no DB) — pure harness/gate-table change, no game code touches Postgres | ACTIVE |
+| ninegridsui (Nine Grids board UI — real macro/micro board, replacing the deliberate engine-only placeholder) | `../claude-project-ninegridsui` | `feature/ninegrids-ui` | `twistarcade_ninegridsui` | 55421–55429 | not started (no DB) — solo/hotseat UI work, no game code touches Postgres | ACTIVE |
+| ordervschaos (Order vs Chaos — OV0 kill-check + OV1 engine, `docs/plans/order-vs-chaos.md`) | `../claude-project-ordervschaos` | `feature/order-vs-chaos` | `twistarcade_ordervschaos` | 55521–55529 | not started (no DB) — engine-only work, gate-before-UI (C16), no game code touches Postgres | ACTIVE |
+| chunkbudget (C38: per-game dynamic-import chunk budget, `docs/plans/platform-corrections.md` C38) | `../claude-project-chunkbudget` | `feature/chunk-budget` | `twistarcade_chunkbudget` | 55621–55629 | not started (no DB) — CI/build-tooling work only, no game code touches Postgres | ACTIVE |
+| tilt (Tilt — T1 engine + T2 kill-test sweep, `docs/plans/tilt.md`) | `../claude-project-tilt` | `feature/tilt` | `twistarcade_tilt` | 55721–55729 | not started (no DB) — engine-only work, gate-before-UI (C16), no game code touches Postgres | ACTIVE |
 
 ## Port blocks
 
@@ -42,6 +46,10 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 | 55121–55129 (team 8) | ninegrids | CLAIMED |
 | 55221–55229 (team 9) | phase2schema | **RELEASED** — team closed 2026-08-07 |
 | 55321–55329 (team 10) | deferstatus | CLAIMED |
+| 55421–55429 (team 11) | ninegridsui | CLAIMED — verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
+| 55521–55529 (team 12) | ordervschaos | CLAIMED — verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
+| 55621–55629 (team 13) | chunkbudget | CLAIMED — verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
+| 55721–55729 (team 14) | tilt | CLAIMED — verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
 
 **Host note (2026-08-02):** Docker on this machine already runs Supabase stacks for
 unrelated projects (`mento-h0`, `prequal-and405`, `prequal-and473-450`). All four blocks

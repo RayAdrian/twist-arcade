@@ -2580,3 +2580,64 @@ Two of the six two-player launch slots are now empty (Wrap → Duel Draft, and t
 candidates for Phase 1's **six games live** bar: Fadeout ✅, Nine Grids ✅, Crackstep ✅, plus Tilt,
 Bid-Tac-Toe, Duel Draft and Mine Run — **four candidates for three slots**, all still ungated.
 That is a thinner margin than it looks, given two of the last three gated games died.
+
+---
+
+## C45 — Tilt clears its kill-test sweep. Ruling on the double-line rule.
+
+### The sweep (200 games/pairing, one fixed seed, shipped 7×7/win-4/period-4/cw)
+
+```
+MCTS-1k vs MCTS-100        84.0%   (kill <55%)   PASS by 34 points
+strong-vs-random          100.0%   (kill <90%)   PASS
+decisive games ended by a re-fall:
+   self-play 14.3% · strong-vs-random 19.5% · depth-check 10.4%
+                                   (kill >60% or ~0%)  PASS
+draw rate 9.0% · median plies 17 · branching 6.92 · cap-hit 0.00% across 600 games
+```
+
+**No kill row hit.** The row that mattered most is the first one: Order vs Chaos died because
+skilled play bought ~4 points over its breaker's do-nothing baseline (C44), and Tilt's analogue
+clears the line by **34 points**. Planning through the rotation genuinely pays — the twist is
+strategic, not decorative. The re-fall decides ~14% of games: present often enough to matter,
+never often enough to dominate, which is the narrow window this mechanic had to hit.
+
+Structural termination (§1.6) held under real MCTS play at **zero cap hits in 600 games**, not
+merely in unit tests.
+
+### Ruling: ship `doubleLine: "draw"` — the plan's default stands
+
+Double-line frequency measured **9.0%** (18/200), above the §5.1 flag threshold of 2%, so the
+required follow-up ran. Under `"mover-wins"` on the identical sample: **seat0 57.0% / seat1 43.0%,
+draws 0.0%** — every one of the 18 draws becomes decisive, and no other draws exist to confound the
+comparison. The two rules genuinely diverge on 9% of games.
+
+**`"draw"` ships.** When a rotation completes four-in-a-row for *both* players simultaneously,
+neither player caused it more than the other — the tilt did. `"mover-wins"` would hand the mover a
+windfall for an outcome the schedule produced, which is arbitrary in a game whose whole design
+premise is that the rotation is *predictable* and plannable. The plan's own §7 already names the
+texture line for it — *"Both lines landed — a shared tilt"* — and a distinctive shared moment on
+9% of games is a feature, not a defect to legislate away. 9% is also far inside the 60% draw
+ceiling, so nothing is bought by removing it.
+
+**Binding on T3/T4:** the gate table must measure first-player win rate under the **shipped**
+`"draw"` rule. The 57/43 figure above belongs to the *other* variant and must not be carried
+forward as if it described what ships — C32's rule that a rules change makes runs independent
+samples applies here exactly.
+
+### Two process notes worth keeping
+
+**The engine was right; the fixtures were wrong.** Reaching green required fixing invalid
+disc-count parity in two hand-built boards, a "same grid via different move order" fixture that
+ignored disc value being tied to ply parity, and two mirror-probe tests querying the wrong seat.
+The team said so explicitly rather than letting it read as engine failures — worth naming because
+a fixture bug that gets "fixed" in the engine instead is how a real defect gets written in.
+
+**Plant #7 justified a test that looked redundant.** Breaking the full-board draw check (`>` for
+`===`) failed one static fixture — and the 40-trial random-playout test **did not catch it**,
+because draws are rare enough that no seed reached a genuine full board. Without the plant, that
+static fixture would have looked like duplicated coverage a future cleanup could delete. This is
+the inverse of C41's vacuous-plant lesson: there, a plant landed where the guard couldn't fail;
+here, a plant proved a guard was doing non-redundant work nobody could have inferred.
+
+All 8 plants fired, each verified to land somewhere the guard could have failed.
