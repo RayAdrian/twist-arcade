@@ -25,8 +25,21 @@ export interface BoardShellProps {
    *  BoardContext.Provider — this is the slot CalloutLayer (plan §4.15) is meant to fill,
    *  since it needs the same cell registry the board itself uses to resolve anchors. */
   overlay?: ReactNode;
+  /** Nine Grids escalation (platform-corrections.md C5's "48px floor at 320px" gate, ux-lens
+   *  §7's "boards where the grid math would force cells below 48px on a 320px-wide viewport
+   *  must redesign their board (zoom/pan regions or a different layout), not shrink the
+   *  targets"): the FLOOR this board's cells are rendered at, for the container's own natural-
+   *  size math below — NOT a per-Cell override (each `Cell` still defaults its own `minCellPx`
+   *  to 48 independently; this prop must match whatever the game's Cells actually use, or the
+   *  zoom/pan math below would compute the wrong natural size). Default 48, matching Cell's own
+   *  `DEFAULT_MIN_CELL_PX` — every game before Nine Grids has cols/rows small enough that this
+   *  never mattered (natural size always fit inside the viewport-constrained frame already). */
+  minCellPx?: number;
   children: ReactNode;
 }
+
+const GAP_PX = 4; // Tailwind `gap-1` (0.25rem @ 16px root) — the grid's own className below.
+const DEFAULT_MIN_CELL_PX = 48;
 
 export function BoardShell({
   rows,
@@ -37,6 +50,7 @@ export function BoardShell({
   lockedUntil = 0,
   reducedMotion = false,
   overlay,
+  minCellPx = DEFAULT_MIN_CELL_PX,
   children,
 }: BoardShellProps) {
   const [cursor, setCursor] = useState({ row: 0, col: 0 });
@@ -139,9 +153,30 @@ export function BoardShell({
   // is otherwise rendered completely opaquely: BoardShell has no opinion on its shape beyond
   // "some gridcells are in there somewhere," which is the only guarantee an arbitrary Board
   // component can give.
+  // Zoom/pan region (ux-lens §7 / platform-corrections.md C5): the FRAME below is the fixed
+  // viewport-constrained footprint every board has always had (`min(100vw-32px, 52svh)`,
+  // square). The GRID inside it used to be sized to exactly fill the frame via
+  // `aspectRatio:"1/1"` alone, which silently let a wide/tall board's cells shrink below
+  // `minCellPx` (each Cell's own `minWidth`/`minHeight` floor would then fight the grid's `1fr`
+  // tracks for space it doesn't have). Nine Grids' 9x9 board is the first one where the FRAME
+  // genuinely cannot fit `cols` cells at the floor on a 320px viewport (9*48 + 8*4 = 464px vs.
+  // ~288px available) — ux-lens's own prescribed remedy for exactly this case is "zoom/pan
+  // regions... not shrink the targets", so the grid is now sized to its NATURAL minimum
+  // (enough for every cell to be exactly `minCellPx`, never less) and the FRAME clips/scrolls
+  // whatever doesn't fit, via `max(100%, naturalPx)`: pure CSS, no JS layout measurement.
+  // Every existing game's natural size is already <= the frame (their `rows`/`cols` were always
+  // small enough), so `max(100%, natural)` resolves to `100%` for them — this is a no-op there,
+  // proven by board-shell.test.tsx's existing suite still passing unchanged.
+  const naturalWidthPx = cols * minCellPx + (cols - 1) * GAP_PX;
+  const naturalHeightPx = rows * minCellPx + (rows - 1) * GAP_PX;
+  const FRAME_SIZE = "min(calc(100vw - 32px), 52svh)";
+
   return (
     <BoardContext.Provider value={contextValue}>
-      <div className="relative mx-auto" style={{ width: "min(calc(100vw - 32px), 52svh)" }}>
+      <div
+        className="relative mx-auto"
+        style={{ width: FRAME_SIZE, height: FRAME_SIZE, overflow: "auto", overscrollBehavior: "contain" }}
+      >
         <div
           ref={setBoardEl}
           role="grid"
@@ -150,7 +185,8 @@ export function BoardShell({
           aria-colcount={cols}
           onKeyDown={onKeyDown}
           style={{
-            aspectRatio: "1 / 1",
+            width: `max(100%, ${naturalWidthPx}px)`,
+            height: `max(100%, ${naturalHeightPx}px)`,
             display: "grid",
             gridTemplateColumns: `repeat(${cols}, 1fr)`,
             gridTemplateRows: `repeat(${rows}, 1fr)`,
