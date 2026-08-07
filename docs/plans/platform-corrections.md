@@ -1110,3 +1110,104 @@ near-free **only while the tables are empty**, and that window closes at launch.
 
 **Ruled: `on delete restrict`.** I approved §4.5 as written in C21 and was wrong to; the PK
 reasoning I applied in the same correction should have been applied here in the same pass.
+
+---
+
+## C23 — The gate fires on correct play. Fadeout is a *proven draw*, and three gates demand it not be.
+
+*The C22 sweep completed. It falsifies C22's own central claim — including a claim the
+orchestrator repeated without checking evidence already sitting in this repo.*
+
+### The measurement
+
+Six configurations, fixed seed `c22-sweep` so every budget played identical games:
+
+| Config | wall-clock | mean-plies | draw-rate | FPA | verdict |
+|---|---|---|---|---|---|
+| 100 × 10,000 (baseline) | 2802s | 45.5 | **100.0%** | **0.0%** | fail |
+| 100 × 8,000 | 2275s | 42.9 | **100.0%** | **0.0%** | fail |
+| 100 × 5,000 | 1305s | 40.4 | **100.0%** | **0.0%** | fail |
+| 100 × 3,000 | 848s | 40.9 | **100.0%** | **0.0%** | fail |
+| 50 × 10,000 | 1625s | 44.0 | **100.0%** | **0.0%** | fail |
+| 25 × 10,000 | 955s | 46.5 | **100.0%** | **0.0%** | fail |
+
+`strong-vs-random` passes at **100.0%** in every single row. The agents are not weak.
+
+### What this overturns
+
+**C22's resolution said the 2,000-rollout run's 100% draw rate was C6 yardstick collapse —
+"a verdict the shipped 10,000-rollout budget does not produce."** The baseline produces
+**exactly** that verdict. There was no collapse. 100% draws is not a symptom of a weakened
+agent; **it is Fadeout's actual behaviour at every budget from 2,000 to 10,000.**
+
+**The evidence was already in the repository.** `docs/research/games/fadeout-solve-report.md`
+records an *exact* solve: under `threefold` repetition — Fadeout's frozen shipped ruleset —
+the root value is **draw**, over 128,170 reachable states, and **every one of the nine legal
+opening moves is a draw.** Proven, not estimated.
+
+So the self-play measurement is not a failure. **It is the bots correctly reaching the game's
+proven game-theoretic value**, and the gate is failing them for it.
+
+I accepted the implementer's yardstick-collapse framing and wrote it into C22 without opening
+the solve report that refutes it — a report this project produced, and which I had already
+cited elsewhere. The standing instruction covers this exactly: *subagent claims are not
+evidence.* A 2½-hour sweep then went looking for a budget that would reproduce a "healthy"
+baseline that has never existed.
+
+### The actual defect: three gates are unsatisfiable by construction
+
+For a proven-draw game, these cannot pass, at any budget, ever:
+
+- `first-player-win-rate` band **[35%, 65%]** — in a drawn game nobody wins; 0% is *correct*.
+- `draw-rate` ceiling **60%** — the true value is 100%.
+- `ruthless-vs-standard` min **60%** — ruthless cannot out-win standard when neither can win.
+  (Currently WARN at `ci`, **hard-fail at nightly** — so nightly is broken for Fadeout too.)
+
+This is the mirror image of the twenty-three defects catalogued in `PROGRESS.md`. Those were
+guards that stayed green while something was wrong. **This is a guard that goes red while
+everything is right** — and it is worse in one respect, because a gate that cannot be
+satisfied trains everyone to route around it.
+
+**`games/fadeout/manifest.ts` predicted this in a comment** (lines 76–85): a proven-draw root
+"is expected to pull the MEASURED draw rate toward the high end of — or past — the default 0.60
+`maxDrawRate` ceiling; if F4's numbers land there, the fix is an `exceptions[]` entry." The
+comment was right, and it was a comment, so nothing acted on it and the gate has presumably
+been failing ever since. It also anticipated only **one** of the three unsatisfiable gates.
+
+### Ruling: N/A with a cited proof, not an `exceptions[]` waiver
+
+`exceptions[]` says *"this game is permitted to fail this gate."* That is the wrong statement
+and it is abusable — it reads identically whether the game is proven drawn or merely
+disappointing.
+
+**C2's principle governs**: a gate that does not apply must be reported **explicitly N/A**,
+never silently skipped, and never confusable with a pass. Extend it from `solo.format` to
+solved value:
+
+1. The manifest declares `solvedValue: "draw" | "p0-win" | "p1-win" | "unknown"` **with a
+   pointer to the artifact that proves it.** `"unknown"` is the default and grants nothing.
+2. When `solvedValue` is a proven draw, the three decisiveness gates report **`n/a`, citing
+   the proof** — not `pass`, not `fail`, not `waived`.
+3. **The gate inverts into a real one.** For a proven-draw game the meaningful check is that
+   self-play *does* reach ~100% draws, confirming the bots are strong enough to find the value.
+   **If Fadeout's self-play draw rate fell to 70%, that would be a genuine regression — and the
+   current gate would score it as an improvement.** That is the signal worth having, and it is
+   the exact opposite of what ships today.
+
+A game may only claim relief with a proof artifact. Bid-Tac-Toe's "none by construction"
+balance claim gets no relief under this rule — asserting a value is not proving one, which is
+the confidence that already failed on Wrap.
+
+### The budget question C22 asked, now answerable
+
+Every budget produces an identical verdict, so **no budget is "unsafe" for Fadeout** and the
+yardstick concern was unfounded. `100 × 3,000` costs **848s against the baseline's 2802s — 3.3×
+cheaper for the same answer**, and rollouts dominate cost far more than game count (25 × 10,000
+still costs 955s). Once the gates are corrected, CI should run the cheap end and nightly the
+full table.
+
+### Also observed, minor
+
+The baseline reports `cap-hit-rate (self-play): 0.00%` while its own gate row fails on
+`cap-hit rate 1.00% > 0`. Two different numbers for one quantity in one report — worth a look
+when the gate table is touched.
