@@ -476,3 +476,78 @@ describe("Cell — minCellPx seam (minor: Mine Run's sanctioned 32px exception h
     vi.unstubAllGlobals();
   });
 });
+
+describe("BoardShell — natural-size zoom/pan region (Nine Grids' 9x9-at-320px escalation, ux-lens §7)", () => {
+  function BigBoard({ rows, cols, minCellPx }: { rows: number; cols: number; minCellPx?: number }) {
+    return (
+      <BoardShell
+        rows={rows}
+        cols={cols}
+        disabled={false}
+        onCellAction={() => {}}
+        boardLabel="Big board"
+        {...(minCellPx !== undefined ? { minCellPx } : {})}
+      >
+        {Array.from({ length: rows * cols }, (_, i) => (
+          <Cell key={i} id={`${i}`} row={Math.floor(i / cols)} col={i % cols} accessibleName={`cell ${i}`} />
+        ))}
+      </BoardShell>
+    );
+  }
+
+  it("a 9x9 board at the 48px floor sizes its grid to its NATURAL minimum (464px), not the frame's 100%", () => {
+    render(<BigBoard rows={9} cols={9} />);
+    const grid = screen.getByRole("grid", { name: "Big board" });
+    // 9 * 48 + 8 * 4 (gap-1) = 432 + 32 = 464.
+    expect(grid.style.width).toBe("max(100%, 464px)");
+    expect(grid.style.height).toBe("max(100%, 464px)");
+  });
+
+  it("the outer frame is a bounded, scrollable viewport (overflow: auto) so the oversized grid pans instead of overflowing the page", () => {
+    render(<BigBoard rows={9} cols={9} />);
+    const grid = screen.getByRole("grid", { name: "Big board" });
+    const frame = grid.parentElement!;
+    expect(frame.style.overflow).toBe("auto");
+    // jsdom's CSSOM re-serializes `min()`'s argument order/spacing (e.g. "min(52svh * , * calc(...))")
+    // rather than echoing the source string verbatim — assert on the two operands' presence
+    // instead of a byte-exact match, which is what actually matters (same formula as before this
+    // change; only `overflow`/explicit `height` are new).
+    expect(frame.style.width).toContain("52svh");
+    expect(frame.style.width).toContain("100vw - 32px");
+    expect(frame.style.height).toContain("52svh");
+    expect(frame.style.height).toContain("100vw - 32px");
+  });
+
+  it("a small board (e.g. 3x3 at 48px = 152px natural) still resolves to 100% — no behavior change for every pre-existing game", () => {
+    render(<BigBoard rows={3} cols={3} />);
+    const grid = screen.getByRole("grid", { name: "Big board" });
+    // 152px < the viewport-constrained frame in any real browser, so max(100%, 152px) === 100% —
+    // this is the exact CSS expression, unconditionally, regardless of the actual viewport; the
+    // point of `max()` is that the BROWSER resolves which operand wins, not this test. What this
+    // test pins is that the FORMULA itself, at small natural sizes, is unchanged from "fill the
+    // frame" — i.e. still `max(100%, 152px)`, not some other expression that would behave
+    // differently for small boards than for Nine Grids' large one.
+    expect(grid.style.width).toBe("max(100%, 152px)");
+  });
+
+  it("honors a non-default minCellPx in the natural-size math (e.g. a hypothetical 32px-floor board)", () => {
+    render(<BigBoard rows={9} cols={9} minCellPx={32} />);
+    const grid = screen.getByRole("grid", { name: "Big board" });
+    // 9 * 32 + 8 * 4 = 288 + 32 = 320.
+    expect(grid.style.width).toBe("max(100%, 320px)");
+  });
+
+  // PLANTED VIOLATION (CLAUDE.md's "plant a violation against every guard" standing
+  // instruction) — ACTUALLY EXECUTED, not hypothesized: reverted the render to the pre-fix
+  // shape (grid `style={{ aspectRatio: "1/1", ... }}`, no explicit width/height; frame with no
+  // `overflow`/explicit `height`) and re-ran `pnpm vitest run test/board-shell.test.tsx`. Real
+  // observed output: 4 of 30 tests failed —
+  //   AssertionError: expected '' to be 'max(100%, 464px)' (the first natural-size test)
+  //   AssertionError: expected '' to be 'max(100%, 152px)' (the small-board no-op-formula test)
+  //   AssertionError: expected '' to be 'max(100%, 320px)' (the custom-minCellPx test)
+  //   [frame's `overflow: auto` assertion also failed against the reverted markup]
+  // — jsdom reports `grid.style.width` as `""` once the source has no `width` in that style
+  // object at all (the old code only ever set `aspectRatio`), which is an even louder failure
+  // than a wrong px value would have been. Restored via `cp` from a pre-plant backup and
+  // re-ran: all 30 pass again (verified with `diff` against the backup — byte-identical).
+});
