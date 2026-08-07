@@ -1853,3 +1853,40 @@ is superseded, not averaged.
 One thing to carry into the UI stage: **40.0% sits nearer the band edge than 46.0%.** Not a
 concern at n=100, but if any future change moves it again, the next measurement wants more games
 rather than a tighter reading of the same 100.
+
+---
+
+## C33 — A game dropped from the registry would be untested, not failed
+
+*Found by a false alarm of my own, which is the useful part.*
+
+Checking `main` after the Nine Grids merge, I grepped `games/registry.ts` for quoted top-level
+keys and got `crackstep, nine-grids` — **no Fadeout**. For a moment it looked like the flagship
+had been dropped by a merge that touched registration.
+
+It had not. `fadeout` uses an **unquoted** key (`fadeout:`) while the others are quoted, so my
+pattern `^\s{2}"` simply missed it. Importing the module reports all three. My check was the
+defect, not the code — the same species as the three probe errors above it, and the same fix:
+**check the thing that runs, not a pattern that resembles it.**
+
+### The real gap the false alarm exposed
+
+If a game *had* been dropped, **nothing would have failed.** C17's route smoke test loops
+`Object.keys(registry)` and asserts each route returns 200 with a rendered board. A game absent
+from the registry is absent from that loop — it is not tested, and *not tested* reports
+identically to *passing*. Likewise `ci-gates` iterates the registry, so a dropped game's gates
+silently stop running.
+
+This is the twenty-third-defect shape in a new place: **a test that loops over a list cannot
+detect a missing entry.** It is also exactly the hole the A0 drift guard closed on the database
+side — where the fix was to assert *the set of public tables is exactly the expected set*, not
+merely to check each table found.
+
+**Required:** an assertion that the registry contains exactly the expected game ids, updated
+deliberately when a game is added or killed. It is three lines, it runs in milliseconds, and it
+converts "a game vanished" from a silent non-event into a red build. Wrap was killed on purpose
+and Duel Draft promoted in its place — the catalogue *does* change, so the list must be edited
+knowingly rather than drift.
+
+Note also that `registry.ts` mixes quoted and unquoted keys. Cosmetic, but it is what made a
+plain-text check unreliable, and lint should settle on one form.
