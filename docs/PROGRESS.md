@@ -28,9 +28,17 @@ Research: `docs/research/games/` · Corrections: `docs/plans/platform-correction
 | UI material foundation ("ink on paper", performed) | ✅ merged |
 | **Fadeout** — exact solve, frozen ruleset, board | ✅ playable |
 | **Crackstep** — 90 certified days, board | ✅ playable |
-| **Wrap** — failed at 5×5, redesigned to 6×6 | gate re-run in flight |
-| **Mine Run** — engine merged, gates running | board gated behind gates |
-| Nine Grids, Order vs Chaos, Tilt, Bid-Tac-Toe | queued |
+| **Wrap** — killed by its own gates (C20) | ☠️ worktree removed, branch archived |
+| **Nine Grids** — Ultimate Tic-Tac-Toe, **passed its balance gates** | test design in flight, then board |
+| **Mine Run** — engine merged, gate cost being scoped (C19 in the solo lane) | board gated behind gates |
+| Order vs Chaos, Tilt, Bid-Tac-Toe, Duel Draft | queued |
+
+**Nine Grids passed: first-player win rate 46.0% (band 35–65%), draws 30.0%, 0 cap hits.** The
+first two-player game since Fadeout to clear the balance gates on a real 100-game sample. Its
+15-game pilot had read **13.3%** — a severe second-player advantage matching Wrap's direction —
+and that was noise (2 wins in 15). Treated as a verdict it would have killed a balanced game
+*and looked like corroboration of Wrap's pattern*. Cost measurements can run at 15 games;
+verdicts cannot.
 
 ## Phase 2 — planned, first milestone in flight
 
@@ -121,6 +129,13 @@ not evidence* is in the list below because of failures like this one.
 ---
 
 ## Corrections in force
+
+**Today added C21–C26**, four of which are orchestrator errors rather than implementer ones:
+C21 Phase 2 rulings and the schema that lived only on a server · C22 the gate-cost fix shipped
+as opt-in · **C23 the gate fires on correct play** — Fadeout is an exact-solved draw and three
+gates demanded it not be · **C24 two independent agents wrote the same confounded seed, which
+indicts the tool** · **C25 I repeated C22's own mistake in the brief that cited C22** · C26 the
+tier-collapse guard checks budgets, not strength.
 
 `docs/plans/platform-corrections.md` — C1 view-honesty · C2 format-keyed gates · C3 `solve`
 is not generic · C4 `decode` throws · C5 animation boundary · C6 the yardstick must be strong
