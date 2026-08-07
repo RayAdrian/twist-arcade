@@ -712,10 +712,19 @@ describe("evaluateCiGates — C23: the inverted 'solved-value-reached' gate — 
     const solvedGate = gates.find((g) => g.gate === "solved-value-reached")!;
     expect(solvedGate.status).toBe("fail");
     expect(solvedGate.detail).toContain("70.0%");
-    // The three C23-corrected gates stay n/a regardless — they are not what catches this. The
-    // NEW gate is the only one that does, which is exactly the point.
-    expect(gates.find((g) => g.gate === "first-player-win-rate")!.status).toBe("n/a");
-    expect(gates.find((g) => g.gate === "draw-rate")!.status).toBe("n/a");
+    // SUPERSEDED by C55 (platform-corrections.md): solved-value-reached FAILED here, so the
+    // proof no longer buys relief — the three gates below must NOT stay n/a (that was exactly
+    // the C55 defect: Bid-Tac-Toe took the relief and failed the attainment check in the same
+    // run). They report their real measured values instead, each saying why relief was
+    // withheld so a reader cannot mistake a real fail for a wrong solvedValue declaration.
+    const fpwr = gates.find((g) => g.gate === "first-player-win-rate")!;
+    expect(fpwr.status).toBe("fail"); // 15.0% outside [35%, 65%]
+    expect(fpwr.detail).toContain("15.0%");
+    expect(fpwr.detail).toMatch(/withheld/i);
+    const drawRate = gates.find((g) => g.gate === "draw-rate")!;
+    expect(drawRate.status).toBe("fail"); // 70.0% > 60% ceiling
+    expect(drawRate.detail).toContain("70.0%");
+    expect(drawRate.detail).toMatch(/withheld/i);
   });
 
   it("a proven p0-win checks firstPlayerWinRate directly; a proven p1-win checks its complement", () => {
@@ -747,6 +756,208 @@ describe("evaluateCiGates — C23: the inverted 'solved-value-reached' gate — 
         (g) => g.gate === "solved-value-reached"
       )!.status
     ).toBe("fail");
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// platform-corrections.md C55: C23 built the relief (three decisiveness gates go n/a for a
+// proven value) and the check (solved-value-reached, confirming self-play actually attains it)
+// as a PAIR — but only the relief was wired to the manifest declaration. The check was left
+// free-standing, so a game could take the relief and fail the check in the same run. Bid-Tac-
+// Toe did exactly that: proven pure draw (369,802/369,802 saddle points), but self-play NEVER
+// reaches it (0.0% draw rate at every tested budget) — every game is decisive, FPA swings
+// 33.3%-60.0%, and the un-fixed gate silenced all three as "n/a" anyway. Fix: the three gates'
+// n/a is now CONDITIONAL on solved-value-reached passing. Every test below plants a violation
+// in one of the two directions the fix has to get right (reached -> relief holds; not reached ->
+// relief withdrawn) and confirms the guard could actually have failed each one.
+// ---------------------------------------------------------------------------------------
+
+describe("evaluateCiGates — C55: the three decisiveness gates' n/a relief is CONDITIONAL on solved-value-reached actually passing", () => {
+  const BID_TAC_TOE_PROOF = "docs/plans/bid-tac-toe.md C51 (369,802/369,802 saddle points — pure draw at every bid node)";
+
+  it("PLANT (Bid-Tac-Toe's REAL C55 numbers, rollouts=10000): self-play NEVER reaches the proven draw (0.0% draw rate, floor 90%) — solved-value-reached FAILS, and the three decisiveness gates report REAL measured values instead of n/a", () => {
+    const bidTacToe10k: GateInputs = {
+      strongVsRandomWinRate: 0.75,
+      firstPlayerWinRate: 0.333,
+      drawRate: 0.0,
+      meanPlies: 7.6,
+      capHitRate: 0,
+      ruthlessVsStandardWinRate: 0.5,
+    };
+    const solvedDraw: SolvedValueClaim = { value: "draw", proof: BID_TAC_TOE_PROOF };
+    const gates = evaluateCiGates(bidTacToe10k, DEFAULT_HARNESS_THRESHOLDS, [], "ci", solvedDraw);
+
+    const solvedGate = gates.find((g) => g.gate === "solved-value-reached")!;
+    expect(solvedGate.status).toBe("fail");
+    expect(solvedGate.detail).toContain("0.0%");
+
+    // Before C55: all three below read "n/a", silencing a currently-meaningful 33.3% FPA / 0.0%
+    // draw-rate / 50.0% ruthless-vs-standard exactly as C55 describes. After C55: real verdicts.
+    const fpwr = gates.find((g) => g.gate === "first-player-win-rate")!;
+    expect(fpwr.status).toBe("fail"); // 33.3% outside [35%, 65%]
+    expect(fpwr.detail).toContain("33.3%");
+    expect(fpwr.status).not.toBe("n/a");
+
+    const drawRate = gates.find((g) => g.gate === "draw-rate")!;
+    expect(drawRate.status).toBe("pass"); // 0.0% <= 60% ceiling — a real, checkable pass, not n/a
+    expect(drawRate.detail).toContain("0.0%");
+    expect(drawRate.status).not.toBe("n/a");
+
+    const ruthlessVsStandard = gates.find((g) => g.gate === "ruthless-vs-standard")!;
+    expect(ruthlessVsStandard.status).toBe("warn"); // 50.0% < 60% min, ci-suite warns
+    expect(ruthlessVsStandard.status).not.toBe("n/a");
+  });
+
+  it("LEGIBILITY (C2): the withheld-relief detail is distinguishable from an ordinary measured gate — a reader must not mistake this real fail for a wrong solvedValue declaration", () => {
+    const bidTacToe10k: GateInputs = {
+      strongVsRandomWinRate: 0.75,
+      firstPlayerWinRate: 0.333,
+      drawRate: 0.0,
+      meanPlies: 7.6,
+      capHitRate: 0,
+      ruthlessVsStandardWinRate: 0.5,
+    };
+    const gates = evaluateCiGates(bidTacToe10k, DEFAULT_HARNESS_THRESHOLDS, [], "ci", {
+      value: "draw",
+      proof: BID_TAC_TOE_PROOF,
+    });
+    for (const name of ["first-player-win-rate", "draw-rate", "ruthless-vs-standard"]) {
+      const gate = gates.find((g) => g.gate === name)!;
+      expect(gate.detail, `gate ${name}`).toMatch(/withheld/i);
+      expect(gate.detail, `gate ${name}`).toContain("0.0%"); // the attainment number itself, named
+    }
+  });
+
+  it("CONTROL (Fadeout's REAL C22/C23 numbers): self-play reaches the proven draw 100% of the time — solved-value-reached PASSES, and the three gates stay n/a, unaffected by C55", () => {
+    const fadeoutBaseline: GateInputs = {
+      strongVsRandomWinRate: 1.0,
+      firstPlayerWinRate: 0.0,
+      drawRate: 1.0,
+      meanPlies: 45.5,
+      capHitRate: 0,
+      ruthlessVsStandardWinRate: 0.0,
+    };
+    const gates = evaluateCiGates(fadeoutBaseline, DEFAULT_HARNESS_THRESHOLDS, [], "ci", {
+      value: "draw",
+      proof: SOLVE_REPORT_PROOF,
+    });
+    expect(gates.find((g) => g.gate === "solved-value-reached")!.status).toBe("pass");
+    expect(gates.find((g) => g.gate === "first-player-win-rate")!.status).toBe("n/a");
+    expect(gates.find((g) => g.gate === "draw-rate")!.status).toBe("n/a");
+    expect(gates.find((g) => g.gate === "ruthless-vs-standard")!.status).toBe("n/a");
+  });
+
+  it("BOUNDARY: attainment sitting EXACTLY at the floor (90.0%) still grants relief — inclusive, symmetric with every other threshold in this module", () => {
+    const atFloor: GateInputs = {
+      strongVsRandomWinRate: 1.0,
+      firstPlayerWinRate: 0.05,
+      drawRate: SOLVED_VALUE_SELF_PLAY_FLOOR, // exactly 0.9
+      meanPlies: 20,
+      capHitRate: 0,
+      ruthlessVsStandardWinRate: 0.1,
+    };
+    const gates = evaluateCiGates(atFloor, DEFAULT_HARNESS_THRESHOLDS, [], "ci", {
+      value: "draw",
+      proof: SOLVE_REPORT_PROOF,
+    });
+    expect(gates.find((g) => g.gate === "solved-value-reached")!.status).toBe("pass");
+    expect(gates.find((g) => g.gate === "draw-rate")!.status).toBe("n/a");
+  });
+
+  it("just BELOW the floor (89.9%) withdraws relief — same boundary, other side", () => {
+    const belowFloor: GateInputs = {
+      strongVsRandomWinRate: 1.0,
+      firstPlayerWinRate: 0.05,
+      drawRate: 0.899,
+      meanPlies: 20,
+      capHitRate: 0,
+      ruthlessVsStandardWinRate: 0.1,
+    };
+    const gates = evaluateCiGates(belowFloor, DEFAULT_HARNESS_THRESHOLDS, [], "ci", {
+      value: "draw",
+      proof: SOLVE_REPORT_PROOF,
+    });
+    expect(gates.find((g) => g.gate === "solved-value-reached")!.status).toBe("fail");
+    expect(gates.find((g) => g.gate === "draw-rate")!.status).not.toBe("n/a");
+  });
+
+  it("a proven DECISIVE value (p0-win) whose self-play does NOT reach it also loses first-player-win-rate's relief — C55 applies generally, not only to the draw case", () => {
+    const underperforming: GateInputs = {
+      strongVsRandomWinRate: 1.0,
+      firstPlayerWinRate: 0.5, // claimed p0-win, but self-play is only 50-50 — nowhere near the proof
+      drawRate: 0.0,
+      meanPlies: 10,
+      capHitRate: 0,
+      ruthlessVsStandardWinRate: 0.8,
+    };
+    const gates = evaluateCiGates(underperforming, DEFAULT_HARNESS_THRESHOLDS, [], "ci", {
+      value: "p0-win",
+      proof: "hypothetical p0-win proof",
+    });
+    expect(gates.find((g) => g.gate === "solved-value-reached")!.status).toBe("fail");
+    const fpwr = gates.find((g) => g.gate === "first-player-win-rate")!;
+    expect(fpwr.status).toBe("pass"); // 50% happens to land inside [35%,65%] — a REAL pass, not a relieved n/a
+    expect(fpwr.status).not.toBe("n/a");
+  });
+
+  it("ORDERING (no circular/order-dependent result): the attainment computation reads only already-computed GateInputs, never another gate's already-pushed GateResult — proven by checking solved-value-reached's own verdict agrees EXACTLY with what the other three gates concluded about attainment, for both a reached and a not-reached case", () => {
+    const reached: GateInputs = {
+      strongVsRandomWinRate: 1,
+      firstPlayerWinRate: 0,
+      drawRate: 0.95,
+      meanPlies: 20,
+      capHitRate: 0,
+      ruthlessVsStandardWinRate: 0,
+    };
+    const notReached: GateInputs = { ...reached, drawRate: 0.5 };
+    for (const [inputs, expectReached] of [
+      [reached, true],
+      [notReached, false],
+    ] as const) {
+      const gates = evaluateCiGates(inputs, DEFAULT_HARNESS_THRESHOLDS, [], "ci", {
+        value: "draw",
+        proof: SOLVE_REPORT_PROOF,
+      });
+      const solvedPass = gates.find((g) => g.gate === "solved-value-reached")!.status === "pass";
+      const fpwrIsNa = gates.find((g) => g.gate === "first-player-win-rate")!.status === "n/a";
+      const drawRateIsNa = gates.find((g) => g.gate === "draw-rate")!.status === "n/a";
+      expect(solvedPass).toBe(expectReached);
+      expect(fpwrIsNa).toBe(solvedPass);
+      expect(drawRateIsNa).toBe(solvedPass);
+    }
+  });
+});
+
+describe("evaluateCiGates — C55: deferral interacts correctly — self-play never ran, so attainment is UNMEASURED, not 'known reached'", () => {
+  it("under an active deferral, the three decisiveness gates DEFER (not n/a) even with a proven solvedValue — C55 supersedes the pre-C55 'structural regardless of deferral' behaviour for these three, because their n/a is no longer structural: it depends on self-play data that did not run this tier", () => {
+    const gates = evaluateCiGates(
+      HEALTHY,
+      DEFAULT_HARNESS_THRESHOLDS,
+      [],
+      "ci",
+      { value: "draw", proof: SOLVE_REPORT_PROOF },
+      undefined,
+      { active: true, reason: DEFERRAL_REASON }
+    );
+    expect(gates.find((g) => g.gate === "first-player-win-rate")!.status).toBe("deferred");
+    expect(gates.find((g) => g.gate === "draw-rate")!.status).toBe("deferred");
+    expect(gates.find((g) => g.gate === "ruthless-vs-standard")!.status).toBe("deferred");
+    expect(gates.find((g) => g.gate === "solved-value-reached")!.status).toBe("deferred");
+  });
+
+  it("the genuinely structural n/a (no 'standard' tier in the manifest AT ALL) survives deferral unchanged — that fact is independent of solvedValue, deferral, AND self-play", () => {
+    const gates = evaluateCiGates(
+      { ...HEALTHY, ruthlessVsStandardWinRate: null },
+      DEFAULT_HARNESS_THRESHOLDS,
+      [],
+      "ci",
+      { value: "draw", proof: SOLVE_REPORT_PROOF },
+      undefined,
+      { active: true, reason: DEFERRAL_REASON }
+    );
+    const gate = gates.find((g) => g.gate === "ruthless-vs-standard")!;
+    expect(gate.status).toBe("n/a");
+    expect(gate.detail).toContain("standard");
   });
 });
 
@@ -999,7 +1210,7 @@ describe("evaluateCiGates — C27: 'deferred' status, pure evaluator", () => {
     expect(gates.find((g) => g.gate === "solved-value-reached")!.status).toBe("deferred");
   });
 
-  it("'deferred' !== 'n/a': a proven-draw's structural n/a rows (FPA, draw-rate, ruthless-vs-standard) stay n/a even with an active deferral — deferral never relabels a row that was already n/a for an unrelated reason", () => {
+  it("SUPERSEDED BY C55 (platform-corrections.md): the solvedValue-proven n/a of FPA/draw-rate/ruthless-vs-standard is NOT structural regardless of deferral — it depends on self-play attainment, and deferral means self-play never ran, so that fact is unmeasured this tier, not 'known true'. All three defer, exactly like strong-vs-random and mean-plies (see the dedicated C55 deferral describe block above for the full story)", () => {
     const gates = evaluateCiGates(
       HEALTHY,
       DEFAULT_HARNESS_THRESHOLDS,
@@ -1009,10 +1220,9 @@ describe("evaluateCiGates — C27: 'deferred' status, pure evaluator", () => {
       undefined,
       { active: true, reason: DEFERRAL_REASON }
     );
-    expect(gates.find((g) => g.gate === "first-player-win-rate")!.status).toBe("n/a");
-    expect(gates.find((g) => g.gate === "draw-rate")!.status).toBe("n/a");
-    expect(gates.find((g) => g.gate === "ruthless-vs-standard")!.status).toBe("n/a"); // proven-draw reason, not deferral
-    // strong-vs-random and mean-plies have no such structural exemption — they DO defer.
+    expect(gates.find((g) => g.gate === "first-player-win-rate")!.status).toBe("deferred");
+    expect(gates.find((g) => g.gate === "draw-rate")!.status).toBe("deferred");
+    expect(gates.find((g) => g.gate === "ruthless-vs-standard")!.status).toBe("deferred");
     expect(gates.find((g) => g.gate === "strong-vs-random")!.status).toBe("deferred");
     expect(gates.find((g) => g.gate === "mean-plies")!.status).toBe("deferred");
   });
@@ -1048,22 +1258,29 @@ describe("evaluateCiGates — C27: 'deferred' status, pure evaluator", () => {
   });
 
   it("N/A is provably distinguishable from DEFERRED in the RENDERED report — plant-and-observe of the actual formatter, not just the status enum", () => {
+    // C55 note: the solvedValue-proven n/a of FPA/draw-rate/ruthless-vs-standard is no longer
+    // structural-regardless-of-deferral (see the dedicated C55 deferral tests above) — under an
+    // active deferral it now defers too, same as every other self-play-derived row. The ONE row
+    // that remains n/a unconditionally, even under deferral, is ruthless-vs-standard's "no
+    // standard tier at all" case — a manifest fact independent of solvedValue, deferral, AND
+    // self-play. That is the plant this test now uses to prove N/A vs DEFERRED stay visually
+    // distinguishable in the rendered table.
     const gates = evaluateCiGates(
-      HEALTHY,
+      { ...HEALTHY, ruthlessVsStandardWinRate: null },
       DEFAULT_HARNESS_THRESHOLDS,
       [],
       "ci",
-      { value: "draw", proof: SOLVE_REPORT_PROOF },
+      undefined,
       undefined,
       { active: true, reason: DEFERRAL_REASON }
     );
     const ok = gates.every((g) => g.status !== "fail");
     const rendered = formatCiSuiteTable({ gameId: "ovc-fixture", suite: "ci", ok, gates, matchups: null });
     const lines = rendered.split("\n");
-    const fpwrLine = lines.find((l) => l.includes("first-player-win-rate"))!;
+    const rvsLine = lines.find((l) => l.includes("ruthless-vs-standard"))!;
     const strongVsRandomLine = lines.find((l) => l.includes("strong-vs-random"))!;
-    expect(fpwrLine).toContain("[N/A ]"); // structural, unaffected by deferral
-    expect(fpwrLine).not.toContain("[DEFER]");
+    expect(rvsLine).toContain("[N/A ]"); // structural, unaffected by deferral
+    expect(rvsLine).not.toContain("[DEFER]");
     expect(strongVsRandomLine).toContain("[DEFER]"); // Strong-dependent, deferred
     expect(strongVsRandomLine).not.toContain("[N/A ]");
     expect(strongVsRandomLine).not.toContain("[PASS]");

@@ -59,13 +59,17 @@ export interface CiGateDeferral {
 }
 
 /** Every two-player gate row `evaluateCiGates` owns — ALL SIX can report `"deferred"` when a
- *  `CiGateDeferral` is active, but four of them (`ruthless-vs-standard`, `solved-value-reached`,
- *  and the solvedValue-proven branches of `first-player-win-rate`/`draw-rate`) have their own
- *  STRUCTURAL "n/a" reasons (no "standard" tier; no proven solvedValue; a proven-draw's
- *  unsatisfiable-by-construction band) that must keep firing regardless of deferral — those
- *  checks stay in front of the deferral check in their own blocks below, so a row that was
- *  already n/a for an unrelated reason never gets relabelled "deferred". Named once here so the
- *  nightly abuse guard stays in lockstep with the gate blocks themselves. */
+ *  `CiGateDeferral` is active. Exactly ONE has a STRUCTURAL "n/a" reason that survives deferral
+ *  unconditionally: `ruthless-vs-standard`'s "no standard tier at all" branch, a fact about the
+ *  manifest that is true independent of solvedValue, deferral, or self-play. That check stays in
+ *  front of the deferral check in its own block below, so that row is never relabelled
+ *  "deferred". The other solvedValue-proven n/a branches (`first-player-win-rate`, `draw-rate`,
+ *  and `ruthless-vs-standard`'s own proven-draw branch) are **not** structural — since
+ *  platform-corrections.md C55, their relief is conditional on `solved-value-reached` actually
+ *  passing, which is itself computed from self-play data. Deferral means that data was never
+ *  collected this tier, so whether the proof was reached is UNMEASURED, not "known true" — those
+ *  branches defer along with everything else, exactly like `solved-value-reached` itself. Named
+ *  once here so the nightly abuse guard stays in lockstep with the gate blocks themselves. */
 const DEFERRABLE_CI_GATES = [
   "strong-vs-random",
   "first-player-win-rate",
@@ -195,12 +199,47 @@ export interface RuthlessVsStandardBudgets {
  *  IMPROVEMENT (closer to the "balanced" 35-65% FPA band it was checking instead). */
 export const SOLVED_VALUE_SELF_PLAY_FLOOR = 0.9;
 
+/** Whether self-play actually reached a manifest's proven `solvedValue`, at
+ *  `SOLVED_VALUE_SELF_PLAY_FLOOR` — the SAME quantity the `solved-value-reached` gate itself
+ *  reports (platform-corrections.md C55). Returns `null` when there is no proven value to check
+ *  (mirrors that gate's own n/a case). Computed ONCE per `evaluateCiGates` call, directly off
+ *  already-computed `inputs` — never off another gate's already-pushed `GateResult` — and
+ *  consulted by FOUR blocks below: `first-player-win-rate`, `draw-rate`, `ruthless-vs-standard`,
+ *  and `solved-value-reached` itself. Reading from a shared computation rather than four
+ *  independent re-derivations is what closes C55: the relief (the first three) and the check
+ *  (the fourth) cannot drift apart, because there is only one place that decides "was the proof
+ *  reached" and every consumer reads the same answer.
+ *
+ *  This is also the answer to "can this be circular or order-dependent" (C55's own ask): it is
+ *  neither, structurally. `evaluateCiGates` builds `attainment` once, before any gate block
+ *  pushes anything to `results`, from `inputs`/`solvedValue` alone — quantities that exist
+ *  before gate evaluation starts. No block reads `results` to decide its own status, so the four
+ *  blocks that consult `attainment` could be evaluated in ANY order (or even in parallel) and
+ *  would produce byte-identical output — there is no dependency edge for a cycle to form on, and
+ *  nothing for evaluation order to perturb. */
+function solvedValueAttainment(
+  solvedValue: SolvedValueClaim | undefined,
+  inputs: GateInputs
+): { readonly achieved: number; readonly reached: boolean } | null {
+  if (!solvedValue || solvedValue.value === "unknown") return null;
+  const achieved =
+    solvedValue.value === "draw"
+      ? inputs.drawRate
+      : solvedValue.value === "p0-win"
+        ? inputs.firstPlayerWinRate
+        : 1 - inputs.firstPlayerWinRate;
+  return { achieved, reached: achieved >= SOLVED_VALUE_SELF_PLAY_FLOOR };
+}
+
 /**
  * Pure gate evaluation (see module doc for why this is split from `runCiSuite`). `suite`
  * selects only the ruthless-vs-standard row's severity (warn at PR budget vs hard-fail
  * nightly, per roadmap §6) — every other row's threshold is suite-independent. `solvedValue`
  * (platform-corrections.md C23) is the manifest's proven game-theoretic value, when it has one —
  * omitted (or `{ value: "unknown" }`) leaves every gate below exactly as it was before C23.
+ * C55: a proven `solvedValue` only grants n/a relief to the three decisiveness gates when
+ * self-play actually REACHES it (`solvedValueAttainment` above) — a game that declares a proof
+ * but whose bots never attain it (Bid-Tac-Toe) measures for real instead.
  */
 export function evaluateCiGates(
   inputs: GateInputs,
@@ -234,6 +273,11 @@ export function evaluateCiGates(
     throw new TwoPlayerDeferredGateAtNightlyError(deferral.reason);
   }
 
+  // C55: computed ONCE, off `inputs`/`solvedValue` alone (never off `results`) — see
+  // `solvedValueAttainment`'s own doc for why this rules out any circular or order-dependent
+  // outcome among the four blocks below that consult it.
+  const attainment = solvedValueAttainment(solvedValue, inputs);
+
   const results: GateResult[] = [];
 
   {
@@ -253,59 +297,66 @@ export function evaluateCiGates(
   }
 
   {
-    // C23: for ANY proven solvedValue (draw, p0-win, or p1-win), a "balanced" FPA band is
-    // unsatisfiable by construction — a solved game's first-player win rate is a KNOWN
-    // quantity (0% for a draw or a p1-win, ~100% for a p0-win), not a design target to hit a
-    // range around. n/a, citing the proof, rather than a fail this game can never clear. This
-    // structural check comes BEFORE deferral: a proven-solved game's FPA is never going to be a
-    // number regardless of tier, so it is n/a, never "deferred" (C27 must not relabel a row that
-    // was already n/a for an unrelated reason).
-    if (solvedValue && solvedValue.value !== "unknown") {
+    // C23/C55: for ANY proven solvedValue (draw, p0-win, or p1-win), a "balanced" FPA band is
+    // unsatisfiable by construction — a solved game's first-player win rate is a KNOWN quantity
+    // (0% for a draw or a p1-win, ~100% for a p0-win), not a design target to hit a range around
+    // — BUT only once self-play actually REACHES that value (`attainment.reached`). A declared
+    // proof whose bots never attain it (Bid-Tac-Toe, C55) must not silence a currently-meaningful
+    // gate. Deferral is checked FIRST: it means self-play never ran at all this tier, so whether
+    // the proof was reached is unmeasured, not "known true" — reporting n/a on unmeasured data
+    // would be exactly the drift C55 closes, so this defers instead, same as every other
+    // self-play-derived row.
+    if (deferral?.active) {
+      results.push(deferredGate("first-player-win-rate", deferral.reason));
+    } else if (attainment && attainment.reached) {
+      // Byte-identical to the pre-C55 text on purpose (Fadeout's own real output): the "reached"
+      // branch is the UNCHANGED case (C23's original guarantee, still true here), so it carries
+      // none of C55's new machinery in its wording — only the withheld branch below, which never
+      // existed before C55, gets new text.
       results.push({
         gate: "first-player-win-rate",
         status: "n/a",
-        detail: `manifest.solvedValue is a proven "${solvedValue.value}" (${solvedValue.proof}) — a balanced-FPA band does not apply to a solved game`,
+        detail: `manifest.solvedValue is a proven "${solvedValue!.value}" (${solvedValue!.proof}) — a balanced-FPA band does not apply to a solved game`,
       });
-    } else if (deferral?.active) {
-      results.push(deferredGate("first-player-win-rate", deferral.reason));
     } else {
       const [lo, hi] = thresholds.firstPlayerWinRateRange;
       const pass = inputs.firstPlayerWinRate >= lo && inputs.firstPlayerWinRate <= hi;
-      results.push(
-        applyException(
-          "first-player-win-rate",
-          pass ? "pass" : "fail",
-          `${(inputs.firstPlayerWinRate * 100).toFixed(1)}% (band [${(lo * 100).toFixed(0)}%, ${(hi * 100).toFixed(0)}%])`,
-          exceptions
-        )
-      );
+      const measured = `${(inputs.firstPlayerWinRate * 100).toFixed(1)}% (band [${(lo * 100).toFixed(0)}%, ${(hi * 100).toFixed(0)}%])`;
+      const detail = attainment
+        ? // C55: a proof was declared but relief is WITHHELD — self-play never reached it, so
+          // this is a real measurement, not a stale n/a. Naming solved-value-reached's own
+          // number keeps a reader from mistaking this real fail for a wrong solvedValue claim.
+          `${measured} — solvedValue relief withheld: self-play reached the proven "${solvedValue!.value}" only ${(attainment.achieved * 100).toFixed(1)}% of the time (floor ${(SOLVED_VALUE_SELF_PLAY_FLOOR * 100).toFixed(0)}%, see solved-value-reached)`
+        : measured;
+      results.push(applyException("first-player-win-rate", pass ? "pass" : "fail", detail, exceptions));
     }
   }
 
   {
-    // C23: a draw-rate CEILING is unsatisfiable by construction specifically for a proven draw
-    // (the true value is 100%) — n/a, citing the proof. A proven DECISIVE value (p0-win/p1-win)
-    // does not conflict with this gate (a low draw rate is still the expected, checkable
-    // outcome there), so it stays active in that case. Same ordering rule as FPA above: the
-    // structural n/a check comes before deferral.
-    if (solvedValue && solvedValue.value === "draw") {
+    // C23/C55: a draw-rate CEILING is unsatisfiable by construction specifically for a proven
+    // draw (the true value is 100%) — n/a, citing the proof, but only once self-play actually
+    // REACHES that draw (`attainment.reached`). A proven DECISIVE value (p0-win/p1-win) never
+    // conflicts with this gate in the first place (a low draw rate is still the expected,
+    // checkable outcome there), so `attainment` is only consulted when `value === "draw"`.
+    // Deferral checked first, same reasoning as FPA above: unmeasured attainment defers, it is
+    // never reported as a "known" n/a.
+    const drawAttainment = solvedValue?.value === "draw" ? attainment : null;
+    if (deferral?.active) {
+      results.push(deferredGate("draw-rate", deferral.reason));
+    } else if (drawAttainment && drawAttainment.reached) {
+      // Byte-identical to the pre-C55 text on purpose — see the FPA block's own comment above.
       results.push({
         gate: "draw-rate",
         status: "n/a",
-        detail: `manifest.solvedValue is a proven draw (${solvedValue.proof}) — a draw-rate ceiling is unsatisfiable by construction for a drawn game`,
+        detail: `manifest.solvedValue is a proven draw (${solvedValue!.proof}) — a draw-rate ceiling is unsatisfiable by construction for a drawn game`,
       });
-    } else if (deferral?.active) {
-      results.push(deferredGate("draw-rate", deferral.reason));
     } else {
       const pass = inputs.drawRate <= thresholds.maxDrawRate;
-      results.push(
-        applyException(
-          "draw-rate",
-          pass ? "pass" : "fail",
-          `${(inputs.drawRate * 100).toFixed(1)}% (max ${(thresholds.maxDrawRate * 100).toFixed(1)}%)`,
-          exceptions
-        )
-      );
+      const measured = `${(inputs.drawRate * 100).toFixed(1)}% (max ${(thresholds.maxDrawRate * 100).toFixed(1)}%)`;
+      const detail = drawAttainment
+        ? `${measured} — solvedValue relief withheld: self-play reached the proven draw only ${(drawAttainment.achieved * 100).toFixed(1)}% of the time (floor ${(SOLVED_VALUE_SELF_PLAY_FLOOR * 100).toFixed(0)}%, see solved-value-reached)`
+        : measured;
+      results.push(applyException("draw-rate", pass ? "pass" : "fail", detail, exceptions));
     }
   }
 
@@ -332,25 +383,30 @@ export function evaluateCiGates(
   }
 
   {
-    // C23: "ruthless cannot out-win standard when neither can win" — unsatisfiable by
-    // construction specifically for a proven draw. A proven decisive value does not have this
-    // problem (ruthless SHOULD still out-win standard more often via better search), so this
-    // gate stays active for p0-win/p1-win.
-    if (solvedValue && solvedValue.value === "draw") {
-      results.push({
-        gate: "ruthless-vs-standard",
-        status: "n/a",
-        detail: `manifest.solvedValue is a proven draw (${solvedValue.proof}) — ruthless cannot out-win standard when neither can win`,
-      });
-    } else if (inputs.ruthlessVsStandardWinRate === null) {
-      // Structural fact independent of self-play (and independent of deferral): this manifest
-      // has no "standard" tier at all, so there is nothing this gate could ever measure, at any
-      // tier — n/a, never "deferred".
+    // C23/C55: "ruthless cannot out-win standard when neither can win" — unsatisfiable by
+    // construction specifically for a proven draw, but again only once self-play actually
+    // REACHES that draw. A proven decisive value does not have this problem (ruthless SHOULD
+    // still out-win standard more often via better search), so `attainment` is only consulted
+    // when `value === "draw"`, same as the draw-rate block above.
+    const drawAttainment = solvedValue?.value === "draw" ? attainment : null;
+    if (inputs.ruthlessVsStandardWinRate === null) {
+      // Structural fact independent of solvedValue, deferral, AND self-play: this manifest has
+      // no "standard" tier at all, so there is nothing this gate could ever measure, at any
+      // tier — n/a, never "deferred". Checked FIRST, ahead of even deferral, because it is the
+      // one branch here that is genuinely unconditional.
       results.push({ gate: "ruthless-vs-standard", status: "n/a", detail: "manifest has no \"standard\" tier" });
     } else if (deferral?.active) {
       // There IS a standard tier (the branch above didn't fire), so this row WOULD be a real
-      // number if self-play ran — it just didn't, at this tier.
+      // number if self-play ran — it just didn't, at this tier, so whether a proven draw's
+      // relief applies is unmeasured too (same reasoning as draw-rate/FPA above).
       results.push(deferredGate("ruthless-vs-standard", deferral.reason));
+    } else if (drawAttainment && drawAttainment.reached) {
+      // Byte-identical to the pre-C55 text on purpose — see the FPA block's own comment above.
+      results.push({
+        gate: "ruthless-vs-standard",
+        status: "n/a",
+        detail: `manifest.solvedValue is a proven draw (${solvedValue!.proof}) — ruthless cannot out-win standard when neither can win`,
+      });
     } else if (ruthlessBudgets?.active) {
       // C26 (Nine Grids): TierBudgetCollapseError's strict-inequality check (ruthlessN >
       // standardN) is NECESSARY but not SUFFICIENT — MCTS strength grows roughly with the
@@ -379,7 +435,10 @@ export function evaluateCiGates(
       });
     } else {
       const pass = inputs.ruthlessVsStandardWinRate >= thresholds.ruthlessVsStandardMinWinRate;
-      const detail = `${(inputs.ruthlessVsStandardWinRate * 100).toFixed(1)}% (min ${(thresholds.ruthlessVsStandardMinWinRate * 100).toFixed(1)}%, ${suite})`;
+      const measured = `${(inputs.ruthlessVsStandardWinRate * 100).toFixed(1)}% (min ${(thresholds.ruthlessVsStandardMinWinRate * 100).toFixed(1)}%, ${suite})`;
+      const detail = drawAttainment
+        ? `${measured} — solvedValue relief withheld: self-play reached the proven draw only ${(drawAttainment.achieved * 100).toFixed(1)}% of the time (floor ${(SOLVED_VALUE_SELF_PLAY_FLOOR * 100).toFixed(0)}%, see solved-value-reached)`
+        : measured;
       if (pass) {
         results.push({ gate: "ruthless-vs-standard", status: "pass", detail });
       } else if (suite === "nightly") {
@@ -398,18 +457,18 @@ export function evaluateCiGates(
     // REACHES it at a healthy rate — always present (never silently skipped, C2's rule), n/a
     // when there is no proven value to confirm. That structural n/a check comes before
     // deferral, same ordering rule as every other block above: a game with no proven value has
-    // nothing for THIS gate to ever measure, at any tier.
-    if (!solvedValue || solvedValue.value === "unknown") {
+    // nothing for THIS gate to ever measure, at any tier. C55: reads `attainment` — the SAME
+    // shared computation the three decisiveness gates above consult for their own relief — so
+    // this gate's verdict and their relief can never disagree about whether the proof was
+    // reached (that disagreement, from two independent computations of the same fact, is the
+    // defect C55 closes).
+    if (!attainment) {
       results.push({ gate: "solved-value-reached", status: "n/a", detail: "no proven manifest.solvedValue — nothing to confirm" });
     } else if (deferral?.active) {
       results.push(deferredGate("solved-value-reached", deferral.reason));
     } else {
-      const { value, proof } = solvedValue;
-      const achieved =
-        value === "draw" ? inputs.drawRate : value === "p0-win" ? inputs.firstPlayerWinRate : 1 - inputs.firstPlayerWinRate;
-      const pass = achieved >= SOLVED_VALUE_SELF_PLAY_FLOOR;
-      const detail = `self-play reached the proven "${value}" ${(achieved * 100).toFixed(1)}% of the time (floor ${(SOLVED_VALUE_SELF_PLAY_FLOOR * 100).toFixed(0)}%, proof: ${proof})`;
-      results.push(applyException("solved-value-reached", pass ? "pass" : "fail", detail, exceptions));
+      const detail = `self-play reached the proven "${solvedValue!.value}" ${(attainment.achieved * 100).toFixed(1)}% of the time (floor ${(SOLVED_VALUE_SELF_PLAY_FLOOR * 100).toFixed(0)}%, proof: ${solvedValue!.proof})`;
+      results.push(applyException("solved-value-reached", attainment.reached ? "pass" : "fail", detail, exceptions));
     }
   }
 
