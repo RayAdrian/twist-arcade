@@ -2766,3 +2766,67 @@ be useful"* and never asked *"does the cheap budget measure the same quantity."*
 listed conditions that were structurally unreachable; here the validation criterion would have
 accepted a budget that misreports the game by 20 points. Both were caught by someone treating the
 rule as a claim to check rather than a box to tick.
+
+---
+
+## C48 — Bid-Tac-Toe's spike: the simultaneous seams hold. Plus a TDD deviation, reported.
+
+### The spike found nothing broken, and that is worth recording
+
+`simultaneous: true` had never had a real user. The spike drove a full game through `runMatchup`,
+`replay()` and `handleBotRequest` together and **needed no workaround anywhere**:
+
+- `playOneGame` already branches on `active.mode` and assembles a 2-entry `moves` Map, calling each
+  seat's policy independently against the same pre-resolution state — plan §3.1's mapping exactly.
+- `GameOutcome.moves` records one `StepRecord` per ply with every actor together, so it feeds
+  `replay()` directly; a full random-vs-random game replayed byte-identically.
+- `testkit`'s generic `randomPlayout` — used by every `engineContract` property — **was already
+  simultaneous-aware before this game existed**, and passed outright at 100 iterations per property.
+- The worker host never had a channel for a pending bid to leak, because pending bids never enter
+  `S`. That is the design, not an accommodation.
+
+One real change: `@twist-arcade/harness` added as a dependency of the game package, following the
+fadeout/crackstep precedent.
+
+**Building the spike before the rest of the engine was the right sequencing** and cost hours rather
+than days had a seam been broken. Three games' worth of platform claims about simultaneity were
+load-bearing and untested until today; they held.
+
+### Plant #4 is the C41 lesson applied without being asked
+
+Three plants tested the engine. **The fourth tested the test**: a deliberately leaky `encode()`
+smuggling a sentinel through a module-level side channel, confirming T-SIM-4's assertion technique
+actually bites rather than passing vacuously on an engine that is honest by construction.
+
+That is the exact failure C41 recorded — a guard that passes because the situation could not
+distinguish honesty from cheating — caught here *pre-emptively* by someone who had only read about
+it.
+
+### The TDD deviation, and my ruling
+
+**Reported honestly and unprompted:** domain logic in `engine.ts` was implemented from the plan's
+spec first, then tested, with the mutation plants substituted as after-the-fact rigor. CLAUDE.md §3
+requires red→green.
+
+**Accepted, with the mitigation named.** For logic transcribed from a written spec, mutation
+testing is arguably a stronger check than red→green — every plant fired and each was verified to
+land where the guard could fail. What red→green would have bought and this does not is that the
+test is derived from the *specification* rather than from the *implementation*.
+
+**That gap is closed structurally, not by trust:** CLAUDE.md §1 requires Fable's stage-3 test design
+to be derived from the plan's acceptance criteria by someone who did not write the code. §11's
+criteria exist for exactly this. So the deviation is survivable *because* the loop has an
+independent test-design stage — and it would not be survivable in a project without one.
+
+### Three flags carried forward to B2/B3
+
+1. **`star: 1` at setup is load-bearing for the entire tie table** and reads awkwardly against H1's
+   "seat-0 (non-holder)" framing. Worth a second pair of eyes in review — a silent inversion here
+   would flip every tie in the game.
+2. **`ciGateBudget` deliberately unset**, so gates refuse until B3's sweep sets it. C22 working, not
+   an oversight.
+3. **The mirror probe will WARN**, because the board is spatially symmetric while bids and the star
+   have no reflective analogue. **Ruling: that should be `n/a` with a reason, not a WARN.** Where
+   mirroring is provably not value-preserving, the probe cannot measure its claim — the same
+   argument as C26's override and C23's solved-value relief. A WARN invites someone to tune away a
+   number that never meant anything. Implement at B3.
