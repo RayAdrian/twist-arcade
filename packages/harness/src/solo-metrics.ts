@@ -88,19 +88,54 @@ export interface ComputeSoloDistributionMetricsOptions {
   ceilingScore?: number;
 }
 
+/** C27 (platform-corrections.md): the subset of `SoloDistributionMetrics` computable WITHOUT
+ *  ever running Strong — real, fully-measured numbers derived only from `random`/`greedy`'s own
+ *  runs, exactly as trustworthy as the same fields in the full type. Every OTHER
+ *  `SoloDistributionMetrics` field needs `strong`'s scores by construction (a ratio/percentile/
+ *  CV against Strong, or a run-length/cap-hit/ceiling figure blended across all three roster
+ *  policies) and has no honest value without it — there is no placeholder number for "Strong
+ *  didn't run" that would not itself look like a real measurement (C4: "never a plausible-
+ *  looking artifact"), which is why this is a NARROWER, separate type rather than
+ *  `SoloDistributionMetrics` with some fields quietly left undefined. */
+export type SoloDistributionMetricsCiTier = Pick<
+  SoloDistributionMetrics,
+  "greedyVsRandomRatio" | "randomMedian" | "greedyMedian" | "randomP75" | "randomP90"
+>;
+
+/** Full shape: every field measured for real (nightly, or any CI-tier game that never opts
+ *  into C27 deferral). Unchanged from before C27 — same three-mandatory-summaries call, same
+ *  return type, same values. */
 export function computeSoloDistributionMetrics(
   runs: { random: SoloRunSummary; greedy: SoloRunSummary; strong: SoloRunSummary },
+  opts?: ComputeSoloDistributionMetricsOptions
+): SoloDistributionMetrics;
+/** C27 CI-tier partial: Strong never ran (too expensive to measure at this tier — see
+ *  `GameManifest.ciGateBudget.deferGatesToNightly`). `strong` is not merely optional in VALUE
+ *  here — it is absent from the argument's TYPE, so a caller cannot accidentally pass
+ *  `strong: undefined` and expect the full-shape return; omit the key entirely to get the
+ *  narrower, honest type. */
+export function computeSoloDistributionMetrics(
+  runs: { random: SoloRunSummary; greedy: SoloRunSummary },
+  opts?: ComputeSoloDistributionMetricsOptions
+): SoloDistributionMetricsCiTier;
+export function computeSoloDistributionMetrics(
+  runs: { random: SoloRunSummary; greedy: SoloRunSummary; strong?: SoloRunSummary },
   opts: ComputeSoloDistributionMetricsOptions = {}
-): SoloDistributionMetrics {
+): SoloDistributionMetrics | SoloDistributionMetricsCiTier {
   const { random, greedy, strong } = runs;
 
-  const strongMedian = median(strong.scores);
   const randomMedian = median(random.scores);
   const greedyMedian = median(greedy.scores);
-  const strongP10 = percentile(strong.scores, 0.1);
   const randomP75 = percentile(random.scores, 0.75);
   const randomP90 = percentile(random.scores, 0.9);
+  const greedyVsRandomRatio = safeRatio(greedyMedian, randomMedian);
 
+  if (!strong) {
+    return { greedyVsRandomRatio, randomMedian, greedyMedian, randomP75, randomP90 };
+  }
+
+  const strongMedian = median(strong.scores);
+  const strongP10 = percentile(strong.scores, 0.1);
   const allRunLengths = [...random.decisionsList, ...greedy.decisionsList, ...strong.decisionsList];
 
   let ceilingPileUp = 0;
@@ -112,7 +147,7 @@ export function computeSoloDistributionMetrics(
 
   return {
     strongVsRandomRatio: safeRatio(strongMedian, randomMedian),
-    greedyVsRandomRatio: safeRatio(greedyMedian, randomMedian),
+    greedyVsRandomRatio,
     strongVsGreedyRatio: safeRatio(strongMedian, greedyMedian),
     strongMedian,
     randomMedian,

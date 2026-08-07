@@ -82,6 +82,29 @@ export interface GameManifest {
      *  floor known (empirically) to keep Strong a meaningful yardstick for the Always-Safe
      *  gate, rather than silently reporting a ratio measured against a too-weak Strong. */
     soloChaseCiRollouts?: number;
+    /** platform-corrections.md C27: this lane's self-play-derived gates (two-player: strong-
+     *  vs-random / first-player-win-rate / draw-rate / mean-plies / ruthless-vs-standard /
+     *  solved-value-reached; solo score-chase: every row that needs a `strong` roster summary)
+     *  are too expensive to measure at ALL at suite "ci" for this game's real board/budget —
+     *  not merely scaled down (that's `twoPlayerCiRollouts`/`soloChaseCiRollouts` above), but
+     *  skipped entirely, with every affected row reporting the harness's `"deferred"` status
+     *  (naming nightly as the tier that measures it) instead of `"n/a"` — `"n/a"` means "this
+     *  gate does not apply"; a deferred gate DOES apply and WILL be measured, just not here.
+     *  `reason` should cite the measured cost (e.g. "Strong-dependent; ~4.6h at seedCount=100
+     *  in CI — platform-corrections.md C27") — it is folded verbatim into every deferred row's
+     *  detail string, so it is what a reader of the CI report actually sees.
+     *
+     *  Omitted entirely (the default): behavior is 100% unchanged — a game that never opts in
+     *  always measures for real at suite "ci", exactly as before this field existed.
+     *
+     *  suite "nightly" ALWAYS ignores this field (same rule as the two siblings above) and
+     *  measures the full lane for real — enforced twice: structurally, by `runCiSuite`/
+     *  `runSoloChaseCiGate` only ever consulting this field when `suite === "ci"`, and
+     *  independently by `evaluateCiGates`/`evaluateSoloGates` themselves refusing
+     *  (`TwoPlayerDeferredGateAtNightlyError` / `SoloDeferredGateAtNightlyError`) if a caller
+     *  ever tries to defer at "nightly" too — a row deferred at EVERY tier is a gate that never
+     *  runs, and that must be a loud failure, never a quiet status. */
+    deferGatesToNightly?: { reason: string };
   };
 
   /** Game-theoretic value under optimal play, WHEN PROVEN (platform-corrections.md C23).

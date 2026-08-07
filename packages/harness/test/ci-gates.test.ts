@@ -125,7 +125,9 @@ describe("runTwoPlayerCiGate", () => {
     // it silently ignored the caller's value and fell through to some hardcoded number, this
     // report's own recorded matchup game count would betray it.
     const report = runTwoPlayerCiGate(classicTicTacToe, sabotagedManifest, { seed: "ci-gates:2p:override", games: 24 });
-    expect(report.matchups.strongVsRandom.metrics.games).toBe(24);
+    // Never null here — this manifest has no ciGateBudget.deferGatesToNightly, so matchups ran
+    // for real (the C27 nullable case is exercised directly in suites.test.ts).
+    expect(report.matchups!.strongVsRandom.metrics.games).toBe(24);
   });
 
   it("a sabotaged ruthless tier trips strong-vs-random for real through this wrapper", () => {
@@ -344,6 +346,144 @@ describe("runSoloChaseCiGate — C19 hidden-info budget scaling (rollouts AND th
       })
     ).not.toThrow(HiddenInfoBudgetTooLowError);
   });
+});
+
+// ---------------------------------------------------------------------------------------
+// platform-corrections.md C27: `manifest.ciGateBudget.deferGatesToNightly` — Mine Run's real-
+// board Strong-dependent solo-chase gates cost ~4.6h at seedCount=100 (measured), unaffordable
+// in CI. Wired here through `runSoloChaseCiGate`'s REAL call path (not just the pure
+// `evaluateSoloGates` unit tests in solo-gates.test.ts): at suite "ci" with an active deferral,
+// Strong (and Always-Safe, which needs Strong's scores) never runs at all; at suite "nightly"
+// the deferral is ignored and the full roster runs for real, exactly like every other
+// `ciGateBudget` field's suite-scoping rule in this module.
+// ---------------------------------------------------------------------------------------
+
+describe("runSoloChaseCiGate — C27: manifest.ciGateBudget.deferGatesToNightly", () => {
+  const DEFER_REASON = "Strong-dependent; ~4.6h at seedCount=100 in CI — platform-corrections.md C27";
+
+  const chaseManifest: GameManifest = {
+    id: "bank-run-fixture",
+    title: "Bank Run",
+    classic: "press-your-luck",
+    ruleSentence: "Push your luck or bank it.",
+    tags: [],
+    estMinutes: 1,
+    modes: { bot: false, hotseat: false, asyncLink: false },
+    players: { min: 1, max: 1 },
+    difficultyTiers: [],
+    solo: { format: "score-chase" },
+    ciGateBudget: { deferGatesToNightly: { reason: DEFER_REASON } },
+  };
+  const alwaysBank = (_view: BankRunState): BankRunMove => ({ kind: "bank" });
+
+  it("suite 'ci' (default): every Strong-dependent row is 'deferred', alwaysSafeVsStrong is undefined (Strong never ran), and greedyVsRandomRatio/grindProbe are STILL real", () => {
+    const report = runSoloChaseCiGate(bankRun, chaseManifest, {
+      seed: "ci-gates:c27:defer-ci",
+      seedCount: 100,
+      safeMove: alwaysBank,
+    });
+
+    for (const name of ["strongVsRandomRatio", "distributionOverlap", "strongVsGreedyRatio", "strongScoreCV", "alwaysSafeVsStrong", "medianRunLength", "capHitRate", "ceilingPileUp"]) {
+      const gate = report.gates.find((g) => g.name === name)!;
+      expect(gate.status, `gate ${name}`).toBe("deferred");
+      expect(gate.detail).toContain("nightly");
+      expect(gate.detail).toContain(DEFER_REASON);
+    }
+    expect(report.gates.find((g) => g.name === "greedyVsRandomRatio")!.status).not.toBe("deferred");
+    // grindProbe is real (not deferred) here too — its actual pass/fail is a property of the
+    // bank-run FIXTURE's default round-cap shape (documented above at this describe block's own
+    // "healthy" test), orthogonal to deferral, so this test only asserts it was ACTUALLY
+    // evaluated rather than skipped. "ok can be true alongside deferred rows" (the provisional-
+    // pass case) is already proven at the pure-evaluator level in solo-gates.test.ts and
+    // suites.test.ts; the dedicated planted-violation test below proves the integration-level
+    // analogue with a grindProbe FAIL specifically.
+    expect(report.gates.find((g) => g.name === "grindProbe")!.status).not.toBe("deferred");
+    expect(report.alwaysSafeVsStrong).toBeUndefined();
+  });
+
+  it("suite 'ci': the deferred run is dramatically cheaper — no Always-Safe probe, no Strong roster run at all (proven by absence of the fields those would populate, not by timing, which is inherently noisy)", () => {
+    const report = runSoloChaseCiGate(bankRun, chaseManifest, {
+      seed: "ci-gates:c27:defer-cheap",
+      seedCount: 100,
+      safeMove: alwaysBank,
+    });
+    // metrics is the CI-tier PARTIAL shape — no strong-dependent keys present at all.
+    expect(Object.keys(report.metrics).sort()).toEqual(
+      ["greedyMedian", "greedyVsRandomRatio", "randomMedian", "randomP75", "randomP90"].sort()
+    );
+  });
+
+  it("suite 'nightly': IGNORES the deferral entirely — the full roster (random, greedy, AND strong) runs for real, every row is measured, alwaysSafeVsStrong is a real number", () => {
+    const report = runSoloChaseCiGate(bankRun, chaseManifest, {
+      seed: "ci-gates:c27:defer-nightly-ignored",
+      seedCount: 100,
+      safeMove: alwaysBank,
+      suite: "nightly",
+    });
+
+    for (const gate of report.gates) {
+      expect(gate.status, `gate ${gate.name}`).not.toBe("deferred");
+    }
+    expect(typeof report.alwaysSafeVsStrong).toBe("number");
+    // metrics is the FULL shape now — strong-dependent keys present.
+    expect(Object.keys(report.metrics)).toContain("strongMedian");
+  });
+
+  it("routes through runGameCiGate's dispatcher identically, deferral intact", async () => {
+    const result = await runGameCiGate(bankRun, chaseManifest, {
+      kind: "solo-chase",
+      seed: "ci-gates:c27:dispatched",
+      seedCount: 100,
+      safeMove: alwaysBank,
+    });
+    expect(result.kind).toBe("solo-chase");
+    expect(typeof result.ok).toBe("boolean");
+    if (result.kind === "solo-chase") {
+      expect(result.report.gates.find((g) => g.name === "alwaysSafeVsStrong")?.status).toBe("deferred");
+    }
+  });
+
+  it("PLANTED VIOLATION: a deferred CI run is STILL a real fail when grindProbe trips — proves deferral is not a blanket free pass", () => {
+    const brokenEngine = createBankRun({ plantFarmingLoop: true });
+    const report = runSoloChaseCiGate(brokenEngine, chaseManifest, {
+      seed: "ci-gates:c27:defer-grind-fail",
+      seedCount: 100,
+      safeMove: alwaysBank,
+    });
+    expect(report.gates.find((g) => g.name === "grindProbe")?.status).toBe("fail");
+    expect(report.ok).toBe(false);
+  });
+
+  it("real Mine Run engine (6x6 fixture): suite 'ci' with deferral active never runs Strong — proven by real elapsed time staying near Random/Greedy's cost, not Strong's (which alone took tens of seconds in the C19 tests above at the same seed count)", () => {
+    const engine = createAlwaysSafeHealthyMineRun();
+    const manifest: GameManifest = {
+      id: "mine-run-fixture",
+      title: "Mine Run",
+      classic: "Minesweeper",
+      ruleSentence: "ci-gates.test.ts Mine Run C27 fixture.",
+      tags: [],
+      estMinutes: 3,
+      modes: { bot: false, hotseat: false, asyncLink: false },
+      players: { min: 1, max: 1 },
+      difficultyTiers: [],
+      solo: { format: "score-chase", moveCap: 30 },
+      ciGateBudget: { soloChaseCiRollouts: 320, deferGatesToNightly: { reason: DEFER_REASON } },
+    };
+    const started = Date.now();
+    const report = runSoloChaseCiGate(engine, manifest, {
+      seed: "ci-gates:c27:mine-run-defer-real",
+      seedCount: 15,
+      safeMove: mineRunSafeMove,
+    });
+    const elapsedMs = Date.now() - started;
+    expect(report.gates.find((g) => g.name === "alwaysSafeVsStrong")?.status).toBe("deferred");
+    expect(report.alwaysSafeVsStrong).toBeUndefined();
+    // The C19 test above ran Strong at the SAME 320-rollout/15-seed config and took ~50s just
+    // for the healthy/degenerate PAIR (so ~tens of seconds for ONE run). Random+greedy alone
+    // (no Strong, no Always-Safe) finishing in well under that is the real, observable proof
+    // this test exists to make — generous margin (10s) to stay robust on a loaded CI box.
+    expect(elapsedMs).toBeLessThan(10_000);
+  }, 30_000);
 });
 
 // ---------------------------------------------------------------------------------------

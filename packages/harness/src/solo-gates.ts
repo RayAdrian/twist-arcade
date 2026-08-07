@@ -22,9 +22,16 @@
 import type { GameManifest, SoloThresholds } from "@twist-arcade/game-spec";
 import { DEFAULT_SOLO_THRESHOLDS } from "@twist-arcade/game-spec";
 import type { GrindResult } from "./probes-solo";
-import type { SoloDistributionMetrics } from "./solo-metrics";
+import type { SoloDistributionMetrics, SoloDistributionMetricsCiTier } from "./solo-metrics";
 
-export type GateStatus = "pass" | "warn" | "fail" | "n/a";
+/** `"deferred"` (platform-corrections.md C27) is NOT a fourth flavor of "n/a". `"n/a"` means
+ *  "this gate does not apply to this game/format" (C2) — a claim that will NEVER become a
+ *  number, at any tier. `"deferred"` means the exact opposite: the gate DOES apply, and WILL be
+ *  measured for real, just not at THIS tier (too expensive — see
+ *  `GameManifest.ciGateBudget.deferGatesToNightly`). Collapsing the two would silently stop a
+ *  gate from ever running again while its report kept reading as "doesn't apply here" forever —
+ *  the exact conflation C2/C23 already exist to prevent, in a third place. */
+export type GateStatus = "pass" | "warn" | "fail" | "n/a" | "deferred";
 
 export interface GateResult {
   readonly name: string;
@@ -32,10 +39,10 @@ export interface GateResult {
   readonly detail: string;
 }
 
-/** Everything a score-chase's gate table needs — the output of a solo-ci suite run against a
- *  `score-chase` manifest (buildSoloRoster + runSoloAgentOverSeeds + computeSoloDistributionMetrics
- *  + grindProbe + runAlwaysSafeProbe/alwaysSafeVsStrongRatio). */
-export interface SoloGateChaseInputs {
+/** Full inputs — Strong ran, so every row below is measured for real. This is the shape every
+ *  score-chase gate table used before C27, and the ONLY shape suite "nightly" may ever supply
+ *  (`evaluateSoloGates` refuses otherwise — see `SoloDeferredGateAtNightlyError`). */
+export interface SoloGateChaseInputsFull {
   metrics: SoloDistributionMetrics;
   grind: GrindResult;
   /** Required whenever a chase's roster ran at all — `runAlwaysSafeProbe` hard-errors
@@ -47,6 +54,63 @@ export interface SoloGateChaseInputs {
    *  entirely for a non-misère game — the gate reports "n/a" with a reason distinguishing
    *  "not misère-tagged" from a format exclusion. */
   suicide?: { suicideIsOptimalLine: boolean };
+}
+
+/** C27: Strong did NOT run at this tier — Mine Run's real-board Strong-dependent rows cost
+ *  ~4.6h at seedCount=100 (measured, platform-corrections.md C27), unaffordable in CI.
+ *  `metrics` is only the subset honestly computable from random+greedy alone
+ *  (`computeSoloDistributionMetrics({random, greedy})`'s narrower overload). Every row that
+ *  needs Strong reports `"deferred"` — naming `deferredToTier` (where it WILL be measured) and
+ *  `deferredReason` (why it isn't measured here) — never `"n/a"` and never silently omitted. */
+export interface SoloGateChaseInputsDeferred {
+  metrics: SoloDistributionMetricsCiTier;
+  grind: GrindResult;
+  /** The tier that measures the deferred rows for real — today always `"nightly"` (the only
+   *  other suite), spelled out rather than hardcoded so a report's own detail string names it
+   *  explicitly instead of a caller having to infer it. */
+  deferredToTier: string;
+  /** Folded verbatim into every deferred row's detail (see `GameManifest.ciGateBudget.
+   *  deferGatesToNightly`'s own doc) — this is what a reader of the CI report actually sees. */
+  deferredReason: string;
+  suicide?: { suicideIsOptimalLine: boolean };
+}
+
+/** Either shape a score-chase gate table can be evaluated against — see the two interfaces'
+ *  own docs. Discriminated on the presence of `deferredToTier`. */
+export type SoloGateChaseInputs = SoloGateChaseInputsFull | SoloGateChaseInputsDeferred;
+
+/** The exact set of chase gate rows that need `strong` and therefore become `"deferred"`
+ *  (never evaluated) under `SoloGateChaseInputsDeferred` — named once here so both
+ *  `evaluateChaseGates` and the nightly abuse guard below stay in lockstep with each other. */
+const STRONG_DEPENDENT_CHASE_GATES = [
+  "strongVsRandomRatio",
+  "distributionOverlap",
+  "strongVsGreedyRatio",
+  "strongScoreCV",
+  "alwaysSafeVsStrong",
+  "medianRunLength",
+  "capHitRate",
+  "ceilingPileUp",
+] as const;
+
+/** Thrown by `evaluateSoloGates` when suite `"nightly"` is given `SoloGateChaseInputsDeferred`
+ *  (platform-corrections.md C27's abuse guard). Nightly is the ONLY tier that ever measures a
+ *  deferred row for real — `runSoloChaseCiGate` structurally never builds deferred inputs at
+ *  suite "nightly" (it only ever consults `manifest.ciGateBudget.deferGatesToNightly` when
+ *  `suite === "ci"`), but this is independent, defense-in-depth enforcement at the pure
+ *  evaluator itself: a row deferred at EVERY tier is a gate that never runs again, and that
+ *  must be a loud, immediate failure here, not a quiet status that ships in a "nightly: OK"
+ *  report nobody ever double-checks. */
+export class SoloDeferredGateAtNightlyError extends Error {
+  constructor(tier: string) {
+    super(
+      `evaluateSoloGates: suite "nightly" was given Strong-dependent chase inputs still marked ` +
+        `deferred (to "${tier}") for [${STRONG_DEPENDENT_CHASE_GATES.join(", ")}] ` +
+        "(platform-corrections.md C27). A gate deferred at EVERY tier never runs — nightly must " +
+        "supply the FULL roster (random, greedy, AND strong), never the CI-tier partial."
+    );
+    this.name = "SoloDeferredGateAtNightlyError";
+  }
 }
 
 /** Everything a daily-puzzle's gate table needs — the output of `harness certify` /
@@ -74,6 +138,13 @@ export interface EvaluateSoloGatesInput {
   manifest: Pick<GameManifest, "solo" | "thresholds">;
   chase?: SoloGateChaseInputs;
   puzzle?: SoloGatePuzzleInputs;
+  /** Which suite this evaluation is for — only meaningful for a score-chase `chase` input
+   *  (C27's abuse guard): `"nightly"` refuses (`SoloDeferredGateAtNightlyError`) if `chase` is
+   *  still the CI-tier `SoloGateChaseInputsDeferred` shape, since nightly is the tier that MUST
+   *  measure Strong-dependent rows for real. Defaults to `"ci"` — the deferred shape's own home
+   *  tier — so every existing caller that never mentions suite (daily-puzzle, or a chase that
+   *  always ran the full roster) is unaffected. */
+  suite?: "ci" | "nightly";
 }
 
 function resolveThresholds(manifest: Pick<GameManifest, "thresholds">): SoloThresholds {
@@ -110,63 +181,104 @@ function twoTier(
   return { name, status, detail };
 }
 
+/** `"deferred"`, naming the tier that measures the row for real (C27) — distinct at the report
+ *  layer from both `"n/a"` (`na()` above: never measured, at any tier) and a real `"pass"`/
+ *  `"fail"` (measured, right here, right now). */
+function deferredRow(name: string, tier: string, reason: string): GateResult {
+  return { name, status: "deferred", detail: `measured at ${tier} (${reason})` };
+}
+
 function evaluateChaseGates(inputs: SoloGateChaseInputs, t: SoloThresholds): GateResult[] {
-  const m = inputs.metrics;
   const [runLo, runHi] = t.runLengthRange;
-  const results: GateResult[] = [
-    passFail(
-      "strongVsRandomRatio",
-      m.strongVsRandomRatio < t.minStrongVsRandomRatio,
-      `${m.strongVsRandomRatio.toFixed(3)} (fail if < ${t.minStrongVsRandomRatio})`
-    ),
-    passFail(
-      "distributionOverlap",
-      m.distributionOverlapsBadly,
-      `strongMedian=${m.strongMedian}, randomP75=${m.randomP75}, strongP10=${m.strongP10}, randomP90=${m.randomP90}`
-    ),
-    passFail(
-      "greedyVsRandomRatio",
-      m.greedyVsRandomRatio < t.minGreedyVsRandomRatio,
-      `${m.greedyVsRandomRatio.toFixed(3)} (fail if < ${t.minGreedyVsRandomRatio})`
-    ),
-    passFail(
-      "strongVsGreedyRatio",
-      m.strongVsGreedyRatio < t.minStrongVsGreedyRatio,
-      `${m.strongVsGreedyRatio.toFixed(3)} (fail if < ${t.minStrongVsGreedyRatio})`
-    ),
-    passFail(
-      "strongScoreCV",
-      m.strongScoreCV > t.maxStrongScoreCV,
-      `${m.strongScoreCV.toFixed(3)} (fail if > ${t.maxStrongScoreCV})`
-    ),
-    passFail(
-      "alwaysSafeVsStrong",
-      inputs.alwaysSafeVsStrong >= t.maxAlwaysSafeVsStrongRatio,
-      `${inputs.alwaysSafeVsStrong.toFixed(3)} (fail if >= ${t.maxAlwaysSafeVsStrongRatio})`
-    ),
-    passFail(
-      "grindProbe",
-      inputs.grind.found,
-      inputs.grind.found
-        ? `zero-risk cycle found (length ${inputs.grind.cycle?.length ?? "?"}, scoreDelta ${inputs.grind.scoreDelta})`
-        : "no zero-risk unbounded cycle found"
-    ),
-    passFail(
-      "medianRunLength",
-      m.medianRunLength < runLo || m.medianRunLength > runHi,
-      `${m.medianRunLength} decisions (fail outside [${runLo}, ${runHi}])`
-    ),
-    passFail(
-      "capHitRate",
-      m.capHitRate > t.maxCapHitRate,
-      `${(m.capHitRate * 100).toFixed(2)}% (fail if > ${(t.maxCapHitRate * 100).toFixed(2)}%)`
-    ),
-    passFail(
-      "ceilingPileUp",
-      m.ceilingPileUp > t.maxCeilingPileUp,
-      `${(m.ceilingPileUp * 100).toFixed(2)}% (fail if > ${(t.maxCeilingPileUp * 100).toFixed(2)}%)`
-    ),
-  ];
+  const results: GateResult[] = [];
+
+  if ("deferredToTier" in inputs) {
+    const { metrics: m, grind, deferredToTier: tier, deferredReason: reason } = inputs;
+    results.push(
+      deferredRow("strongVsRandomRatio", tier, reason),
+      deferredRow("distributionOverlap", tier, reason),
+      // greedyVsRandomRatio needs only random+greedy — it is NOT in STRONG_DEPENDENT_CHASE_GATES
+      // and is evaluated for real here, exactly as it would be at nightly (proof, per the
+      // standing instruction, that the partial path can still fail for real: see
+      // solo-gates.test.ts's planted violation on this exact row under deferred inputs).
+      passFail(
+        "greedyVsRandomRatio",
+        m.greedyVsRandomRatio < t.minGreedyVsRandomRatio,
+        `${m.greedyVsRandomRatio.toFixed(3)} (fail if < ${t.minGreedyVsRandomRatio})`
+      ),
+      deferredRow("strongVsGreedyRatio", tier, reason),
+      deferredRow("strongScoreCV", tier, reason),
+      deferredRow("alwaysSafeVsStrong", tier, reason),
+      // grindProbe needs no roster agent at all (probes-solo.ts's grindProbe searches the
+      // engine directly) — real here too, same as nightly.
+      passFail(
+        "grindProbe",
+        grind.found,
+        grind.found
+          ? `zero-risk cycle found (length ${grind.cycle?.length ?? "?"}, scoreDelta ${grind.scoreDelta})`
+          : "no zero-risk unbounded cycle found"
+      ),
+      deferredRow("medianRunLength", tier, reason),
+      deferredRow("capHitRate", tier, reason),
+      deferredRow("ceilingPileUp", tier, reason)
+    );
+  } else {
+    const m = inputs.metrics;
+    results.push(
+      passFail(
+        "strongVsRandomRatio",
+        m.strongVsRandomRatio < t.minStrongVsRandomRatio,
+        `${m.strongVsRandomRatio.toFixed(3)} (fail if < ${t.minStrongVsRandomRatio})`
+      ),
+      passFail(
+        "distributionOverlap",
+        m.distributionOverlapsBadly,
+        `strongMedian=${m.strongMedian}, randomP75=${m.randomP75}, strongP10=${m.strongP10}, randomP90=${m.randomP90}`
+      ),
+      passFail(
+        "greedyVsRandomRatio",
+        m.greedyVsRandomRatio < t.minGreedyVsRandomRatio,
+        `${m.greedyVsRandomRatio.toFixed(3)} (fail if < ${t.minGreedyVsRandomRatio})`
+      ),
+      passFail(
+        "strongVsGreedyRatio",
+        m.strongVsGreedyRatio < t.minStrongVsGreedyRatio,
+        `${m.strongVsGreedyRatio.toFixed(3)} (fail if < ${t.minStrongVsGreedyRatio})`
+      ),
+      passFail(
+        "strongScoreCV",
+        m.strongScoreCV > t.maxStrongScoreCV,
+        `${m.strongScoreCV.toFixed(3)} (fail if > ${t.maxStrongScoreCV})`
+      ),
+      passFail(
+        "alwaysSafeVsStrong",
+        inputs.alwaysSafeVsStrong >= t.maxAlwaysSafeVsStrongRatio,
+        `${inputs.alwaysSafeVsStrong.toFixed(3)} (fail if >= ${t.maxAlwaysSafeVsStrongRatio})`
+      ),
+      passFail(
+        "grindProbe",
+        inputs.grind.found,
+        inputs.grind.found
+          ? `zero-risk cycle found (length ${inputs.grind.cycle?.length ?? "?"}, scoreDelta ${inputs.grind.scoreDelta})`
+          : "no zero-risk unbounded cycle found"
+      ),
+      passFail(
+        "medianRunLength",
+        m.medianRunLength < runLo || m.medianRunLength > runHi,
+        `${m.medianRunLength} decisions (fail outside [${runLo}, ${runHi}])`
+      ),
+      passFail(
+        "capHitRate",
+        m.capHitRate > t.maxCapHitRate,
+        `${(m.capHitRate * 100).toFixed(2)}% (fail if > ${(t.maxCapHitRate * 100).toFixed(2)}%)`
+      ),
+      passFail(
+        "ceilingPileUp",
+        m.ceilingPileUp > t.maxCeilingPileUp,
+        `${(m.ceilingPileUp * 100).toFixed(2)}% (fail if > ${(t.maxCeilingPileUp * 100).toFixed(2)}%)`
+      )
+    );
+  }
 
   if (inputs.suicide) {
     results.push(
@@ -184,7 +296,7 @@ function evaluateChaseGates(inputs: SoloGateChaseInputs, t: SoloThresholds): Gat
 
   // Puzzle-only rows, explicitly N/A for a score chase (mine-run.md §6: "No certificate —
   // certificates are the *puzzle* pipeline; a score chase ships on the distribution gates
-  // instead").
+  // instead"). Unaffected by deferral — these never applied to a score chase regardless of tier.
   results.push(
     na("certificatePresent", "score-chase format — no daily certificate pipeline"),
     na("certificatePar", "score-chase format — no par to certify"),
@@ -314,6 +426,13 @@ export function evaluateSoloGates(input: EvaluateSoloGatesInput): GateResult[] {
           "— run the roster/probes suite first (this is a caller error, not an N/A gate)."
       );
     }
+    // C27's abuse guard: nightly is the ONLY tier allowed to report a Strong-dependent row as
+    // anything other than "deferred" — a caller that hands nightly the CI-tier deferred shape
+    // (by accident, or by copy-pasting the ci-tier wiring) gets refused here, loudly, rather
+    // than shipping a "nightly: OK" report where the gate never actually ran.
+    if ((input.suite ?? "ci") === "nightly" && "deferredToTier" in input.chase) {
+      throw new SoloDeferredGateAtNightlyError(input.chase.deferredToTier);
+    }
     return evaluateChaseGates(input.chase, t);
   }
 
@@ -339,4 +458,13 @@ export function evaluateSoloGates(input: EvaluateSoloGatesInput): GateResult[] {
  *  `results` for `status === "warn"` directly rather than relying on this helper alone. */
 export function allGatesPass(results: readonly GateResult[]): boolean {
   return results.every((r) => r.status !== "fail");
+}
+
+/** True iff any row is `"deferred"` — the C27 "provisional pass" signal: a report can be
+ *  `allGatesPass` (no `"fail"`) while still not being a FULLY measured green, because one or
+ *  more Strong-dependent rows haven't run yet at this tier. `report.ts`'s `formatSoloGateTable`
+ *  checks this to render that distinction rather than printing a bare "OK" indistinguishable
+ *  from a fully-measured nightly pass. */
+export function hasDeferredGates(results: readonly GateResult[]): boolean {
+  return results.some((r) => r.status === "deferred");
 }

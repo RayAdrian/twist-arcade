@@ -126,3 +126,47 @@ describe("computeSoloDistributionMetrics — the CI gate shape (roadmap §6, sol
     expect(metrics.capHitRate).toBe(0.5);
   });
 });
+
+// ---------------------------------------------------------------------------------------
+// C27 (platform-corrections.md): computeSoloDistributionMetrics(random, greedy, strong) took
+// all three summaries as MANDATORY arguments — so even a caller that only wants the rows that
+// don't need Strong (greedyVsRandomRatio, the random/greedy medians/percentiles) had to run
+// Strong first just to have an object to pass. Mine Run's real Strong-dependent CI cost is
+// ~4.6h at seedCount=100 (measured), which makes that structural coupling the actual blocker
+// for deferring Strong-dependent gates to nightly. `strong` is now OPTIONAL: omit it entirely
+// and the function returns only the fields honestly computable from random+greedy alone — never
+// a placeholder/sentinel for the Strong-dependent fields (C4: "never a plausible-looking
+// artifact"), which is why the CI-tier return is a NARROWER type, not the same shape with holes.
+// ---------------------------------------------------------------------------------------
+
+describe("computeSoloDistributionMetrics({random, greedy}) — C27 CI-tier partial, Strong never ran", () => {
+  it("computes greedyVsRandomRatio and the random/greedy medians/percentiles for real, with no strong summary supplied at all", () => {
+    const random = summaryOf("random", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    const greedy = summaryOf("greedy", [15, 16, 17, 18, 19, 20, 21, 22, 23, 24]);
+    const metrics = computeSoloDistributionMetrics({ random, greedy });
+
+    expect(metrics.randomMedian).toBe(median(random.scores));
+    expect(metrics.greedyMedian).toBe(median(greedy.scores));
+    expect(metrics.randomP75).toBe(percentile(random.scores, 0.75));
+    expect(metrics.randomP90).toBe(percentile(random.scores, 0.9));
+    expect(metrics.greedyVsRandomRatio).toBe(safeRatio(median(greedy.scores), median(random.scores)));
+
+    // The Strong-dependent fields simply do not exist on this narrower return type — proven at
+    // the type level (TypeScript would refuse `metrics.strongMedian` here to even compile) and
+    // reconfirmed at runtime so a future refactor that widens the type back to the full shape
+    // (silently reintroducing a sentinel) gets caught.
+    expect(Object.keys(metrics).sort()).toEqual(
+      ["greedyMedian", "greedyVsRandomRatio", "randomMedian", "randomP75", "randomP90"].sort()
+    );
+  });
+
+  it("the partial path's greedyVsRandomRatio still fails for real — a degenerate 'greedy' no better than random trips it, exactly as the full path would", () => {
+    const random = summaryOf("random", [10, 10, 10, 10, 10]);
+    const degenerateGreedy = summaryOf("greedy", [10, 10, 10, 10, 10]); // no better than random
+    const metrics = computeSoloDistributionMetrics({ random, greedy: degenerateGreedy });
+    // greedyVsRandomRatio's own hard-fail line is < 1.5 (solo-gates.ts's minGreedyVsRandomRatio
+    // default) — a ratio of exactly 1 is well below it, a real, honestly-measured failure with
+    // no Strong summary anywhere in reach.
+    expect(metrics.greedyVsRandomRatio).toBe(1);
+  });
+});

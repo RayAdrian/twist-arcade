@@ -28,7 +28,15 @@ import { resolveNamedAgent } from "./roster";
 import { runMatchup, type MatchupReport, type RunMatchupOptions } from "./runner";
 import { agentWinRate } from "./metrics";
 
-export type GateStatus = "pass" | "fail" | "warn" | "n/a";
+/** `"deferred"` (platform-corrections.md C27) is NOT a fourth flavor of "n/a". `"n/a"` means
+ *  "this gate does not apply to this game" (C2/C23/C26 — a claim that will NEVER become a
+ *  number, at any tier: a proven-draw's FPA band, a manifest with no "standard" tier, a CI
+ *  rollout override that changed the very quantity under comparison). `"deferred"` means the
+ *  opposite: the gate DOES apply and WILL be measured for real, just not at THIS tier — too
+ *  expensive (see `GameManifest.ciGateBudget.deferGatesToNightly`). Order vs Chaos, Tilt, and
+ *  Bid-Tac-Toe (docs/plans/) each name this exact status as a load-bearing dependency for their
+ *  own balance-gate reporting at PR tier. */
+export type GateStatus = "pass" | "fail" | "warn" | "n/a" | "deferred";
 
 export interface GateResult {
   readonly gate: string;
@@ -37,6 +45,60 @@ export interface GateResult {
   /** Present iff a manifest `exceptions[]` entry matched this gate and downgraded a would-be
    *  "fail" to "warn" (plan §7.5: an exception is visible in review, never a silent pass). */
   readonly exceptionJustification?: string;
+}
+
+/** Info `evaluateCiGates` needs to decide whether this lane's self-play-derived gates are
+ *  deferred to nightly at this run (platform-corrections.md C27). `active` is true only when
+ *  suite "ci" actually saw `manifest.ciGateBudget.deferGatesToNightly` — the SAME condition
+ *  `runCiSuite` uses to skip running any matchup at all, computed once and threaded through
+ *  rather than re-derived, so the gate table and the skipped self-play can never disagree about
+ *  whether deferral happened. `reason` is folded verbatim into every deferred row's detail. */
+export interface CiGateDeferral {
+  readonly active: boolean;
+  readonly reason: string;
+}
+
+/** Every two-player gate row `evaluateCiGates` owns — ALL SIX can report `"deferred"` when a
+ *  `CiGateDeferral` is active, but four of them (`ruthless-vs-standard`, `solved-value-reached`,
+ *  and the solvedValue-proven branches of `first-player-win-rate`/`draw-rate`) have their own
+ *  STRUCTURAL "n/a" reasons (no "standard" tier; no proven solvedValue; a proven-draw's
+ *  unsatisfiable-by-construction band) that must keep firing regardless of deferral — those
+ *  checks stay in front of the deferral check in their own blocks below, so a row that was
+ *  already n/a for an unrelated reason never gets relabelled "deferred". Named once here so the
+ *  nightly abuse guard stays in lockstep with the gate blocks themselves. */
+const DEFERRABLE_CI_GATES = [
+  "strong-vs-random",
+  "first-player-win-rate",
+  "draw-rate",
+  "mean-plies",
+  "ruthless-vs-standard",
+  "solved-value-reached",
+] as const;
+
+/** `"deferred"`, naming the tier that measures the row for real (C27) — distinct at the report
+ *  layer from both `"n/a"` (never measured, at any tier) and a real `"pass"`/`"fail"`/`"warn"`
+ *  (measured, right here, right now). */
+function deferredGate(gate: string, reason: string): GateResult {
+  return { gate, status: "deferred", detail: `measured at nightly (${reason})` };
+}
+
+/** Thrown by `evaluateCiGates` when suite `"nightly"` is given an active `CiGateDeferral`
+ *  (platform-corrections.md C27's abuse guard). `runCiSuite` structurally never builds an
+ *  active deferral at suite "nightly" (it only ever consults
+ *  `manifest.ciGateBudget.deferGatesToNightly` when `suite === "ci"`), but this is independent,
+ *  defense-in-depth enforcement at the pure evaluator itself: a row deferred at EVERY tier is a
+ *  gate that never runs again, and that must be a loud, immediate failure here, not a quiet
+ *  status shipped in a "nightly: OK" report nobody double-checks. */
+export class TwoPlayerDeferredGateAtNightlyError extends Error {
+  constructor(reason: string) {
+    super(
+      `evaluateCiGates: suite "nightly" was given an ACTIVE deferral (reason: "${reason}") for ` +
+        `[${DEFERRABLE_CI_GATES.join(", ")}] (platform-corrections.md C27). A gate deferred at ` +
+        "EVERY tier never runs — nightly must measure the full self-play table for real, never " +
+        "defer again."
+    );
+    this.name = "TwoPlayerDeferredGateAtNightlyError";
+  }
 }
 
 /** The already-computed numbers `evaluateCiGates` gates on — kept separate from `MatchupReport`
@@ -146,7 +208,8 @@ export function evaluateCiGates(
   exceptions: readonly ManifestException[] = [],
   suite: "ci" | "nightly" = "ci",
   solvedValue?: SolvedValueClaim,
-  ruthlessBudgets?: RuthlessVsStandardBudgets
+  ruthlessBudgets?: RuthlessVsStandardBudgets,
+  deferral?: CiGateDeferral
 ): GateResult[] {
   // Validated up front, before any gate runs — an exception with a blank justification is
   // rejected regardless of whether it ends up matching a failing gate (see
@@ -163,31 +226,48 @@ export function evaluateCiGates(
     throw new MissingSolvedValueProofError(solvedValue.value);
   }
 
+  // C27's abuse guard: nightly is the ONLY tier allowed to report these six rows as anything
+  // other than "deferred" — a caller that hands nightly an active deferral (by accident, or by
+  // copy-pasting the ci-tier wiring) gets refused here, loudly, rather than shipping a
+  // "nightly: OK" report where the gate never actually ran.
+  if (suite === "nightly" && deferral?.active) {
+    throw new TwoPlayerDeferredGateAtNightlyError(deferral.reason);
+  }
+
   const results: GateResult[] = [];
 
   {
-    const pass = inputs.strongVsRandomWinRate >= thresholds.strongVsRandomMinWinRate;
-    results.push(
-      applyException(
-        "strong-vs-random",
-        pass ? "pass" : "fail",
-        `${(inputs.strongVsRandomWinRate * 100).toFixed(1)}% (min ${(thresholds.strongVsRandomMinWinRate * 100).toFixed(1)}%)`,
-        exceptions
-      )
-    );
+    if (deferral?.active) {
+      results.push(deferredGate("strong-vs-random", deferral.reason));
+    } else {
+      const pass = inputs.strongVsRandomWinRate >= thresholds.strongVsRandomMinWinRate;
+      results.push(
+        applyException(
+          "strong-vs-random",
+          pass ? "pass" : "fail",
+          `${(inputs.strongVsRandomWinRate * 100).toFixed(1)}% (min ${(thresholds.strongVsRandomMinWinRate * 100).toFixed(1)}%)`,
+          exceptions
+        )
+      );
+    }
   }
 
   {
     // C23: for ANY proven solvedValue (draw, p0-win, or p1-win), a "balanced" FPA band is
     // unsatisfiable by construction — a solved game's first-player win rate is a KNOWN
     // quantity (0% for a draw or a p1-win, ~100% for a p0-win), not a design target to hit a
-    // range around. n/a, citing the proof, rather than a fail this game can never clear.
+    // range around. n/a, citing the proof, rather than a fail this game can never clear. This
+    // structural check comes BEFORE deferral: a proven-solved game's FPA is never going to be a
+    // number regardless of tier, so it is n/a, never "deferred" (C27 must not relabel a row that
+    // was already n/a for an unrelated reason).
     if (solvedValue && solvedValue.value !== "unknown") {
       results.push({
         gate: "first-player-win-rate",
         status: "n/a",
         detail: `manifest.solvedValue is a proven "${solvedValue.value}" (${solvedValue.proof}) — a balanced-FPA band does not apply to a solved game`,
       });
+    } else if (deferral?.active) {
+      results.push(deferredGate("first-player-win-rate", deferral.reason));
     } else {
       const [lo, hi] = thresholds.firstPlayerWinRateRange;
       const pass = inputs.firstPlayerWinRate >= lo && inputs.firstPlayerWinRate <= hi;
@@ -206,13 +286,16 @@ export function evaluateCiGates(
     // C23: a draw-rate CEILING is unsatisfiable by construction specifically for a proven draw
     // (the true value is 100%) — n/a, citing the proof. A proven DECISIVE value (p0-win/p1-win)
     // does not conflict with this gate (a low draw rate is still the expected, checkable
-    // outcome there), so it stays active in that case.
+    // outcome there), so it stays active in that case. Same ordering rule as FPA above: the
+    // structural n/a check comes before deferral.
     if (solvedValue && solvedValue.value === "draw") {
       results.push({
         gate: "draw-rate",
         status: "n/a",
         detail: `manifest.solvedValue is a proven draw (${solvedValue.proof}) — a draw-rate ceiling is unsatisfiable by construction for a drawn game`,
       });
+    } else if (deferral?.active) {
+      results.push(deferredGate("draw-rate", deferral.reason));
     } else {
       const pass = inputs.drawRate <= thresholds.maxDrawRate;
       results.push(
@@ -227,21 +310,25 @@ export function evaluateCiGates(
   }
 
   {
-    const [lo, hi] = thresholds.pliesRange;
-    const inBand = inputs.meanPlies >= lo && inputs.meanPlies <= hi;
-    const noCapHits = inputs.capHitRate === 0;
-    const pass = inBand && noCapHits;
-    // "across all matchups" made explicit here (not just self-play) — this IS
-    // worstCapHitRate's own aggregation (see its doc comment), and a report that prints a
-    // DIFFERENT, self-play-only cap-hit number alongside this one (as an ad hoc debug script
-    // did during the C23 investigation) reads as two numbers for one quantity. This is the one
-    // number the gate actually uses; it says so.
-    const detail = !inBand
-      ? `mean ${inputs.meanPlies.toFixed(1)} plies (band [${lo}, ${hi}])`
-      : !noCapHits
-        ? `mean ${inputs.meanPlies.toFixed(1)} plies in band, but cap-hit rate ${(inputs.capHitRate * 100).toFixed(2)}% > 0 across all matchups (any cap hit fails)`
-        : `mean ${inputs.meanPlies.toFixed(1)} plies, 0 cap hits across all matchups`;
-    results.push(applyException("mean-plies", pass ? "pass" : "fail", detail, exceptions));
+    if (deferral?.active) {
+      results.push(deferredGate("mean-plies", deferral.reason));
+    } else {
+      const [lo, hi] = thresholds.pliesRange;
+      const inBand = inputs.meanPlies >= lo && inputs.meanPlies <= hi;
+      const noCapHits = inputs.capHitRate === 0;
+      const pass = inBand && noCapHits;
+      // "across all matchups" made explicit here (not just self-play) — this IS
+      // worstCapHitRate's own aggregation (see its doc comment), and a report that prints a
+      // DIFFERENT, self-play-only cap-hit number alongside this one (as an ad hoc debug script
+      // did during the C23 investigation) reads as two numbers for one quantity. This is the one
+      // number the gate actually uses; it says so.
+      const detail = !inBand
+        ? `mean ${inputs.meanPlies.toFixed(1)} plies (band [${lo}, ${hi}])`
+        : !noCapHits
+          ? `mean ${inputs.meanPlies.toFixed(1)} plies in band, but cap-hit rate ${(inputs.capHitRate * 100).toFixed(2)}% > 0 across all matchups (any cap hit fails)`
+          : `mean ${inputs.meanPlies.toFixed(1)} plies, 0 cap hits across all matchups`;
+      results.push(applyException("mean-plies", pass ? "pass" : "fail", detail, exceptions));
+    }
   }
 
   {
@@ -256,7 +343,14 @@ export function evaluateCiGates(
         detail: `manifest.solvedValue is a proven draw (${solvedValue.proof}) — ruthless cannot out-win standard when neither can win`,
       });
     } else if (inputs.ruthlessVsStandardWinRate === null) {
+      // Structural fact independent of self-play (and independent of deferral): this manifest
+      // has no "standard" tier at all, so there is nothing this gate could ever measure, at any
+      // tier — n/a, never "deferred".
       results.push({ gate: "ruthless-vs-standard", status: "n/a", detail: "manifest has no \"standard\" tier" });
+    } else if (deferral?.active) {
+      // There IS a standard tier (the branch above didn't fire), so this row WOULD be a real
+      // number if self-play ran — it just didn't, at this tier.
+      results.push(deferredGate("ruthless-vs-standard", deferral.reason));
     } else if (ruthlessBudgets?.active) {
       // C26 (Nine Grids): TierBudgetCollapseError's strict-inequality check (ruthlessN >
       // standardN) is NECESSARY but not SUFFICIENT — MCTS strength grows roughly with the
@@ -302,9 +396,13 @@ export function evaluateCiGates(
   {
     // C23's inverted gate: for a game with a PROVEN solvedValue, confirm self-play actually
     // REACHES it at a healthy rate — always present (never silently skipped, C2's rule), n/a
-    // when there is no proven value to confirm.
+    // when there is no proven value to confirm. That structural n/a check comes before
+    // deferral, same ordering rule as every other block above: a game with no proven value has
+    // nothing for THIS gate to ever measure, at any tier.
     if (!solvedValue || solvedValue.value === "unknown") {
       results.push({ gate: "solved-value-reached", status: "n/a", detail: "no proven manifest.solvedValue — nothing to confirm" });
+    } else if (deferral?.active) {
+      results.push(deferredGate("solved-value-reached", deferral.reason));
     } else {
       const { value, proof } = solvedValue;
       const achieved =
@@ -408,11 +506,15 @@ export interface CiSuiteReport {
   /** True iff no gate has status "fail" ("warn" and "n/a" do not fail the suite). */
   readonly ok: boolean;
   readonly gates: readonly GateResult[];
+  /** `null` iff `manifest.ciGateBudget.deferGatesToNightly` is active at this run (C27) — no
+   *  self-play ran at all, so there is nothing to report here; every gate row explains itself
+   *  via its own `"deferred"` status/detail instead. Non-null in every other case, including
+   *  every run before C27 existed. */
   readonly matchups: {
     readonly strongVsRandom: MatchupReport;
     readonly strongSelfPlay: MatchupReport;
     readonly ruthlessVsStandard: MatchupReport | null;
-  };
+  } | null;
 }
 
 export interface RunCiSuiteOptions {
@@ -504,6 +606,14 @@ export function worstCapHitRate(reports: readonly (Pick<MatchupReport, "metrics"
   return Math.max(...rates);
 }
 
+/** True iff any row is `"deferred"` — the C27 "provisional pass" signal for the two-player
+ *  lane, mirroring `solo-gates.ts`'s `hasDeferredGates`: a report can be `ok` (no `"fail"`)
+ *  while still not being a FULLY measured green, because self-play was skipped entirely at this
+ *  tier. `report.ts`'s `formatCiSuiteTable` checks this to render that distinction. */
+export function hasDeferredGates(results: readonly GateResult[]): boolean {
+  return results.some((r) => r.status === "deferred");
+}
+
 /**
  * Runs the real self-play this gate table needs (strong-vs-random, strong self-play, and
  * ruthless-vs-standard when the manifest has a "standard" tier) and evaluates every gate
@@ -526,6 +636,46 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
       `runCiSuite: manifest "${manifest.id}" has no "ruthless" difficulty tier — the CI gate ` +
         "table's strong-vs-random and strong-self-play rows have no agent to run."
     );
+  }
+
+  // C27: at suite "ci" only, `manifest.ciGateBudget.deferGatesToNightly` skips self-play
+  // ENTIRELY — not scaled down (that's `twoPlayerCiRollouts` below), skipped, because the
+  // manifest has declared this lane unaffordable to measure at all at this tier. Nightly always
+  // ignores this field (same rule as `twoPlayerCiRollouts`), enforced structurally by this
+  // `suite === "ci"` check — `evaluateCiGates` independently refuses if a caller ever bypasses
+  // it and reaches "nightly" with an active deferral anyway (C27's abuse guard).
+  const deferral: CiGateDeferral | undefined =
+    suite === "ci" && manifest.ciGateBudget?.deferGatesToNightly
+      ? { active: true, reason: manifest.ciGateBudget.deferGatesToNightly.reason }
+      : undefined;
+
+  if (deferral?.active) {
+    // No self-play at all — every field below is UNREACHABLE by construction (every
+    // `evaluateCiGates` block checks `deferral?.active` before ever touching `inputs.X` for the
+    // rows this deferral covers; see that function's own per-gate comments), and NaN-poisoned
+    // rather than a plausible-looking 0/null so a future control-flow bug that DID let one leak
+    // through would render as an obviously-broken "NaN%" in a report, never a silent lie (C4).
+    // `ruthlessVsStandardWinRate` is the one exception: `null` is a REAL, structural fact ("no
+    // standard tier exists") that must survive deferral unchanged — evaluateCiGates's own
+    // ruthless-vs-standard block checks that null BEFORE its deferral check for exactly this
+    // reason, so a manifest with no standard tier still reports n/a, not "deferred".
+    const standardTier = findTier(manifest, "standard");
+    const inputs: GateInputs = {
+      strongVsRandomWinRate: Number.NaN,
+      firstPlayerWinRate: Number.NaN,
+      drawRate: Number.NaN,
+      meanPlies: Number.NaN,
+      capHitRate: Number.NaN,
+      ruthlessVsStandardWinRate: standardTier ? Number.NaN : null,
+    };
+    const gates = evaluateCiGates(inputs, thresholds, exceptions, suite, manifest.solvedValue, undefined, deferral);
+    return {
+      gameId: manifest.id,
+      suite,
+      ok: gates.every((g) => g.status !== "fail"),
+      gates,
+      matchups: null,
+    };
   }
 
   // C19: at suite "ci" only, measure with `ciGateBudget.twoPlayerCiRollouts` rollouts instead

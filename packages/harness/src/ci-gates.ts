@@ -24,13 +24,14 @@ import type { GameManifest } from "@twist-arcade/game-spec";
 import { buildSoloRoster, type SafeMoveFn } from "./agents";
 import { alwaysSafeVsStrongRatio, grindProbe, runAlwaysSafeProbe, type GrindResult } from "./probes-solo";
 import { runSoloAgentOverSeeds, pairedSeeds, type PlaySoloRunOptions } from "./solo-runner";
-import { computeSoloDistributionMetrics, type SoloDistributionMetrics } from "./solo-metrics";
+import { computeSoloDistributionMetrics, type SoloDistributionMetrics, type SoloDistributionMetricsCiTier } from "./solo-metrics";
 import { dayOverDayDriftSigma as computeDayOverDayDriftSigma } from "./calibrate";
 import {
   allGatesPass,
   evaluateSoloGates,
   type GateResult as SoloGateResult,
-  type SoloGateChaseInputs,
+  type SoloGateChaseInputsDeferred,
+  type SoloGateChaseInputsFull,
   type SoloGatePuzzleInputs,
 } from "./solo-gates";
 import { runCiSuite, type CiSuiteReport, type RunCiSuiteOptions } from "./suites";
@@ -224,9 +225,12 @@ export interface SoloChaseGateReport {
   readonly format: "score-chase";
   readonly ok: boolean;
   readonly gates: readonly SoloGateResult[];
-  readonly metrics: SoloDistributionMetrics;
+  readonly metrics: SoloDistributionMetrics | SoloDistributionMetricsCiTier;
   readonly grind: GrindResult;
-  readonly alwaysSafeVsStrong: number;
+  /** Undefined iff `manifest.ciGateBudget.deferGatesToNightly` is active at this run (C27) —
+   *  Strong never ran, so there is no ratio to report; the gate table's own `"deferred"` rows
+   *  explain why. Non-null in every other case, including every run before C27 existed. */
+  readonly alwaysSafeVsStrong?: number;
 }
 
 export function runSoloChaseCiGate<S extends WithEffects, M extends Json, V extends WithEffects>(
@@ -237,6 +241,50 @@ export function runSoloChaseCiGate<S extends WithEffects, M extends Json, V exte
   const seedCount = opts.seedCount ?? DEFAULT_SOLO_SEED_COUNT;
   const seeds = pairedSeeds(opts.seed, seedCount);
   const moveCap = opts.moveCap ?? manifest.solo?.moveCap ?? 2000;
+  const suite = opts.suite ?? "ci";
+
+  // C27: at suite "ci" only, `manifest.ciGateBudget.deferGatesToNightly` skips Strong (and
+  // Always-Safe, which needs Strong's own scores to form a ratio) ENTIRELY — not scaled down
+  // (that's `soloChaseCiRollouts` below), skipped, because the manifest has declared this
+  // lane's Strong-dependent rows unaffordable to measure at all at this tier (Mine Run:
+  // ~4.6h at seedCount=100, measured). Nightly always ignores this field (same rule as
+  // `soloChaseCiRollouts`), enforced structurally by this `suite === "ci"` check —
+  // `evaluateSoloGates` independently refuses if a caller ever bypasses it and reaches
+  // "nightly" with still-deferred chase inputs anyway (C27's abuse guard).
+  const deferral = suite === "ci" ? manifest.ciGateBudget?.deferGatesToNightly : undefined;
+
+  const roster = buildSoloRoster(engine);
+  // grindProbe needs no roster agent at all — real at every tier, deferred or not.
+  const grind = grindProbe(engine, { startSeeds: seeds.slice(0, 3) });
+
+  if (deferral) {
+    // Random and Greedy are cheap (no MCTS search) — running them costs nothing close to
+    // Strong's, so CI still measures greedyVsRandomRatio for real; only the rows that need
+    // Strong's own scores are unaffordable and defer.
+    const rolloutsN = manifest.ciGateBudget?.soloChaseCiRollouts ?? DEFAULT_SOLO_CHASE_ROLLOUTS;
+    const runOpts: PlaySoloRunOptions = { moveCap, budget: { kind: "rollouts", n: rolloutsN } };
+    const randomSummary = runSoloAgentOverSeeds(engine, roster.random, seeds, runOpts);
+    const greedySummary = runSoloAgentOverSeeds(engine, roster.greedy, seeds, runOpts);
+    const metrics = computeSoloDistributionMetrics({ random: randomSummary, greedy: greedySummary });
+
+    const chaseInputs: SoloGateChaseInputsDeferred = {
+      metrics,
+      grind,
+      deferredToTier: "nightly",
+      deferredReason: deferral.reason,
+      ...(opts.suicide ? { suicide: opts.suicide } : {}),
+    };
+    const gates = evaluateSoloGates({ manifest, chase: chaseInputs, suite });
+
+    return {
+      gameId: manifest.id,
+      format: "score-chase",
+      ok: allGatesPass(gates),
+      gates,
+      metrics,
+      grind,
+    };
+  }
 
   // C19: at suite "ci" (the default) only, measure Strong/Always-Safe with
   // `ciGateBudget.soloChaseCiRollouts` rollouts instead of the platform default — "nightly"
@@ -245,7 +293,6 @@ export function runSoloChaseCiGate<S extends WithEffects, M extends Json, V exte
   // sets the determinization sample count K (K = n / legalMoves.length) — the coupling is
   // exactly why the floor guard below is checked against this resolved value, not the raw
   // manifest field.
-  const suite = opts.suite ?? "ci";
   const ciOverride = manifest.ciGateBudget?.soloChaseCiRollouts;
   const rolloutsN = suite === "ci" && ciOverride !== undefined ? ciOverride : DEFAULT_SOLO_CHASE_ROLLOUTS;
 
@@ -253,7 +300,6 @@ export function runSoloChaseCiGate<S extends WithEffects, M extends Json, V exte
 
   const runOpts: PlaySoloRunOptions = { moveCap, budget: { kind: "rollouts", n: rolloutsN } };
 
-  const roster = buildSoloRoster(engine);
   const randomSummary = runSoloAgentOverSeeds(engine, roster.random, seeds, runOpts);
   const greedySummary = runSoloAgentOverSeeds(engine, roster.greedy, seeds, runOpts);
   const strongSummary = runSoloAgentOverSeeds(engine, roster.strong, seeds, runOpts);
@@ -262,19 +308,17 @@ export function runSoloChaseCiGate<S extends WithEffects, M extends Json, V exte
     opts.ceilingScore !== undefined ? { ceilingScore: opts.ceilingScore } : {}
   );
 
-  const grind = grindProbe(engine, { startSeeds: seeds.slice(0, 3) });
-
   const alwaysSafeSummary = runAlwaysSafeProbe(engine, opts.safeMove, seeds, runOpts);
   const alwaysSafeVsStrong = alwaysSafeVsStrongRatio(alwaysSafeSummary, strongSummary);
 
-  const chaseInputs: SoloGateChaseInputs = {
+  const chaseInputs: SoloGateChaseInputsFull = {
     metrics,
     grind,
     alwaysSafeVsStrong,
     ...(opts.suicide ? { suicide: opts.suicide } : {}),
   };
 
-  const gates = evaluateSoloGates({ manifest, chase: chaseInputs });
+  const gates = evaluateSoloGates({ manifest, chase: chaseInputs, suite });
 
   return {
     gameId: manifest.id,
