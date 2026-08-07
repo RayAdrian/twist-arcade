@@ -3,6 +3,8 @@ export type {
   GameManifest,
   PolicySpec,
   SearchBudget,
+  SolvedValue,
+  SolvedValueClaim,
 } from "./manifest";
 export { assertRuleSentenceLength } from "./manifest";
 

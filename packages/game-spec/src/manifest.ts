@@ -22,6 +22,25 @@ export type PolicySpec =
   | { kind: "flat-mc"; rolloutsPerAction?: number }
   | { kind: "mix"; components: { weight: number; policy: PolicySpec }[] };
 
+/** Game-theoretic value under optimal play — `"unknown"` (the default, granting no relief from
+ *  any gate) unless PROVEN by an artifact this claim points at. */
+export type SolvedValue = "draw" | "p0-win" | "p1-win" | "unknown";
+
+export interface SolvedValueClaim {
+  readonly value: SolvedValue;
+  /** Pointer to the artifact that PROVES this value — a doc path, optionally with a section
+   *  reference (e.g. `"docs/research/games/fadeout-solve-report.md §1.1 (remove-first/solid/
+   *  threefold: draw, 128,170 states, all 9 openings drawn)"`). REQUIRED whenever
+   *  `value !== "unknown"` — the harness refuses loudly (suites.ts's
+   *  `MissingSolvedValueProofError`) rather than trust an assertion with no pointer
+   *  (platform-corrections.md C23: "asserting a value is not proving one" — the same
+   *  confidence that failed on Wrap's predicted-but-unmeasured FPA; a "none by construction"
+   *  balance claim like Bid-Tac-Toe's gets no relief under this rule either). Optional in the
+   *  TYPE only so `{ value: "unknown" }` never has to carry a meaningless empty string — the
+   *  RUNTIME check is what actually enforces "required for every non-unknown value". */
+  readonly proof?: string;
+}
+
 export interface GameManifest {
   id: string; // === engine.meta.id (contract test asserts equality)
   title: string; // "Fadeout", "Crackstep", "Mine Run"
@@ -64,6 +83,18 @@ export interface GameManifest {
      *  gate, rather than silently reporting a ratio measured against a too-weak Strong. */
     soloChaseCiRollouts?: number;
   };
+
+  /** Game-theoretic value under optimal play, WHEN PROVEN (platform-corrections.md C23).
+   *  Omitted (the default) is equivalent to `{ value: "unknown" }` and grants no relief from
+   *  any gate. When proven, three two-player CI gates that are UNSATISFIABLE BY CONSTRUCTION
+   *  for that value report `n/a` instead of failing forever (never `pass`, never a silent
+   *  skip — C2's rule extended from `solo.format` to solved value), and a new gate INVERTS the
+   *  check: does self-play actually reach the proven value at a healthy rate, which is the
+   *  real regression signal a proven-decided game needs (see suites.ts's
+   *  `SOLVED_VALUE_SELF_PLAY_FLOOR`). Fadeout is the first user: `remove-first/solid/threefold`
+   *  is an exact-solved draw over 128,170 states (all 9 openings drawn) — see
+   *  `docs/research/games/fadeout-solve-report.md` §1.1. */
+  solvedValue?: SolvedValueClaim;
 
   /** Present iff players.max === 1. Drives which harness model and gate table apply. */
   solo?: {

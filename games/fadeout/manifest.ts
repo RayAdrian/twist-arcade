@@ -72,17 +72,40 @@ export const fadeoutManifest: GameManifest = {
     },
   ],
 
-  // No `thresholds` override: DEFAULT_HARNESS_THRESHOLDS apply until F4's harness numbers (not
-  // this pass's scope — F3 is board UI + registration, not tier tuning/validation) show one is
-  // needed. NOTE for F4, recorded here so it isn't rediscovered from scratch: a root value that
-  // is a proven draw under optimal play is expected to pull the MEASURED draw rate (mcts self-
-  // play, not the exact-solve 100%) toward the high end of — or past — the default 0.60
-  // `maxDrawRate` ceiling; if F4's numbers land there, the fix is an `exceptions[]` entry with
-  // that reasoning on the record (plan §2.3's "never ship a silent decisive/threshold claim" — a
-  // proven-draw root is exactly the kind of fact that belongs in the justification), not a
-  // silently loosened default.
+  // No `thresholds` override: DEFAULT_HARNESS_THRESHOLDS apply.
   // No `exceptions[]`: criteria 1/2 (plan §1) are both satisfied on proven evidence (see the
-  // freeze note above) — this is not a criterion-5 (no variant survives) situation.
+  // freeze note above) — this is not a criterion-5 (no variant survives) situation. `exceptions[]`
+  // would also be the WRONG mechanism here regardless (platform-corrections.md C23 ruling): an
+  // exception says "permitted to fail," which reads identically whether a game is proven drawn
+  // or merely disappointing. `solvedValue` below is the correct one — it says WHY, with a proof.
+
+  // CORRECTED under platform-corrections.md C23 (this comment previously predicted the RIGHT
+  // problem and the WRONG fix — see C23's own text: "the comment was right, and it was a
+  // comment, so nothing acted on it"). `remove-first/solid/threefold` is an EXACT-SOLVED draw
+  // (docs/research/games/fadeout-solve-report.md §1.1: 128,170 states, all 9 openings drawn) —
+  // not a plausibility argument, a proof. A witnessed sweep (100 games at 10,000/8,000/5,000/
+  // 3,000 rollouts; 50/25 games at 10,000 rollouts) found IDENTICAL self-play behaviour at
+  // every point: 100% draw rate, 0% first-player win rate, 100% strong-vs-random. The bots are
+  // correctly reaching the proven value at every budget; three CI gates
+  // (first-player-win-rate, draw-rate, ruthless-vs-standard) were unsatisfiable by construction
+  // and failing on CORRECT play. `solvedValue` below makes those three report `n/a` (citing
+  // this proof) and activates the inverted `solved-value-reached` gate instead — the real
+  // regression signal for a decided game (packages/harness/src/suites.ts's
+  // `SOLVED_VALUE_SELF_PLAY_FLOOR`).
+  solvedValue: {
+    value: "draw",
+    proof:
+      "docs/research/games/fadeout-solve-report.md §1.1 (remove-first/solid/threefold: draw, 128,170 states, all 9 openings drawn)",
+  },
+
+  // CI-only rollout budget (platform-corrections.md C19/C22/C23). The same witnessed sweep
+  // found every tested rollout count reaches the IDENTICAL verdict — no budget was ever
+  // "unsafe" here, so the cheapest one measured is simply correct: 100 games x 3,000 rollouts
+  // costs 848s against the shipped 10,000-rollout budget's 2802s for the same answer (3.3x
+  // cheaper). The shipped `ruthless` tier above (10,000) is UNCHANGED — this only scales what
+  // the CI ("ci") suite measures with, via an in-memory clone (C20: "the shipped ruthless tier
+  // was never touched"); nightly always runs the real, full 10,000-rollout budget.
+  ciGateBudget: { twoPlayerCiRollouts: 3000 },
 };
 
 assertRuleSentenceLength(fadeoutManifest);
