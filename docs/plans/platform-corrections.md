@@ -1606,3 +1606,40 @@ Seed ci-1's `strong@3000` run took **4,977,176 ms — 83 minutes for a single se
 took 11 minutes at the same budget. **A 7.5× spread between two seeds of the same configuration**
 means Mine Run's per-seed cost is wildly variable, so any wall-clock projection from a small
 sample — including C27's 165.3s/seed average — carries far more uncertainty than a mean suggests.
+
+### C29 update — three seeds, and more search makes Strong *worse* on two of them
+
+```
+seed   alwaysSafe   strong@750   strong@3000   ratio@750   ratio@3000
+ci-0         849          630           378       1.348       2.246
+ci-1         686           91           276       7.538       2.486
+ci-2        1247          231           105       5.398      11.876
+```
+
+**On ci-0 and ci-2, quadrupling the search made Strong substantially worse** (630 → 378;
+231 → **105**). Only ci-1 improved. The ratio must stay under 0.95; ci-2 is now **11.9**.
+
+A too-weak yardstick gets *monotonically better* with more search. This does the opposite on
+two thirds of the sample. **That is not a strength problem — it is a direction problem: Strong
+is searching harder toward something that is not banked score.**
+
+That shifts the leading hypothesis from *"the game is broken"* to *"the bot's objective is
+wrong"*, and the two demand opposite responses — one kills a game, the other fixes a policy.
+
+**The decisive check is a code read, not another multi-hour run.** What value does Strong's MCTS
+back up in the solo-chase lane? If it maximises survival, or reveal count, or anything other
+than **expected banked score**, the numbers above are explained entirely and the game has not
+been tested at all yet. Note the shape of the evidence: Always-Safe banks early and scores
+*higher* than Strong, so Strong is not merely risk-averse — it is actively choosing lines worse
+than the trivial policy, which a correct objective at higher search should never do.
+
+**This also means C29's original reading was premature.** "Banking early dominates deep search,
+so the press-your-luck decision may not be real" assumed Strong was competently maximising
+score. Two of three seeds now say it is not. Mine Run may be fine and its yardstick broken —
+which would make this the fourth instance of C6 (*the yardstick must be strong enough to measure
+with*), and the first where the yardstick was pointed the wrong way rather than merely being too
+weak.
+
+**Cost note for whoever runs the next sweep:** these three seeds took ~2 hours for six Strong
+runs, with a single seed's `strong@3000` taking 83 minutes against another's 11. Any projection
+from a small sample carries far more uncertainty than its mean suggests.
