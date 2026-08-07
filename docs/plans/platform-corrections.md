@@ -1211,3 +1211,43 @@ full table.
 The baseline reports `cap-hit-rate (self-play): 0.00%` while its own gate row fails on
 `cap-hit rate 1.00% > 0`. Two different numbers for one quantity in one report — worth a look
 when the gate table is touched.
+
+### C23 postscript — the gate contradicted a deliberate product decision
+
+Worth recording, because it explains how this survived so long unnoticed: **Fadeout's drawn
+value is not an accident of the ruleset. It is the reason that ruleset was chosen.**
+
+The freeze note in `games/fadeout/manifest.ts` and `fadeout-solve-report.md` §3.1 record the
+orchestrator ruling of 2026-08-03: ship `remove-first/solid/**threefold**` rather than the
+report's original `superko` recommendation, precisely because threefold's value is a *proven,
+fair draw*, while superko **has no draw terminal at all** and its value hit a computational
+wall confirmed twice (53–62M nodes). Shipping superko would mean shipping an unknown,
+unquantifiable win-or-loss outcome for the one variant chosen specifically for its fairness.
+
+So the shipped CI gate demanded a **35–65% first-player win rate and under 60% draws** from a
+game deliberately selected for being provably drawn. The product decision and the gate table
+were in direct contradiction — one document arguing the draw is the guarantee, another
+treating it as the failure — and both were written by this project, days apart.
+
+Neither was wrong in isolation. The gate table is right for an unsolved game, which is what
+every other game in the queue will be. What was missing is the thing C2 already established
+for solo formats and this correction now extends: **a gate must know which claims apply to the
+game in front of it.** The defect was not a bad threshold; it was a threshold applied without
+asking whether the game could satisfy it even in principle.
+
+Verified end-to-end on the real registered game after the fix:
+
+```
+[PASS] strong-vs-random: 100.0% (min 90.0%)
+[N/A ] first-player-win-rate: proven "draw" (…§1.1) — a balanced-FPA band does not apply
+[N/A ] draw-rate: … unsatisfiable by construction for a drawn game
+[PASS] mean-plies: mean 35.5 plies, 0 cap hits across all matchups
+[N/A ] ruthless-vs-standard: … ruthless cannot out-win standard when neither can win
+[PASS] solved-value-reached: self-play reached the proven "draw" 100.0% (floor 90%)
+```
+
+And the relief mechanism is self-policing, which `exceptions[]` would not have been. Planted
+by the orchestrator: a `solvedValue` with **no proof pointer** is refused; a **whitespace-only**
+proof is refused; and a **false claim** — `"p0-win"` asserted with a proof pointer on this
+provably drawn game — **fails** with `self-play reached the proven "p0-win" 0.0% of the time
+(floor 90%)`. A game cannot buy gate relief by naming a convenient value.
