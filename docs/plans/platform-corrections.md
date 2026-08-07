@@ -1484,3 +1484,69 @@ If Strong overtakes, it is hypothesis 1 and the yardstick was too weak. If Alway
 wins at 4× the search, it is hypothesis 2 and the game has a design problem no budget will fix.
 ~5 seeds × ~660s ≈ **under an hour to discriminate**, against ~1.8 hours to merely restate the
 question at higher n.
+
+---
+
+## C28 — Nine Grids test-plan rulings, a scaffold that registers before gating, and a brief citing a correction the reader could not see
+
+### Two ground-truth corrections from the test designer, both correct
+
+**1. I cited C26 to an agent whose worktree predated it.** C26 was committed to `main` at
+`bcffe4f`; the Nine Grids worktree had rebased onto `500b284`, so the file it could read had no
+such section. The agent reported *"C26 does not exist"* and named what it actually found instead
+of inferring what I probably meant. That is the correct response, and the error is mine: **a
+brief must cite what is in the tree the reader has**, or say explicitly that the reference is
+newer and summarise it inline. Citing a document the reader cannot open is indistinguishable, to
+them, from citing one that does not exist.
+
+**2. `nine-grids` is already in `games/registry.ts` — inserted by the scaffold, not by a
+decision.** It is absent from `main` but present in the worktree, so `/play/nine-grids` resolves
+today to a placeholder board.
+
+**This is C15's fourth scaffold gap ("unconditional registry insertion"), still unfixed, and it
+quietly inverts C16.** `new-game` registers a game — making it routable — at *scaffold* time,
+before an engine exists, before any gate has run. The rule bought by Wrap's death is engine →
+gates → UI; the scaffold ships step three first and nobody has to choose it. Nine Grids happens
+to have passed, so its registration is now legitimate, but that is luck of ordering, not the
+process working.
+
+**Required:** `new-game` must scaffold **unregistered**, and registration becomes an explicit
+step a team takes after its gates are green. A generator that pre-commits the decision a gate is
+supposed to make is not a convenience.
+
+### Rulings on the three flagged ambiguities
+
+**A1 — dead-position draws: implement detection; end the game.** Today, when no macro line
+remains achievable for either side, play continues to all 81 cells. A game that continues after
+its outcome is decided is a UX defect in its own right — players who can see it is over keep
+being asked to move — and Nine Grids' measured **mean-plies of 50.2 sits above `ux-lens`'s 10–40
+band**, which this directly addresses. The check is cheap: eight macro lines, each still-winnable
+or not. **This changes measured mean-plies, so the gates must be re-run after** (~17 minutes);
+do not carry the old numbers forward.
+
+**A2 — confirmed as pinned.** A free move may be played into any **open** board; empty cells of a
+won-but-not-full board stay illegal. This is the standard rule and the only coherent one — a
+resolved board's cells cannot affect anything, so allowing moves there would create legal moves
+that are guaranteed no-ops.
+
+**A3 — `decode` must reject the structurally impossible board.** The plan observed that a
+sub-board carrying two completed lines for *different* players decodes successfully, with
+ownership settled by internal line-scan order. **C4 is not scoped to "cheap invariants"** — its
+words are that `decode` returns a state satisfying *the engine's own invariants* or throws a
+typed error. A position no legal sequence can reach fails that test, and silent ownership by
+scan order is precisely the "plausible-looking state" C4 exists to forbid: this feeds `replay()`
+and certificate verification, where a forged record that decodes cleanly validates cleanly.
+
+### On the plan itself
+
+70 cases, each carrying a named **"a failure would mean"** — the discipline that addresses the
+23-defect table directly, since a check whose failure mode nobody can state is not a check.
+Three details worth keeping:
+
+- **SEND-003 uses asymmetric indices deliberately**, because a row/column transpose bug is
+  invisible to a symmetric probe. That is the Fadeout mirror-probe lesson applied unprompted.
+- **The accessibility cases are tagged `[SPEC] — expected to FAIL today`**, since `announce()` is
+  still a placeholder. Cases that fail loudly beat cases that pass vacuously.
+- **A11Y-008 requires asserting `matchMedia('(prefers-reduced-motion: reduce)').matches` inside
+  the page** before trusting any reduced-motion result — because Playwright's emulation has
+  silently failed to apply in this repo before, and the assertion then checked the wrong state.
