@@ -3308,3 +3308,70 @@ C14's rule applies in its strongest form: a theorem about optimal play says noth
 we ship, and right now the bots are the finding.
 
 The game is not in trouble; the search is. Fix the search, re-gate, then judge the game.
+
+---
+
+## C56 — MCTS picks the most-visited *joint* cell in a simultaneous game. It has never been exercised until today.
+
+### The defect, in shared platform code
+
+`packages/bots/src/mcts.ts` handles a simultaneous node by building the full **row × col cartesian
+product as flat sibling children**, selecting **the single most-visited joint `(row, col)` pair**, and
+reading off player 0's component of that one pair.
+
+**It never aggregates by each player's own marginal action.** That is not a tuning weakness — it is
+the wrong quantity. In a simultaneous game your move must be chosen by marginalising over the
+opponent's; picking the most-visited joint cell picks one lucky cell out of the product.
+
+### The evidence, from one decision
+
+Board `[_,_,O,_,X,_,_,_,_]`, budgets `[7,9]`, seat 0 holding the star — **16 × 10 = 160 joint arms**:
+
+- **Real signal exists.** Flat-rollout candidate means separate by ~5 standard errors at N=400
+  (best `amount=5`, mean 0.220; worst `amount=0`, mean −0.105).
+- **The search does not find it.** Real MCTS picks `4` at 2,000 rollouts and `1` at 10,000 —
+  matching neither the flat-rollout argmax nor each other. **At 10,000 it selected the
+  second-worst candidate.**
+- **The smoking gun:** the most-visited joint cell took **422 visits of 10,000**, spread across 160
+  arms. The argmax is landing on one lucky cell, not on a genuinely good row.
+
+**This explains the degradation that opened C55.** More rollouts explore more joint cells, so the
+most-visited cell becomes *less* dominant and the selection noisier — which is why
+`strong-vs-random` fell from 96.7% at 2,000 to 75.0% at 10,000. More search producing worse play is
+arithmetic here, not mystery.
+
+### What the diagnostic ruled out, and why that matters
+
+- **Not the evaluation function** (C36's Mine Run answer): standalone Greedy picked `amount=0`,
+  differing from both MCTS runs. And mean-plies of 7–10 sit far under the 200-ply rollout cap, so
+  `heuristic()` is never invoked by backpropagation here at all. (`heuristic()` *is* separately
+  miscalibrated toward hoarding — flagged for later, not causal.)
+- **Not mixed-strategy exploitability**, the plan's own §7 anticipated risk: B2's solve proved the
+  optimum **pure at all 2,521,056 bid nodes.**
+
+Three candidate explanations, two eliminated by measurement rather than argument. That is the
+difference between this and C29→C30→C34, where two mechanisms were reasoned into existence and
+refuted only after costing hours.
+
+### Why nobody found this before
+
+**Bid-Tac-Toe is the first game to exercise `simultaneous: true`.** The engine contract, `replay()`,
+the harness runner and `testkit`'s `randomPlayout` all supported it — C48 verified that, and they
+held. **`mcts.ts`'s simultaneous *selection* was the one piece nobody had ever run**, and it was
+wrong.
+
+C48 recorded the spike finding "nothing broken" as reassuring. That was true of every seam it
+tested; it did not reach selection, because a spike plays a scripted game rather than searching one.
+**A seam can be exercised end-to-end and still leave its decision logic untouched.**
+
+### Required, and it is platform work
+
+Marginal aggregation: for each of your own actions, aggregate across the opponent's responses —
+visit-weighted mean value, or visits summed by your own action — and choose from that, not from the
+joint argmax. Any future simultaneous game inherits this, so it is fixed once in `mcts.ts` rather
+than worked around per game.
+
+**No verdict on Bid-Tac-Toe.** Every number in its B3 sweep describes a search selecting near-random
+actions. The team reverted the `ciGateBudget` placeholder it had set before the sweep — correct,
+since tuning a budget against a broken search would have frozen a number that means nothing — and
+escalated rather than patching shared code it does not own.
