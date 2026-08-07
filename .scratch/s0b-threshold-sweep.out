@@ -1,0 +1,61 @@
+=== BRIDGE CHECK ===
+seed=ci:mine-run:ci-0 score=849 expected=849 decisions=38 match=true
+seed=ci:mine-run:ci-1 score=686 expected=686 decisions=40 match=true
+seed=ci:mine-run:ci-2 score=1247 expected=1247 decisions=64 match=true
+BRIDGE_CHECK_RESULT ok=true
+
+=== pCap=0 WIRING PROOF (every T, all 23 seeds) ===
+T=5 pCap=0: all 23 seeds byte-exact match Always-Safe = true
+T=10 pCap=0: all 23 seeds byte-exact match Always-Safe = true
+T=15 pCap=0: all 23 seeds byte-exact match Always-Safe = true
+T=20 pCap=0: all 23 seeds byte-exact match Always-Safe = true
+T=30 pCap=0: all 23 seeds byte-exact match Always-Safe = true
+T=50 pCap=0: all 23 seeds byte-exact match Always-Safe = true
+T=inf pCap=0: all 23 seeds byte-exact match Always-Safe = true
+WIRING_PROOF_RESULT allMatch=true
+
+=== FULL GRID (T x pCap, n=23) ===
+alwaysSafeMedian=686 (over 23 seeds)
+T,pCap,medianScore,ratioVsAlwaysSafe,winFraction,capHitRate
+5,0.05,686,1.000,0.043,0.000
+5,0.1,686,1.000,0.130,0.000
+5,0.15,686,1.000,0.174,0.000
+5,0.2,686,1.000,0.174,0.000
+5,0.3,725,1.057,0.304,0.000
+10,0.05,686,1.000,0.087,0.000
+10,0.1,686,1.000,0.174,0.000
+10,0.15,686,1.000,0.217,0.000
+10,0.2,686,1.000,0.217,0.000
+10,0.3,725,1.057,0.304,0.000
+15,0.05,686,1.000,0.087,0.000
+15,0.1,686,1.000,0.174,0.000
+15,0.15,686,1.000,0.217,0.000
+15,0.2,686,1.000,0.217,0.000
+15,0.3,725,1.057,0.304,0.000
+20,0.05,686,1.000,0.087,0.000
+20,0.1,686,1.000,0.174,0.000
+20,0.15,686,1.000,0.217,0.000
+20,0.2,686,1.000,0.217,0.000
+20,0.3,715,1.042,0.304,0.000
+30,0.05,686,1.000,0.087,0.000
+30,0.1,686,1.000,0.174,0.000
+30,0.15,686,1.000,0.217,0.000
+30,0.2,686,1.000,0.217,0.000
+30,0.3,715,1.042,0.348,0.000
+50,0.05,686,1.000,0.087,0.000
+50,0.1,686,1.000,0.174,0.000
+50,0.15,686,1.000,0.261,0.000
+50,0.2,686,1.000,0.261,0.000
+50,0.3,715,1.042,0.348,0.000
+inf,0.05,686,1.000,0.087,0.000
+inf,0.1,686,1.000,0.174,0.000
+inf,0.15,686,1.000,0.261,0.000
+inf,0.2,686,1.000,0.261,0.000
+inf,0.3,704,1.026,0.304,0.000
+grid elapsed: 2166ms
+
+BEST_INTERIOR T=5 pCap=0.3 medianScore=725 ratio=1.057 winFraction=0.304
+ALWAYS_SAFE_MEDIAN=686
+
+Interior members beating Always-Safe on a MAJORITY of seeds (winFraction > 0.5): 0 / 35
+S0B_SWEEP_COMPLETE

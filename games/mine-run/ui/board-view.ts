@@ -7,6 +7,7 @@
 // there is no code path that could read an unrevealed mine's identity, because the view type
 // itself has no field that could carry one (engine.ts's own header comment).
 
+import { analyzeFrontier } from "../csp";
 import type { MineRunView } from "../engine";
 
 /** "Row 1, column 1" — 1-indexed, matching mine-run.md §8.4's exact wording. */
@@ -83,4 +84,24 @@ const COUNT_WORDS = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven"
 export function neighbouringMinesPhrase(n: number): string {
   const word = COUNT_WORDS[n] ?? String(n);
   return `${word} neighbouring mine${n === 1 ? "" : "s"}.`;
+}
+
+/**
+ * Whether a provably-safe reveal exists RIGHT NOW (platform-corrections.md C52: "most boards
+ * contain no interesting decision, and a minority contain a very consequential one" — the CSP
+ * already computes exactly this distinction for `safeMove`/`probes.ts`, so BankBar surfaces the
+ * SAME fact to a sighted/screen-reader player, deliberately WITHOUT naming which cell).
+ *
+ * Reports existence only, never location — this is the conservative reading of the brief's
+ * "surface the provably-safe case clearly" ask: it calibrates whether THIS turn's push/bank
+ * decision is live at all (the thing C52 found varies board-to-board) without handing out the
+ * answer to the deduction puzzle itself, which mine-run.md §4.2/§4.4 explicitly reserves for a
+ * LATER, shell-scope hint feature ("one module, three consumers... and — later, shell scope —
+ * the hint feature"). A player still has to find the safe cell; they just know one exists.
+ *
+ * View-honest by construction: `analyzeFrontier` takes only a MineRunView (engine.ts's own
+ * header comment) — there is no code path here that could read an unrevealed mine's identity.
+ */
+export function hasProvenSafeMove(view: MineRunView): boolean {
+  return analyzeFrontier(view).provablySafe.size > 0;
 }

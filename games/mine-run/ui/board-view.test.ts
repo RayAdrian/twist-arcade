@@ -11,6 +11,7 @@ import type { MineRunState, MineRunView } from "../engine";
 import {
   boardPositionName,
   buildCellPresentations,
+  hasProvenSafeMove,
   mineCountSummary,
 } from "./board-view";
 

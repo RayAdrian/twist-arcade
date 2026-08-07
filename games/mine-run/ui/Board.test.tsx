@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 //
 // games/mine-run/ui/Board.test.tsx — TDD (CLAUDE.md §3) for the Board component: wiring
-// board-view's pure data onto real shell `Cell`s, the mandatory two-tap confirm flow (O2's
-// binding condition on the 32px cell-size exception — mine-run.md §8.4/platform-corrections.md
-// C5), and the grayscale-screenshot requirement (ux-lens §2). Mirrors games/fadeout/ui/
-// Board.test.tsx's structure.
+// board-view's pure data onto real shell `Cell`s at the standard 48px floor, single-tap commit
+// (see Board.tsx's module doc for why this deviates from mine-run.md §8.4/O2's two-tap plan —
+// C50's precedent withdrawing the analogous Tilt exception once BoardShell's zoom/pan proved
+// sufficient), and the grayscale-screenshot requirement (ux-lens §2). Mirrors
+// games/fadeout/ui/Board.test.tsx's structure.
 
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it } from "vitest";
@@ -85,75 +86,38 @@ describe("Board — renders every cell wired to the shell's Cell", () => {
     expect(hiddenCells[0]).not.toHaveAttribute("aria-disabled");
   });
 
-  it("every cell uses the sanctioned 32px minCellPx floor (O2's exception), not the shell's 48px default", () => {
+  it("every cell uses the shell's standard 48px floor — NOT a shrunk override (C50: BoardShell's zoom/pan, not the sub-48px exception)", () => {
     const { state } = findFreshUnrevealedFixture();
     renderBoard(state);
     const hidden = screen.getAllByRole("gridcell", { name: /Hidden\./ })[0]!;
-    expect(hidden.style.minWidth).toBe("32px");
-    expect(hidden.style.minHeight).toBe("32px");
+    expect(hidden.style.minWidth).toBe("48px");
+    expect(hidden.style.minHeight).toBe("48px");
   });
 });
 
-describe("Board — the mandatory two-tap confirm flow (O2: every platform, not just touch)", () => {
-  it("a FIRST tap on a hidden cell does NOT submit a reveal move — it only arms the cell", async () => {
+describe("Board — single-tap commit (standard board convention, no staging)", () => {
+  it("a tap on a hidden, legal cell submits the reveal move immediately", async () => {
     const user = userEvent.setup();
     const { state } = findFreshUnrevealedFixture();
     const moves: MineRunMove[] = [];
     renderBoard(state, { onMove: (m) => moves.push(m) });
     const hidden = screen.getAllByRole("gridcell", { name: /Hidden\./ })[0]!;
-    await user.click(hidden);
-    expect(moves).toHaveLength(0);
-  });
-
-  it("a SECOND tap on the SAME now-armed cell submits the reveal move", async () => {
-    const user = userEvent.setup();
-    const { state } = findFreshUnrevealedFixture();
-    const moves: MineRunMove[] = [];
-    renderBoard(state, { onMove: (m) => moves.push(m) });
-    const hidden = screen.getAllByRole("gridcell", { name: /Hidden\./ })[0]!;
-    await user.click(hidden);
     await user.click(hidden);
     expect(moves).toHaveLength(1);
     expect(moves[0]).toMatchObject({ t: "reveal" });
   });
 
-  it("a mis-tap that lands on a DIFFERENT cell after arming re-stages instead of revealing either cell", async () => {
+  it("a tap on a revealed (disabled) cell never submits a move", async () => {
     const user = userEvent.setup();
     const { state } = findFreshUnrevealedFixture();
     const moves: MineRunMove[] = [];
     renderBoard(state, { onMove: (m) => moves.push(m) });
-    const hidden = screen.getAllByRole("gridcell", { name: /Hidden\./ });
-    expect(hidden.length).toBeGreaterThanOrEqual(2);
-    await user.click(hidden[0]!); // arms cell A
-    await user.click(hidden[1]!); // mis-tap on cell B — must NOT reveal A
-    expect(moves).toHaveLength(0); // neither A nor B committed yet
-    await user.click(hidden[1]!); // second tap on B, now armed — commits B
-    expect(moves).toHaveLength(1);
-  });
-
-  it("the armed cell is visually distinguished via data-armed (not merely the same as any other hidden cell)", async () => {
-    const user = userEvent.setup();
-    const { state } = findFreshUnrevealedFixture();
-    renderBoard(state);
-    const hidden = screen.getAllByRole("gridcell", { name: /Hidden\./ })[0]!;
-    expect(hidden).not.toHaveAttribute("data-armed");
-    await user.click(hidden);
-    expect(hidden).toHaveAttribute("data-armed", "true");
-  });
-
-  it("a PLANTED VIOLATION — armed defaulting true would make a single tap commit immediately; confirms the real component does NOT do this by construction (armed starts at null/false for every cell on mount)", async () => {
-    const user = userEvent.setup();
-    const { state } = findFreshUnrevealedFixture();
-    const moves: MineRunMove[] = [];
-    renderBoard(state, { onMove: (m) => moves.push(m) });
-    const hidden = screen.getAllByRole("gridcell", { name: /Hidden\./ })[0]!;
-    // Exactly one tap, fresh mount — if the guard were broken (e.g. armed defaulted true), this
-    // single tap would already have committed. It must not.
-    await user.click(hidden);
+    const revealed = screen.getAllByRole("gridcell", { name: /Revealed/ })[0]!;
+    await user.click(revealed);
     expect(moves).toHaveLength(0);
   });
 
-  it("keyboard: Enter arms, a second Enter on the same focused cell commits", async () => {
+  it("keyboard: Enter on the focused, legal cell commits the reveal", async () => {
     const user = userEvent.setup();
     const { state } = findFreshUnrevealedFixture();
     const moves: MineRunMove[] = [];
@@ -161,12 +125,21 @@ describe("Board — the mandatory two-tap confirm flow (O2: every platform, not 
     const hidden = screen.getAllByRole("gridcell", { name: /Hidden\./ })[0]!;
     hidden.focus();
     await user.keyboard("{Enter}");
-    expect(moves).toHaveLength(0);
-    await user.keyboard("{Enter}");
     expect(moves).toHaveLength(1);
   });
 
-  it("revealing a cell (an actual state transition) is reflected on the NEXT render — the just-revealed cell leaves the hidden/armable set entirely", () => {
+  it("without a re-render, a second tap on the same still-enabled cell commits AGAIN — proves there is no hidden arm/stage gate suppressing a first tap the way the withdrawn two-tap design would have", async () => {
+    const user = userEvent.setup();
+    const { state } = findFreshUnrevealedFixture();
+    const moves: MineRunMove[] = [];
+    renderBoard(state, { onMove: (m) => moves.push(m) });
+    const hidden = screen.getAllByRole("gridcell", { name: /Hidden\./ })[0]!;
+    await user.click(hidden);
+    await user.click(hidden); // same DOM node, no re-render between clicks — still "legal"
+    expect(moves).toHaveLength(2);
+  });
+
+  it("revealing a cell (an actual state transition) is reflected on the NEXT render — the just-revealed cell leaves the actionable set entirely", () => {
     const { state, seed } = findFreshUnrevealedFixture();
     const legal = engine.legalMoves(state, 0);
     const reveal = legal.find((m) => m.t === "reveal")! as Extract<MineRunMove, { t: "reveal" }>;

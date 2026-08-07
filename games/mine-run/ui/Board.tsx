@@ -3,44 +3,48 @@
 // themselves, no wrapping grid of its own, so BoardShell's CSS grid still sees flat grid items
 // (games/fadeout/ui/Board.tsx's own convention).
 //
-// THE MANDATORY TWO-TAP CONFIRM FLOW (mine-run.md §8.4, orchestrator addendum O2). The 32px
-// cell-size exception (below the shell's 48px floor — Cell.tsx's `minCellPx` seam) is granted
-// CONDITIONALLY on every reveal committing via two taps, on every platform, not just touch: a
-// mis-tap here doesn't cost a turn, it hits a mine and wipes an unbanked streak. This uses the
-// shell's own `Cell` `armed`/`onArm` seam (packages/shell/src/components/Cell.tsx) rather than
-// hand-rolling gesture handling — Board owns exactly one piece of state (`armed: number | null`,
-// which cell is currently staged) and lets Cell's own tap/keyboard machinery do the rest:
-//   - a tap/Enter on an unarmed cell calls `onArm` (arms it, does NOT submit a move at all —
-//     not even a rejected one; see Cell.tsx's `tryCommit`)
-//   - a tap/Enter on the ALREADY-armed cell falls through to Cell's normal commit, submitting
-//     the real `{t:"reveal", cell}` move
-//   - tapping a DIFFERENT cell while one is armed re-arms the new cell instead (armed is a
-//     single piece of Board state; every other cell's own `armed` prop is simply false)
-// `effectiveArmed` derives the displayed armed cell PURELY from render-time data (is this index
-// still a legal reveal target?) rather than an effect: the instant a committed reveal takes that
-// cell out of `legal` (revealed cells are never legal reveal targets again, win or mine), the
-// stale index stops matching any rendered cell's `armed` prop on its own — no separate reset
-// needed, and nothing can leave a phantom "armed" cell rendered as such.
+// STANDARD 48px CELLS, BoardShell'S ZOOM/PAN — NOT the plan's sub-48px/two-tap-commit exception.
+// mine-run.md §8.4/O2 pre-authorized a 32px cell floor conditioned on mandatory two-tap commit,
+// reasoning "10 columns at 320px = 32px cells... under the 48px design-gate line." That was true
+// on its own terms but incomplete: even AT 32px, the board's natural width (10*32 + 9*4 = 356px)
+// still overflows BoardShell's 320px-viewport frame (~288px) by 24% — the exception shrank the
+// per-cell floor without ever making the board actually fit, so some overflow-handling mechanism
+// (scroll/pan) was always going to be required regardless of which floor was chosen.
+//
+// platform-corrections.md C50 later withdrew the analogous exception granted to Tilt (7 columns,
+// ~41px) once the team found BoardShell's natural-size zoom/pan mechanism (built for Nine Grids'
+// 9x9/81-cell board, C38) already solves exactly this shape of problem for free, with zero
+// per-cell shrinkage: BoardShell sizes its grid to `cols*48 + (cols-1)*4` and the frame becomes a
+// scrollable pan region when that exceeds the viewport-constrained box (pure CSS, no JS layout
+// measurement). C50's own ruling: "An unused accessibility exception sitting on the books is a
+// hazard... the next team to hit a tight layout will cite it as precedent for shrinking a target,
+// and the precedent will be wrong, because the case that justified it turned out to have a better
+// answer." Mine Run's 10x10 board is exactly that next tight layout.
+//
+// THE ARITHMETIC (done here, before building, per standing instruction): at the standard 48px
+// floor, natural size = 10*48 + 9*4 = 516px, against a ~288px frame at a 320px viewport — 79%
+// over (worse than Nine Grids' 61%-over 9x9, which BoardShell's mechanism already handles). This
+// file therefore renders every cell at the shell's DEFAULT 48px floor (no `minCellPx` override
+// passed to `Cell`, matching Nine Grids and Tilt) and commits a reveal on a SINGLE tap/Enter, like
+// every other game's board — no `armed`/`onArm` staging. Flagged as a documented deviation from
+// mine-run.md §8.4/O2 for review, not a silent workaround (Tilt's own Board.tsx module doc uses
+// identical framing for the same withdrawal).
 //
 // Never colour alone (§8.4): revealed vs hidden is fill/text content, not hue; the numeral IS
 // the count encoding (classic minesweeper number-colours kept as the sacrificial third channel);
 // exploded is a glyph (💥), never a bare colour swap.
 //
-// "use client" — renders shell's Cell (hooks) and owns `armed` state itself; this file is under
-// games/**/ui/** and therefore covered by eslint's board-path animation boundary (C5): plain
-// CSS/inline styles only, no animation library.
+// "use client" — renders shell's Cell (hooks); this file is under games/**/ui/** and therefore
+// covered by eslint's board-path animation boundary (C5): plain CSS/inline styles only, no
+// animation library. Mine Run's grid itself has no per-cell motion (no age steps, no pulse — the
+// vault-drain/bank-slide narration mine-run.md §8.2 describes lives in BankBar.tsx, which is the
+// component that actually owns the bank/wipe state transition).
 "use client";
 
-import { useState } from "react";
 import type { BoardProps } from "@twist-arcade/game-spec";
 import { Cell, moveToCellId } from "@twist-arcade/shell";
 import type { MineRunMove, MineRunView } from "../engine";
 import { buildCellPresentations } from "./board-view";
-
-/** The sanctioned exception (mine-run.md §8.4/O2): 10 columns at 320px = 32px cells, below the
- *  shell's 48px design-gate floor. Conditional on the two-tap flow this whole file implements —
- *  never used without it. */
-export const MINE_RUN_MIN_CELL_PX = 32;
 
 /** Classic minesweeper number colours (ux-lens §8.4's "sacrificial third channel" — the numeral
  *  itself is the real, hue-independent encoding; colour is a bonus, never load-bearing). Chosen
@@ -69,11 +73,11 @@ function ExplodedGlyph() {
   );
 }
 
-// Mine Run's grid has no per-cell motion of its own (no age steps, no pulse — `prefs` is part
-// of every Board's contract but genuinely unneeded here; the vault-drain/bank-slide animation
-// mine-run.md §8.2 describes lives in the BankBar's own component, which does read `prefs`).
+// `onMove`/`seat`/`prefs` are part of every Board's BoardProps contract but unused here:
+// BoardShell owns the commit path (`onCellAction` decodes `id` back into a move via GameShell's
+// wiring, mirroring Fadeout/Nine Grids/Tilt's own Board components), and this board has no
+// per-seat or per-motion-preference rendering of its own (see this file's module doc).
 export function Board({ view, legal }: BoardProps<MineRunView, MineRunMove>) {
-  const [armed, setArmed] = useState<number | null>(null);
   const cells = buildCellPresentations(view);
 
   const legalReveal = new Set<number>();
@@ -81,18 +85,12 @@ export function Board({ view, legal }: BoardProps<MineRunView, MineRunMove>) {
     if (m.t === "reveal") legalReveal.add(m.cell);
   }
 
-  // Pure render-time derivation (see this file's header comment) — no effect required: an
-  // armed index that has left `legalReveal` (because it was just revealed, or the run ended)
-  // simply stops matching any cell's `armed` prop on the very next render.
-  const effectiveArmed = armed !== null && legalReveal.has(armed) ? armed : null;
-
   return (
     <>
       {cells.map((c) => {
         const move: MineRunMove = { t: "reveal", cell: c.cell };
         const id = moveToCellId(move);
         const disabled = !legalReveal.has(c.cell);
-        const isArmed = effectiveArmed === c.cell;
 
         const occupant = !c.revealed
           ? undefined
@@ -102,8 +100,6 @@ export function Board({ view, legal }: BoardProps<MineRunView, MineRunMove>) {
               ? <NumberGlyph n={c.n} />
               : undefined;
 
-        const accessibleName = isArmed ? `${c.accessibleName} Staged — tap again to reveal.` : c.accessibleName;
-
         return (
           <Cell
             key={c.cell}
@@ -111,11 +107,8 @@ export function Board({ view, legal }: BoardProps<MineRunView, MineRunMove>) {
             row={c.row}
             col={c.col}
             occupant={occupant}
-            armed={isArmed}
-            onArm={() => setArmed(c.cell)}
-            accessibleName={accessibleName}
+            accessibleName={c.accessibleName}
             disabled={disabled}
-            minCellPx={MINE_RUN_MIN_CELL_PX}
           />
         );
       })}

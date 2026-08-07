@@ -19,8 +19,15 @@ import { createMineRunHeuristic } from "./heuristic";
 
 export const DEFAULT_WIDTH = 10;
 export const DEFAULT_HEIGHT = 10;
-export const DEFAULT_MINES = 20;
-export const DEFAULT_BUDGET = 60;
+// FROZEN at 22% density / 75 budget (platform-corrections.md C46/C52) — NOT the 20%/60 pair
+// mine-run.md §1.1 still states. C46: leg 2's bounded lever sweep found 20%/60 statistically
+// indistinguishable from always-banking (gateRatio 0.9499, a "coin landing on its edge" per
+// C42) while 22%/75 clears the gate with a real, significant margin (gateRatio 0.9208, p =
+// 0.0298). C52's three-leg kill standard then ran against 22%/75 and did not kill the game.
+// "Every earlier Mine Run number in the repo describes 20%/60 and does not carry forward" — so
+// do not revert these two constants to 20/60 without a new orchestrator ruling superseding C46.
+export const DEFAULT_MINES = 22;
+export const DEFAULT_BUDGET = 75;
 
 /** Bounded retry for R2's zero-cell opening-region search (plan R2, §10's "deterministic
  *  retry path" anchor). Drawing continues from the SAME rng stream across attempts, so the

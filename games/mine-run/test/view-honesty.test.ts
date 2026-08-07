@@ -15,16 +15,22 @@
 // original view (the sample is truly indistinguishable from the real game state), and (c)
 // safeMove computed from each of those independently-reconstructed views agrees.
 //
-// Only Greedy/Strong (packages/bots, M2 — not this milestone, per platform-corrections C1's
-// determinized-Strong seam being routed to the platform team) don't exist yet to extend this
-// test to. safeMove is the one hidden-info policy this milestone owns, and it is exercised
-// here to the letter of the plan's anchor.
+// Extended (docs/plans/mine-run-risk-aware-policy.md §2/§3, platform-corrections.md C39's S1
+// ruling) to cover `riskAwareMove` (risk-policy.ts) the identical way, BEFORE any tuning run
+// against it is trusted: "C1 has failed twice in this codebase and Mine Run is precisely the
+// game where an omniscient policy posts excellent numbers on an unplayable game." Same
+// structural guarantee applies — `riskAwareMove`'s signature is `(view: MineRunView) =>
+// MineRunMove`, and its default (Tier B) risk source is `analyzeFrontier(view)`, itself already
+// proven view-honest by construction (csp.ts's own module doc: every function there takes a
+// MineRunView, never MineRunState/mines) — so there is no parameter anywhere in the call chain
+// that could carry which hidden world produced the view.
 
 import { describe, expect, it } from "vitest";
 import { rngFromSeed, rngFor, rngForSetup } from "@twist-arcade/engine";
 import { createMineRun } from "../engine";
 import type { MineRunView } from "../engine";
 import { safeMove } from "../probes";
+import { riskAwareMove, riskAwareRolloutSelector } from "../risk-policy";
 
 /**
  * `lastEffects` is excluded from the round-trip comparison below, deliberately. It is
@@ -127,5 +133,99 @@ describe("view-honesty: safeMove agrees across independently-resampled hidden wo
     const view = engine.playerView(state, 0);
     const results = Array.from({ length: 5 }, () => safeMove(view));
     for (const r of results) expect(r).toEqual(results[0]);
+  });
+});
+
+describe("view-honesty: riskAwareMove agrees across independently-resampled hidden worlds (S1, C39)", () => {
+  it("resampled worlds are genuinely distinct, round-trip to the identical view, and riskAwareMove agrees on all of them", () => {
+    const engine = createMineRun({ width: 6, height: 6, mines: 8, budget: 20 });
+    const seed = "view-honesty-midrun-risk";
+    let state = engine.setup(1, rngForSetup(seed));
+
+    // Same scripted opening as the safeMove test above — reach a genuine mid-run state with
+    // real remaining ambiguity, not a hand-picked one that happens to favor this policy.
+    let step = 0;
+    while (engine.status(state).kind === "ongoing" && step < 4) {
+      const legal = engine.legalMoves(state, 0).filter((m) => m.t === "reveal");
+      if (legal.length === 0) break;
+      const move = legal.reduce((min, m) => (m.t === "reveal" && min.t === "reveal" && m.cell < min.cell ? m : min));
+      state = engine.apply(state, new Map([[0, move]]), rngFor(seed, step));
+      step++;
+    }
+    expect(engine.status(state).kind).toBe("ongoing");
+
+    const view = engine.playerView(state, 0);
+    const unrevealedCount = view.width * view.height - Object.keys(view.cells).length;
+    expect(unrevealedCount).toBeGreaterThan(0);
+
+    const worldRngSeeds = ["world-a", "world-b", "world-c", "world-d", "world-e"];
+    const sampledMineSets: string[] = [];
+    const moves: unknown[] = [];
+
+    for (const s of worldRngSeeds) {
+      const sampled = engine.sampleConsistentState!(view, rngFromSeed(s));
+
+      const reView = engine.playerView(sampled, 0);
+      expect(JSON.stringify(withoutEffects(reView))).toBe(JSON.stringify(withoutEffects(view)));
+      expect(reView.lastEffects).toEqual([]);
+
+      sampledMineSets.push(JSON.stringify(sampled.mines));
+
+      // riskAwareMove computed from the RECONSTRUCTED view (derived independently from this
+      // specific sampled hidden world, default Tier B risk source `analyzeFrontier`) must agree
+      // with riskAwareMove computed from the original.
+      moves.push(riskAwareMove(reView));
+    }
+
+    const firstMove = moves[0];
+    for (const m of moves) expect(m).toEqual(firstMove);
+    expect(riskAwareMove(view)).toEqual(firstMove);
+
+    const distinctWorlds = new Set(sampledMineSets);
+    expect(distinctWorlds.size).toBeGreaterThan(1);
+  });
+
+  it("riskAwareMove is a pure, deterministic function of the view alone (repeated calls agree)", () => {
+    const engine = createMineRun({ width: 8, height: 8, mines: 10, budget: 30 });
+    const state = engine.setup(1, rngForSetup("determinism-of-riskawaremove"));
+    const view = engine.playerView(state, 0);
+    const results = Array.from({ length: 5 }, () => riskAwareMove(view));
+    for (const r of results) expect(r).toEqual(results[0]);
+  });
+
+  it("riskAwareRolloutSelector (the rollout adapter) derives its view via engine.playerView and never touches state.mines", () => {
+    // The adapter's own contract (risk-policy.ts's doc): a rollout MoveSelector receives `state`
+    // that may be a sampleConsistentState-sampled hypothetical world, never the true secret.
+    // Proven here the same way the safeMove test above proves it for the base policy: resample
+    // several independent worlds consistent with ONE fixed view, run the adapter against each
+    // full sampled STATE (not the view directly, since that's the adapter's whole point), and
+    // confirm every one agrees with chooseRiskAwareMove(view) computed directly.
+    const engine = createMineRun({ width: 6, height: 6, mines: 8, budget: 20 });
+    const seed = "view-honesty-adapter";
+    let state = engine.setup(1, rngForSetup(seed));
+    let step = 0;
+    while (engine.status(state).kind === "ongoing" && step < 4) {
+      const legal = engine.legalMoves(state, 0).filter((m) => m.t === "reveal");
+      if (legal.length === 0) break;
+      const move = legal.reduce((min, m) => (m.t === "reveal" && min.t === "reveal" && m.cell < min.cell ? m : min));
+      state = engine.apply(state, new Map([[0, move]]), rngFor(seed, step));
+      step++;
+    }
+    expect(engine.status(state).kind).toBe("ongoing");
+
+    const view = engine.playerView(state, 0);
+    const directMove = riskAwareMove(view);
+    const legal = engine.legalMoves(state, 0);
+
+    const worldRngSeeds = ["adapter-world-a", "adapter-world-b", "adapter-world-c"];
+    const sampledMineSets: string[] = [];
+    for (const s of worldRngSeeds) {
+      const sampled = engine.sampleConsistentState!(view, rngFromSeed(s));
+      sampledMineSets.push(JSON.stringify(sampled.mines));
+      const viaAdapter = riskAwareRolloutSelector(engine, sampled, 0, legal, rngFromSeed(`${s}:selector`));
+      expect(viaAdapter).toEqual(directMove);
+    }
+    const distinctWorlds = new Set(sampledMineSets);
+    expect(distinctWorlds.size).toBeGreaterThan(1);
   });
 });

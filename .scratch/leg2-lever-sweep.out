@@ -1,0 +1,31 @@
+grid size (minus frozen combo) = 8
+=== BRIDGE CHECK (frozen config) ===
+seed=ci:mine-run:ci-0 score=849 expected=849 match=true
+seed=ci:mine-run:ci-1 score=686 expected=686 match=true
+seed=ci:mine-run:ci-2 score=1247 expected=1247 match=true
+BRIDGE_CHECK_RESULT ok=true
+
+=== LEG 2 ROUND 1 — n=40, root="c37:mine-run:leg2-sweep" ===
+round 1 elapsed: 2026ms
+density=18%,budget=50        mines=18(18%) budget=50 n=40 alwaysSafeMedian=663.5 riskAwareMedian=643.5 gateRatio=1.0311 W/L/T=22/13/5 decisiveWinFraction=0.6286 tieInclusive=0.5500
+density=18%,budget=60        mines=18(18%) budget=60 n=40 alwaysSafeMedian=739 riskAwareMedian=706 gateRatio=1.0467 W/L/T=23/11/6 decisiveWinFraction=0.6765 tieInclusive=0.5750
+density=18%,budget=75        mines=18(18%) budget=75 n=40 alwaysSafeMedian=739 riskAwareMedian=746.5 gateRatio=0.9900 W/L/T=23/11/6 decisiveWinFraction=0.6765 tieInclusive=0.5750
+density=20%,budget=50        mines=20(20%) budget=50 n=40 alwaysSafeMedian=527 riskAwareMedian=538.5 gateRatio=0.9786 W/L/T=25/13/2 decisiveWinFraction=0.6579 tieInclusive=0.6250
+density=20%,budget=75        mines=20(20%) budget=75 n=40 alwaysSafeMedian=629.5 riskAwareMedian=604.5 gateRatio=1.0414 W/L/T=24/14/2 decisiveWinFraction=0.6316 tieInclusive=0.6000
+density=22%,budget=50        mines=22(22%) budget=50 n=40 alwaysSafeMedian=401.5 riskAwareMedian=411 gateRatio=0.9769 W/L/T=24/16/0 decisiveWinFraction=0.6000 tieInclusive=0.6000
+density=22%,budget=60        mines=22(22%) budget=60 n=40 alwaysSafeMedian=463.5 riskAwareMedian=464.5 gateRatio=0.9978 W/L/T=27/11/2 decisiveWinFraction=0.7105 tieInclusive=0.6750
+density=22%,budget=75        mines=22(22%) budget=75 n=40 alwaysSafeMedian=484 riskAwareMedian=497 gateRatio=0.9738 W/L/T=27/11/2 decisiveWinFraction=0.7105 tieInclusive=0.6750
+
+BEST (lowest gateRatio) combo: density=22% budget=75 gateRatio=0.9738 decisiveWinFraction=0.7105
+
+=== LEG 2 CONFIRMATION — n=100, root="c37:mine-run:leg2-confirm" ===
+confirmation elapsed: 636ms
+CONFIRM density=22%,budget=75 mines=22(22%) budget=75 n=100 alwaysSafeMedian=465 riskAwareMedian=505 gateRatio=0.9208 W/L/T=58/36/6 decisiveWinFraction=0.6170 tieInclusive=0.5800
+
+=== LEG 2 VERDICT ===
+confirmed gateRatio = 0.9208
+  <= 0.70 (design-healthy)?  false
+  < 0.95 (gate hard-fail line)? true
+  >= 1.0 (fails leg 1's own condition)? false
+LEG1_STILL_FAILS_AT_BEST_CONFIG (gateRatio >= 1.0) = false
+LEG2_COMPLETE
