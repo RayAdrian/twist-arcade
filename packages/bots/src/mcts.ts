@@ -9,10 +9,17 @@
 //     (never reseeded/forked) — since Rng is a stateful generator, sequential draws across
 //     many rollouts are naturally decorrelated ("fresh rng per playout") while the overall
 //     decision stays fully deterministic given the caller's seed.
-//   - simultaneous games: branches on the JOINT move space (the cartesian product of each
-//     active player's legalMoves, expressed directly as the `ReadonlyMap<PlayerId, M>` apply()
-//     already expects) rather than a decoupled per-player statistic — "start simple", per the
-//     plan; decoupled UCT is explicitly deferred.
+//   - simultaneous games: the TREE branches on the JOINT move space (the cartesian product of
+//     each active player's legalMoves, expressed directly as the `ReadonlyMap<PlayerId, M>`
+//     apply() already expects) rather than a decoupled per-player statistic — "start simple",
+//     per the plan; decoupled UCT (separate UCB1 statistics kept and grown per player during
+//     SELECTION) is explicitly still deferred. What changed (platform-corrections.md C56): FINAL
+//     MOVE SELECTION at a simultaneous root no longer reads off "the single most-visited joint
+//     cell" — that picks one lucky cell out of the cartesian product, not a judgment about your
+//     own action. It now marginalizes — see `aggregateByOwnMove` below — summing visits (and
+//     value) across every joint arm that shares your own move component, and choosing from
+//     THAT. This is strictly a selection-time fix; the tree itself still grows on the joint
+//     space exactly as before.
 //   - hidden-info games: NOT handled here at all — see determinize() in policy.ts. This file
 //     only ever operates on a real `S` (perfect information, or a determinized sample of one).
 //
@@ -82,6 +89,49 @@ function jointMoveOptions<S extends WithEffects, M extends Json>(
     combos = next;
   }
   return combos;
+}
+
+/** A joint arm collapsed down to a single actor's own move component — the unit
+ *  `aggregateByOwnMove` groups by and sums. */
+interface OwnMoveAggregate<M extends Json> {
+  move: M;
+  visits: number;
+  totalValue: number;
+}
+
+/**
+ * Marginalizes a simultaneous root's joint-move children down to ONE actor's own action
+ * (platform-corrections.md C56): groups `entries` by `stableStringify(move)` and sums `visits`
+ * / `totalValue` within each group, regardless of what any other simultaneous actor did on that
+ * arm. Order is insertion order of first occurrence.
+ *
+ * Exported and kept as a pure function — independent of `Node`, `root.children`, rng, or any
+ * real search — so it can be unit-tested against a synthetic joint-visit distribution
+ * (mirrors search-utils.ts's pattern for `valueOfStatus`/`rankingValueOf`: the AGGREGATION
+ * RULE is worth testing on its own, separate from whether a particular real search run happens
+ * to produce a distribution that exercises it).
+ *
+ * For a SEQUENTIAL root this is a structural no-op: `jointMoveOptions` never produces two
+ * children sharing the same own-move value there (each legal move of the single active player
+ * gets exactly one child), so every group has exactly one member and the result is
+ * order-and-value-identical to `entries`. `mctsPolicy`'s sequential branch does not call this
+ * function anyway (see its own comment) — this fact is what justifies that it wouldn't need to.
+ */
+export function aggregateByOwnMove<M extends Json>(
+  entries: readonly { move: M; visits: number; totalValue: number }[]
+): OwnMoveAggregate<M>[] {
+  const byKey = new Map<string, OwnMoveAggregate<M>>();
+  for (const entry of entries) {
+    const key = stableStringify(entry.move as unknown as Json);
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.visits += entry.visits;
+      existing.totalValue += entry.totalValue;
+    } else {
+      byKey.set(key, { move: entry.move, visits: entry.visits, totalValue: entry.totalValue });
+    }
+  }
+  return Array.from(byKey.values());
 }
 
 /** The edge owner for children of `state` — see the module doc's VALUE CONVENTION note. */
@@ -200,25 +250,71 @@ export function mctsPolicy<S extends WithEffects, M extends Json>(opts: MctsOpti
         } while (clock.now() < deadline);
       }
 
-      let bestEntry: { jointMove: JointMove<M>; child: Node<S, M> } | undefined;
-      let bestVisits = -1;
-      const rootVisits: { move: Json; visits: number }[] = [];
-      for (const entry of root.children.values()) {
-        const myMove = entry.jointMove.get(player);
-        if (myMove !== undefined) {
-          rootVisits.push({ move: myMove as unknown as Json, visits: entry.child.visits });
+      // --- FINAL SELECTION (platform-corrections.md C56) ---
+      const rootActive = engine.active(state);
+      let move: M;
+      let rootVisits: { move: Json; visits: number }[];
+
+      if (rootActive.mode === "simultaneous") {
+        // Marginalize: sum visits/value across every joint arm sharing `player`'s own move,
+        // then choose the own-move with the most AGGREGATED visits — the decoupled analog of
+        // "most robust child" (favor the action UCB spent the most cumulative attention
+        // confirming, across however the other actor(s) responded), not "the single luckiest
+        // joint cell" (the pre-fix defect: one cell out of the cartesian product, which a
+        // handful of visits can put on top by chance — see mcts.test.ts's lucky-cell-rps case
+        // and docs/plans/platform-corrections.md C56 for a real measured instance).
+        const ownEntries = Array.from(root.children.values())
+          .map((entry) => ({
+            move: entry.jointMove.get(player),
+            visits: entry.child.visits,
+            totalValue: entry.child.totalValue,
+          }))
+          .filter((e): e is { move: M; visits: number; totalValue: number } => e.move !== undefined);
+        const aggregates = aggregateByOwnMove(ownEntries);
+
+        let best: OwnMoveAggregate<M> | undefined;
+        let bestVisits = -1;
+        for (const agg of aggregates) {
+          if (agg.visits > bestVisits) {
+            bestVisits = agg.visits;
+            best = agg;
+          }
         }
-        if (entry.child.visits > bestVisits) {
-          bestVisits = entry.child.visits;
-          bestEntry = entry;
+        if (!best) {
+          throw new Error("mctsPolicy: no legal moves were available to search from the given state");
         }
-      }
-      if (!bestEntry) {
-        throw new Error("mctsPolicy: no legal moves were available to search from the given state");
-      }
-      const move = bestEntry.jointMove.get(player);
-      if (move === undefined) {
-        throw new Error(`mctsPolicy: player ${player} has no move component in the selected joint action`);
+        move = best.move;
+        rootVisits = aggregates.map((agg) => ({ move: agg.move as unknown as Json, visits: agg.visits }));
+      } else {
+        // Sequential (or solo) root — UNCHANGED from before C56, deliberately not routed
+        // through aggregateByOwnMove: every shipped sequential game's tiers (Fadeout, Nine
+        // Grids, Tilt) depend on byte-identical output here, and this branch is the ORIGINAL
+        // code, untouched, not merely "equivalent" code. (It would in fact behave identically
+        // to the aggregation path, per aggregateByOwnMove's structural-no-op doc — but keeping
+        // it as its own literal branch means that claim never has to be trusted, only the
+        // literal unchanged code path does.)
+        let bestEntry: { jointMove: JointMove<M>; child: Node<S, M> } | undefined;
+        let bestVisits = -1;
+        const seqRootVisits: { move: Json; visits: number }[] = [];
+        for (const entry of root.children.values()) {
+          const myMove = entry.jointMove.get(player);
+          if (myMove !== undefined) {
+            seqRootVisits.push({ move: myMove as unknown as Json, visits: entry.child.visits });
+          }
+          if (entry.child.visits > bestVisits) {
+            bestVisits = entry.child.visits;
+            bestEntry = entry;
+          }
+        }
+        if (!bestEntry) {
+          throw new Error("mctsPolicy: no legal moves were available to search from the given state");
+        }
+        const seqMove = bestEntry.jointMove.get(player);
+        if (seqMove === undefined) {
+          throw new Error(`mctsPolicy: player ${player} has no move component in the selected joint action`);
+        }
+        move = seqMove;
+        rootVisits = seqRootVisits;
       }
 
       const stats: SearchStats = { elapsedMs: clock.now() - start, rollouts, rootVisits };
