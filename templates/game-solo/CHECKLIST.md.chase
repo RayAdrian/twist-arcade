@@ -55,6 +55,10 @@ as the CLAUDE.md §2 loop's stage-2 (Develop) TDD anchor list for this game.
 - [ ] `index.ts`'s `announce()` strings — real per-event sentence fragments (ux-lens §9).
 - [ ] `shareArtifact()` — <=7 lines, emoji move-timeline body only.
 - [ ] `howSheetFrames` — three real frames.
-- [ ] Register in `games/registry.ts` (the scaffold already inserted your entry at the
-      `<new-game:insert>` marker — confirm it and delete this line once you have).
+- [ ] **Gates green, THEN register** (platform-corrections.md C15/C28): this game was
+      scaffolded UNREGISTERED on purpose — gate-before-UI (C16) means `/play/__GAME_ID__` must
+      not be routable until `pnpm harness:ci-gates -- --game __GAME_ID__` passes. Once it does,
+      run `pnpm new-game __GAME_ID__ --solo chase --register` (same id and flavor — this re-run
+      inserts the `games/registry.ts` entry at the `<new-game:insert>` marker without
+      re-stamping your files) and delete this line.
 - [ ] Open the PR — CLAUDE.md §2's loop (stage 3 onward) takes it from here.
