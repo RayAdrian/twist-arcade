@@ -25,6 +25,7 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 | ninegrids (engine built + green, deliberately unregistered) | `../claude-project-ninegrids` | `feature/ninegrids` | `twistarcade_ninegrids` | 55121–55129 | not started (no DB) | ACTIVE — 2 commits ahead; awaiting affordable gates (C22) before UI + registration |
 | ui-material ("ink on paper" material foundation) | — removed | — deleted | `twistarcade_ui` | — | never started (no DB) | **CLOSED** — fully merged into `main`, 0 unique commits, worktree and branch removed |
 | wrap (killed game) | — removed | `feature/wrap` retained | `twistarcade_wrap` | — | never started (no DB) | **CLOSED — GAME KILLED (C20).** Worktree removed; branch and tag `archive/wrap-killed-by-c20` kept: its 5 commits are the measurement evidence that killed it |
+| deferstatus (C27: `deferred` gate status + Mine Run CI-tier wiring) | `../claude-project-deferstatus` | `feature/defer-status` | `twistarcade_deferstatus` | 55321–55329 | not started (no DB) — pure harness/gate-table change, no game code touches Postgres | ACTIVE |
 
 ## Port blocks
 
@@ -40,6 +41,7 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 | 55021–55029 (team 7) | harness-solo | CLAIMED |
 | 55121–55129 (team 8) | ninegrids | CLAIMED |
 | 55221–55229 (team 9) | phase2schema | **RELEASED** — team closed 2026-08-07 |
+| 55321–55329 (team 10) | deferstatus | CLAIMED |
 
 **Host note (2026-08-02):** Docker on this machine already runs Supabase stacks for
 unrelated projects (`mento-h0`, `prequal-and405`, `prequal-and473-450`). All four blocks
