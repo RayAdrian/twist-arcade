@@ -1,12 +1,13 @@
 # Twist Arcade — build progress
 
-*Orchestrator-maintained. Last updated 2026-08-04.*
+*Orchestrator-maintained. Last updated 2026-08-07.*
 
 Repo: `github.com/RayAdrian/twist-arcade` · Roadmap: `docs/roadmap.md` ·
 Research: `docs/research/games/` · Corrections: `docs/plans/platform-corrections.md`
 
-**`main` is green: 1,321 tests, typecheck, lint, engine purity, production build.**
-**Two games are playable: `/play/fadeout` and `/play/crackstep`.**
+**`main` is green: 1,366 tests, typecheck, lint, engine purity, production build.**
+**Two games are playable: `/play/fadeout` and `/play/crackstep`.** Nine Grids has passed its
+gates and is awaiting a board; the Supabase schema is now in version control.
 
 ---
 
@@ -53,8 +54,15 @@ prose while the schema permitted its violation.
 **An orchestrator error the build could not have caught:** the schema was applied to the
 remote via MCP and **never checked in** — no `supabase/` directory existed, so the shape of
 the production database lived only on a hosted server. Every gate stayed green throughout,
-because none of them look at a database no code uses yet. Milestone A0 (in flight) checks it
-in as migration `0001`, generated from the live database rather than from memory.
+because none of them look at a database no code uses yet.
+
+**A0 is merged** (`1c8244e`): migrations `0001` (a faithful record generated from live
+introspection), `0002` (the §4 amendments as corrected by C21) and `0003` (cascade → restrict)
+are checked in and applied. A drift guard replays them into an in-process Postgres and compares
+against a snapshot of the **real remote** — the fixture is the database, not the migration's
+intent, so it cannot pass tautologically. Stage-6 review planted a 10-mutant matrix against it;
+four passed green (new table, new function, grant, column comment) and all four are now closed.
+`commit_move` and the rest of Phase 2 remain unstarted.
 
 ---
 
