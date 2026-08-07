@@ -1,6 +1,10 @@
 #!/usr/bin/env node
-// scripts/ci-gates.ts — `pnpm harness:ci-gates [-- --suite ci|nightly]` — the M4 CI entry
-// point. Iterates every registered game (games/registry.ts) and runs the correct gate table
+// scripts/ci-gates.ts — `pnpm harness:ci-gates [-- --suite ci|nightly] [--game <id>]` — the M4
+// CI entry point. Iterates every registered game (games/registry.ts) and runs the correct gate
+// table, OR (platform-corrections.md C13) exactly one of them when `--game <id>` is supplied —
+// checking one game's own ship/no-ship gates must never re-run every other game's gates too,
+// a cost that only grows as the registry does. `--game` refuses loudly (UnknownGameIdError) for
+// an id absent from the registry, rather than silently falling back to the whole registry.
 // for it via @twist-arcade/harness's ci-gates.ts dispatcher (selected by manifest.solo.format,
 // never player count — platform-corrections.md C2). Exits non-zero if ANY game's gate report
 // is not ok: "wired as a failing assertion" (plan §7.5).
@@ -99,6 +103,24 @@ function defaultDeps(): RunAllGatesDeps {
 
 export interface RunAllGatesOptions {
   suite: "ci" | "nightly";
+  /** C13: restrict this run to exactly one registered game id (`--game <id>`). Omitted (the
+   *  default) keeps the historical full-registry behavior — checking one game must never
+   *  re-run every other game's gates too, which is exactly why this filter exists (a game
+   *  team's own ship/no-ship check was growing linearly with the registry's size). */
+  game?: string;
+}
+
+/** Thrown when `--game <id>` names something absent from the registry — a typo or a game that
+ *  hasn't landed yet must be a loud, immediate refusal, never a silent "ran the whole registry
+ *  anyway" or "ran nothing" (the same "a skipped gate and a passed gate must never look the
+ *  same" discipline C2 applies to gate STATUS applies here to gate SELECTION). */
+export class UnknownGameIdError extends Error {
+  constructor(gameId: string, known: readonly string[]) {
+    super(
+      `ci-gates: --game "${gameId}" is not a registered game. Known: ${known.length > 0 ? known.join(", ") : "(registry is empty)"}.`
+    );
+    this.name = "UnknownGameIdError";
+  }
 }
 
 /**
@@ -112,7 +134,15 @@ export async function runAllGates(
   deps: RunAllGatesDeps = defaultDeps()
 ): Promise<GameCiGateReport[]> {
   const reports: GameCiGateReport[] = [];
-  const gameIds = Object.keys(registry).sort();
+  const allGameIds = Object.keys(registry).sort();
+
+  let gameIds = allGameIds;
+  if (opts.game !== undefined) {
+    if (!(opts.game in registry)) {
+      throw new UnknownGameIdError(opts.game, allGameIds);
+    }
+    gameIds = [opts.game];
+  }
 
   for (const gameId of gameIds) {
     const entry = registry[gameId]!;
@@ -138,6 +168,11 @@ export async function runAllGates(
         seed: `ci:${gameId}:${opts.suite}`,
         seedCount: opts.suite === "nightly" ? NIGHTLY_SEED_COUNT : CI_SEED_COUNT,
         safeMove,
+        // C19: threads suite through so manifest.ciGateBudget.soloChaseCiRollouts (and the
+        // hidden-info floor guard it's checked against) actually applies at the "ci" budget —
+        // previously missing here entirely, so no registered solo-chase game's rollout budget
+        // was ever suite-aware regardless of what its manifest declared.
+        suite: opts.suite,
       });
       reports.push(report);
       continue;
@@ -171,12 +206,25 @@ function parseSuiteFlag(argv: readonly string[]): "ci" | "nightly" {
   return value;
 }
 
+/** C13: `--game <id>` restricts this run to one registered game. `undefined` (the flag
+ *  omitted) keeps the historical full-registry run. */
+function parseGameFlag(argv: readonly string[]): string | undefined {
+  const idx = argv.indexOf("--game");
+  if (idx === -1) return undefined;
+  const value = argv[idx + 1];
+  if (value === undefined || value.startsWith("--")) {
+    throw new Error("ci-gates: --game requires a value (a registered game id)");
+  }
+  return value;
+}
+
 async function main(): Promise<void> {
   const suite = parseSuiteFlag(process.argv.slice(2));
+  const game = parseGameFlag(process.argv.slice(2));
 
   const registry = await loadRegistry();
   const gameIds = Object.keys(registry);
-  if (gameIds.length === 0) {
+  if (gameIds.length === 0 && game === undefined) {
     console.log(
       "ci-gates: games/registry.ts has no registered games yet — nothing to gate. This is " +
         "expected before the first game team registers (plan §9); the moment a game lands in " +
@@ -185,7 +233,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const reports = await runAllGates(registry, { suite });
+  const reports = await runAllGates(registry, { suite, ...(game !== undefined ? { game } : {}) });
   for (const report of reports) {
     console.log(formatGameCiGateReport(report));
     console.log("");

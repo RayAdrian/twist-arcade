@@ -18,6 +18,7 @@
 
 import { bufferDaysRemaining, readAllCertificates, readCertificate } from "./certify";
 import type { GameEngine, Json, WithEffects } from "@twist-arcade/engine";
+import { rngFromSeed } from "@twist-arcade/engine";
 import { verifyCertificate } from "@twist-arcade/engine/testkit/checks";
 import type { GameManifest } from "@twist-arcade/game-spec";
 import { buildSoloRoster, type SafeMoveFn } from "./agents";
@@ -128,6 +129,77 @@ export function runTwoPlayerCiGate(
  *  be explicit and >=100, for the same reason. */
 export const DEFAULT_SOLO_SEED_COUNT = 100;
 
+/** Matches solo-runner.ts's own `DEFAULT_BUDGET` ({kind:"rollouts", n:1000}) exactly — this
+ *  module always threads an EXPLICIT budget through (rather than relying on solo-runner.ts's
+ *  own default) so C19's suite-dependent override below has one number to substitute in
+ *  place of, with no silent difference in behavior when no override applies. */
+const DEFAULT_SOLO_CHASE_ROLLOUTS = 1000;
+
+/** Empirically grounded floor (platform-corrections.md C19's hidden-info follow-up; see
+ *  packages/harness/test/probes-solo.test.ts's own tuning notes on the SAME shipped Strong
+ *  agent): at ~1-2 determinization samples per candidate move (K), the shipped
+ *  `determinizedFlatMonteCarloPolicy` reproduced a naive majority-vote wrapper's weak
+ *  separation; at ~10+ samples/candidate, real separation appeared. 8 sits between those two
+ *  observed points — comfortably above the failing case, with headroom under the point that
+ *  was shown to work. K = budget.n / legalMoves.length (determinized-flat-mc.ts), so this is
+ *  checked as `budget.n / (root branching factor) >= this floor`. */
+export const MIN_HIDDEN_INFO_SAMPLES_PER_CANDIDATE = 8;
+
+/** Thrown by `runSoloChaseCiGate` when, for a `hiddenInformation: true` engine, the resolved
+ *  rollout budget (possibly scaled via `manifest.ciGateBudget.soloChaseCiRollouts`) divided by
+ *  the root branching factor works out to fewer determinization samples per candidate (K) than
+ *  `MIN_HIDDEN_INFO_SAMPLES_PER_CANDIDATE` — a real, if approximate, generic proxy for "this
+ *  budget is too low to trust Strong as a yardstick" (C6: "a gate defined relative to a
+ *  reference agent is only as trustworthy as that agent"). Refuses BEFORE running any
+ *  self-play, rather than silently reporting an Always-Safe-vs-Strong ratio measured against a
+ *  Strong too weak to mean anything. */
+export class HiddenInfoBudgetTooLowError extends Error {
+  constructor(gameId: string, budgetN: number, branchingFactor: number, samplesPerCandidate: number) {
+    super(
+      `runSoloChaseCiGate: engine "${gameId}" has hiddenInformation===true and its resolved ` +
+        `rollout budget (${budgetN}) divided by the root branching factor (${branchingFactor}) ` +
+        `works out to only ~${samplesPerCandidate.toFixed(2)} determinization samples per ` +
+        `candidate move — below the floor of ${MIN_HIDDEN_INFO_SAMPLES_PER_CANDIDATE} known ` +
+        "(empirically) to keep the shipped Strong agent a meaningful Always-Safe yardstick " +
+        "(platform-corrections.md C19's hidden-info follow-up; C6's 'a gate defined relative to " +
+        "a reference agent is only as trustworthy as that agent'). Raise the rollout budget (or " +
+        "manifest.ciGateBudget.soloChaseCiRollouts) rather than trust a ratio measured against a " +
+        "Strong this weak."
+    );
+    this.name = "HiddenInfoBudgetTooLowError";
+  }
+}
+
+/** Root branching factor estimate: legal moves from a freshly-set-up state, under a fixed
+ *  probe seed (this is a budget SANITY check, not a measurement the gate itself reports —
+ *  determinism here just keeps the check itself reproducible). Good enough for the floor
+ *  check above: every shipped hidden-info game's widest branching factor is at or near the
+ *  opening position (Mine Run: every cell unrevealed), so this is a conservative (if anything,
+ *  slightly pessimistic — later, narrower decisions get proportionally MORE samples per
+ *  candidate for the same budget) estimate of K. */
+function estimateRootBranchingFactor<S extends WithEffects, M extends Json, V extends WithEffects>(
+  engine: GameEngine<S, M, V>
+): number {
+  const state = engine.setup(1, rngFromSeed("__ci_gate_hidden_info_budget_probe__"));
+  return engine.legalMoves(state, 0).length;
+}
+
+/** No-op for a perfect-information engine (K/determinization does not apply there at all —
+ *  the "Strong" agent for those games is `beamPolicy`, whose cost model is unrelated to this
+ *  rollouts-per-candidate coupling). Only ever throws for `hiddenInformation: true`. */
+function assertHiddenInfoRolloutBudgetViable<S extends WithEffects, M extends Json, V extends WithEffects>(
+  engine: GameEngine<S, M, V>,
+  budgetN: number
+): void {
+  if (!engine.meta.hiddenInformation) return;
+  const branchingFactor = estimateRootBranchingFactor(engine);
+  if (branchingFactor <= 0) return; // nothing to divide by — not this guard's concern
+  const samplesPerCandidate = budgetN / branchingFactor;
+  if (samplesPerCandidate < MIN_HIDDEN_INFO_SAMPLES_PER_CANDIDATE) {
+    throw new HiddenInfoBudgetTooLowError(engine.meta.id, budgetN, branchingFactor, samplesPerCandidate);
+  }
+}
+
 export interface SoloChaseCiGateOptions<M extends Json, V> {
   readonly seed: string;
   readonly seedCount?: number;
@@ -141,6 +213,10 @@ export interface SoloChaseCiGateOptions<M extends Json, V> {
    *  otherwise) — precomputed by the caller, since what "losing fast" means is per-game
    *  knowledge this module has no business owning. */
   readonly suicide?: { suicideIsOptimalLine: boolean };
+  /** C19: selects whether `manifest.ciGateBudget.soloChaseCiRollouts` applies ("ci", the
+   *  default) or is ignored in favor of the platform default of 1000 ("nightly" — "keeps the
+   *  full-budget table", matching the two-player lane's identical rule in suites.ts). */
+  readonly suite?: "ci" | "nightly";
 }
 
 export interface SoloChaseGateReport {
@@ -161,7 +237,21 @@ export function runSoloChaseCiGate<S extends WithEffects, M extends Json, V exte
   const seedCount = opts.seedCount ?? DEFAULT_SOLO_SEED_COUNT;
   const seeds = pairedSeeds(opts.seed, seedCount);
   const moveCap = opts.moveCap ?? manifest.solo?.moveCap ?? 2000;
-  const runOpts: PlaySoloRunOptions = { moveCap };
+
+  // C19: at suite "ci" (the default) only, measure Strong/Always-Safe with
+  // `ciGateBudget.soloChaseCiRollouts` rollouts instead of the platform default — "nightly"
+  // always uses the full default (the plan's "nightly keeps the full-budget table", the same
+  // rule suites.ts's two-player lane follows). For a hidden-info engine this SAME number also
+  // sets the determinization sample count K (K = n / legalMoves.length) — the coupling is
+  // exactly why the floor guard below is checked against this resolved value, not the raw
+  // manifest field.
+  const suite = opts.suite ?? "ci";
+  const ciOverride = manifest.ciGateBudget?.soloChaseCiRollouts;
+  const rolloutsN = suite === "ci" && ciOverride !== undefined ? ciOverride : DEFAULT_SOLO_CHASE_ROLLOUTS;
+
+  assertHiddenInfoRolloutBudgetViable(engine, rolloutsN);
+
+  const runOpts: PlaySoloRunOptions = { moveCap, budget: { kind: "rollouts", n: rolloutsN } };
 
   const roster = buildSoloRoster(engine);
   const randomSummary = runSoloAgentOverSeeds(engine, roster.random, seeds, runOpts);

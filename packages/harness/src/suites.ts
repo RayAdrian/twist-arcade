@@ -20,7 +20,7 @@
 //      real, not just in the pure evaluator).
 
 import type { GameEngine, Json, WithEffects } from "@twist-arcade/engine";
-import type { DifficultyTier, GameManifest, HarnessThresholds } from "@twist-arcade/game-spec";
+import type { DifficultyTier, GameManifest, HarnessThresholds, SolvedValueClaim } from "@twist-arcade/game-spec";
 import { DEFAULT_HARNESS_THRESHOLDS } from "@twist-arcade/game-spec";
 import { tierPolicy } from "@twist-arcade/bots";
 import type { AgentSpec } from "./roster";
@@ -87,16 +87,51 @@ function applyException(gate: string, raw: GateStatus, detail: string, exception
   return { gate, status: "warn", detail, exceptionJustification: exception.justification };
 }
 
+/** Thrown by `evaluateCiGates` when a manifest's `solvedValue` claims a non-"unknown" value with
+ *  no `proof` pointer (platform-corrections.md C23: "asserting a value is not proving one" —
+ *  the exact confidence that failed on Wrap's predicted-but-unmeasured FPA, and the standard a
+ *  "none by construction" balance claim like Bid-Tac-Toe's gets no relief under either). Mirrors
+ *  `EmptyExceptionJustificationError`'s posture at the same seam: refused at the manifest
+ *  boundary, before any gate is evaluated on the strength of the claim. A game may only receive
+ *  gate relief backed by a real, NAMED artifact, never by assertion. */
+export class MissingSolvedValueProofError extends Error {
+  constructor(value: string) {
+    super(
+      `evaluateCiGates: manifest.solvedValue.value is "${value}" but carries no "proof" pointer ` +
+        "(platform-corrections.md C23: asserting a value is not proving one). Add " +
+        "manifest.solvedValue.proof naming the artifact that proves this value (e.g. a solve " +
+        "report path and section) before this claim can grant any gate relief."
+    );
+    this.name = "MissingSolvedValueProofError";
+  }
+}
+
+/** Self-play floor for the "solved-value-reached" gate (platform-corrections.md C23's inverted
+ *  check): for a game with a PROVEN `solvedValue`, self-play must actually reach that value at a
+ *  healthy rate — the real regression signal a decided game needs, and the exact opposite of the
+ *  un-corrected `draw-rate`/`first-player-win-rate` gates that failed Fadeout for playing
+ *  correctly. Grounded in C23's own sweep: Fadeout's self-play reached the proven draw at
+ *  EXACTLY 100% across all six tested points (3,000 through 10,000 rollouts; 25 through 100
+ *  games), with zero variance. 0.90 sits comfortably below that observed floor — room for
+ *  legitimate noise (a different seed, a minor bot change) — while still catching a real
+ *  regression: the orchestrator's own worked example, a drop to 70%, fails this floor by a wide
+ *  margin. That is the point: the un-corrected gate would have scored that drop as an
+ *  IMPROVEMENT (closer to the "balanced" 35-65% FPA band it was checking instead). */
+export const SOLVED_VALUE_SELF_PLAY_FLOOR = 0.9;
+
 /**
  * Pure gate evaluation (see module doc for why this is split from `runCiSuite`). `suite`
  * selects only the ruthless-vs-standard row's severity (warn at PR budget vs hard-fail
- * nightly, per roadmap §6) — every other row's threshold is suite-independent.
+ * nightly, per roadmap §6) — every other row's threshold is suite-independent. `solvedValue`
+ * (platform-corrections.md C23) is the manifest's proven game-theoretic value, when it has one —
+ * omitted (or `{ value: "unknown" }`) leaves every gate below exactly as it was before C23.
  */
 export function evaluateCiGates(
   inputs: GateInputs,
   thresholds: HarnessThresholds,
   exceptions: readonly ManifestException[] = [],
-  suite: "ci" | "nightly" = "ci"
+  suite: "ci" | "nightly" = "ci",
+  solvedValue?: SolvedValueClaim
 ): GateResult[] {
   // Validated up front, before any gate runs — an exception with a blank justification is
   // rejected regardless of whether it ends up matching a failing gate (see
@@ -105,6 +140,12 @@ export function evaluateCiGates(
     if (exception.justification.trim() === "") {
       throw new EmptyExceptionJustificationError(exception.gate);
     }
+  }
+
+  // C23: same posture, same seam — a claimed solved value with no proof is refused before any
+  // gate runs on the strength of it.
+  if (solvedValue && solvedValue.value !== "unknown" && (!solvedValue.proof || solvedValue.proof.trim() === "")) {
+    throw new MissingSolvedValueProofError(solvedValue.value);
   }
 
   const results: GateResult[] = [];
@@ -122,28 +163,52 @@ export function evaluateCiGates(
   }
 
   {
-    const [lo, hi] = thresholds.firstPlayerWinRateRange;
-    const pass = inputs.firstPlayerWinRate >= lo && inputs.firstPlayerWinRate <= hi;
-    results.push(
-      applyException(
-        "first-player-win-rate",
-        pass ? "pass" : "fail",
-        `${(inputs.firstPlayerWinRate * 100).toFixed(1)}% (band [${(lo * 100).toFixed(0)}%, ${(hi * 100).toFixed(0)}%])`,
-        exceptions
-      )
-    );
+    // C23: for ANY proven solvedValue (draw, p0-win, or p1-win), a "balanced" FPA band is
+    // unsatisfiable by construction — a solved game's first-player win rate is a KNOWN
+    // quantity (0% for a draw or a p1-win, ~100% for a p0-win), not a design target to hit a
+    // range around. n/a, citing the proof, rather than a fail this game can never clear.
+    if (solvedValue && solvedValue.value !== "unknown") {
+      results.push({
+        gate: "first-player-win-rate",
+        status: "n/a",
+        detail: `manifest.solvedValue is a proven "${solvedValue.value}" (${solvedValue.proof}) — a balanced-FPA band does not apply to a solved game`,
+      });
+    } else {
+      const [lo, hi] = thresholds.firstPlayerWinRateRange;
+      const pass = inputs.firstPlayerWinRate >= lo && inputs.firstPlayerWinRate <= hi;
+      results.push(
+        applyException(
+          "first-player-win-rate",
+          pass ? "pass" : "fail",
+          `${(inputs.firstPlayerWinRate * 100).toFixed(1)}% (band [${(lo * 100).toFixed(0)}%, ${(hi * 100).toFixed(0)}%])`,
+          exceptions
+        )
+      );
+    }
   }
 
   {
-    const pass = inputs.drawRate <= thresholds.maxDrawRate;
-    results.push(
-      applyException(
-        "draw-rate",
-        pass ? "pass" : "fail",
-        `${(inputs.drawRate * 100).toFixed(1)}% (max ${(thresholds.maxDrawRate * 100).toFixed(1)}%)`,
-        exceptions
-      )
-    );
+    // C23: a draw-rate CEILING is unsatisfiable by construction specifically for a proven draw
+    // (the true value is 100%) — n/a, citing the proof. A proven DECISIVE value (p0-win/p1-win)
+    // does not conflict with this gate (a low draw rate is still the expected, checkable
+    // outcome there), so it stays active in that case.
+    if (solvedValue && solvedValue.value === "draw") {
+      results.push({
+        gate: "draw-rate",
+        status: "n/a",
+        detail: `manifest.solvedValue is a proven draw (${solvedValue.proof}) — a draw-rate ceiling is unsatisfiable by construction for a drawn game`,
+      });
+    } else {
+      const pass = inputs.drawRate <= thresholds.maxDrawRate;
+      results.push(
+        applyException(
+          "draw-rate",
+          pass ? "pass" : "fail",
+          `${(inputs.drawRate * 100).toFixed(1)}% (max ${(thresholds.maxDrawRate * 100).toFixed(1)}%)`,
+          exceptions
+        )
+      );
+    }
   }
 
   {
@@ -151,16 +216,31 @@ export function evaluateCiGates(
     const inBand = inputs.meanPlies >= lo && inputs.meanPlies <= hi;
     const noCapHits = inputs.capHitRate === 0;
     const pass = inBand && noCapHits;
+    // "across all matchups" made explicit here (not just self-play) — this IS
+    // worstCapHitRate's own aggregation (see its doc comment), and a report that prints a
+    // DIFFERENT, self-play-only cap-hit number alongside this one (as an ad hoc debug script
+    // did during the C23 investigation) reads as two numbers for one quantity. This is the one
+    // number the gate actually uses; it says so.
     const detail = !inBand
       ? `mean ${inputs.meanPlies.toFixed(1)} plies (band [${lo}, ${hi}])`
       : !noCapHits
-        ? `mean ${inputs.meanPlies.toFixed(1)} plies in band, but cap-hit rate ${(inputs.capHitRate * 100).toFixed(2)}% > 0 (any cap hit fails)`
-        : `mean ${inputs.meanPlies.toFixed(1)} plies, 0 cap hits`;
+        ? `mean ${inputs.meanPlies.toFixed(1)} plies in band, but cap-hit rate ${(inputs.capHitRate * 100).toFixed(2)}% > 0 across all matchups (any cap hit fails)`
+        : `mean ${inputs.meanPlies.toFixed(1)} plies, 0 cap hits across all matchups`;
     results.push(applyException("mean-plies", pass ? "pass" : "fail", detail, exceptions));
   }
 
   {
-    if (inputs.ruthlessVsStandardWinRate === null) {
+    // C23: "ruthless cannot out-win standard when neither can win" — unsatisfiable by
+    // construction specifically for a proven draw. A proven decisive value does not have this
+    // problem (ruthless SHOULD still out-win standard more often via better search), so this
+    // gate stays active for p0-win/p1-win.
+    if (solvedValue && solvedValue.value === "draw") {
+      results.push({
+        gate: "ruthless-vs-standard",
+        status: "n/a",
+        detail: `manifest.solvedValue is a proven draw (${solvedValue.proof}) — ruthless cannot out-win standard when neither can win`,
+      });
+    } else if (inputs.ruthlessVsStandardWinRate === null) {
       results.push({ gate: "ruthless-vs-standard", status: "n/a", detail: "manifest has no \"standard\" tier" });
     } else {
       const pass = inputs.ruthlessVsStandardWinRate >= thresholds.ruthlessVsStandardMinWinRate;
@@ -178,7 +258,99 @@ export function evaluateCiGates(
     }
   }
 
+  {
+    // C23's inverted gate: for a game with a PROVEN solvedValue, confirm self-play actually
+    // REACHES it at a healthy rate — always present (never silently skipped, C2's rule), n/a
+    // when there is no proven value to confirm.
+    if (!solvedValue || solvedValue.value === "unknown") {
+      results.push({ gate: "solved-value-reached", status: "n/a", detail: "no proven manifest.solvedValue — nothing to confirm" });
+    } else {
+      const { value, proof } = solvedValue;
+      const achieved =
+        value === "draw" ? inputs.drawRate : value === "p0-win" ? inputs.firstPlayerWinRate : 1 - inputs.firstPlayerWinRate;
+      const pass = achieved >= SOLVED_VALUE_SELF_PLAY_FLOOR;
+      const detail = `self-play reached the proven "${value}" ${(achieved * 100).toFixed(1)}% of the time (floor ${(SOLVED_VALUE_SELF_PLAY_FLOOR * 100).toFixed(0)}%, proof: ${proof})`;
+      results.push(applyException("solved-value-reached", pass ? "pass" : "fail", detail, exceptions));
+    }
+  }
+
   return results;
+}
+
+/** Thrown by `runCiSuite` (platform-corrections.md C19/C20) when a scaled-down
+ *  `ciGateBudget.twoPlayerCiRollouts` would make the "ruthless" tier's CI-suite measurement
+ *  budget equal to or lower than the "standard" tier's own (unscaled) budget. Wrap's exact
+ *  finding: at a scaled 1,000, ruthless collided with standard's own 1,000-rollout budget, the
+ *  two tiers became indistinguishable, and `ruthless-vs-standard` read a meaningless 50% that
+ *  looked like a gate failure. A tier gate is meaningless once two tiers share a budget — this
+ *  refuses BEFORE running the matchup, rather than silently reporting that ratio. */
+export class TierBudgetCollapseError extends Error {
+  constructor(gameId: string, effectiveRuthlessN: number, standardN: number) {
+    super(
+      `runCiSuite: game "${gameId}"'s CI-suite ruthless rollout budget (${effectiveRuthlessN}, ` +
+        `possibly scaled via manifest.ciGateBudget.twoPlayerCiRollouts) is not strictly greater ` +
+        `than the "standard" tier's own budget (${standardN}) — ruthless-vs-standard would ` +
+        "measure two agents of the same effective strength (platform-corrections.md C19/C20: " +
+        "Wrap's scaled-down budget collided with standard's own and the resulting 50% win rate " +
+        "was a measurement artifact, not a real result). Raise the scaled budget (or the " +
+        "manifest's ciGateBudget.twoPlayerCiRollouts) so ruthless stays strictly above standard."
+    );
+    this.name = "TierBudgetCollapseError";
+  }
+}
+
+/** platform-corrections.md C22: `ciGateBudget.twoPlayerCiRollouts` shipped as an OPTIONAL
+ *  field with no default, so every registered game silently skipped it and ran the CI suite at
+ *  the full shipped `ruthless` budget. Fadeout — a 3x3 board, the smallest game in the
+ *  catalogue — measured past 29 minutes on that path. C20's close-out said "make it the
+ *  default"; an opt-in knob nobody sets is not a default, it is a comment.
+ *
+ *  So this module takes the fallback platform-corrections.md explicitly sanctions as
+ *  acceptable (the same move C2 made for inapplicable solo gates: require the field and fail
+ *  loudly, never silently skip): a game whose shipped `ruthless` budget is already at or below
+ *  `MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE` needs no override at all (this is the unchanged, safe
+ *  pass-through path — a cheap game like a small fixture never has to touch this field). A game
+ *  whose shipped budget EXCEEDS that ceiling MUST declare an explicit `ciGateBudget.
+ *  twoPlayerCiRollouts` for suite "ci" — its absence is a loud, immediate refusal (this error),
+ *  not a silent 30-minute run. Nightly is exempt unconditionally (the plan's "nightly keeps the
+ *  full-budget table") — this requirement only ever applies to the fast PR-budget suite.
+ *
+ *  CORRECTED (C23, platform-corrections.md): this comment originally justified the required-
+ *  field fallback by claiming a scaled-down 2,000-rollout run produced "a verdict the FULL
+ *  10,000-rollout budget does not produce" — a C6-shaped yardstick-collapse story that was
+ *  never actually measured (the 10,000-rollout baseline had been killed twice, unwitnessed,
+ *  before that claim was written). A completed, witnessed sweep (100 games at 10,000 / 8,000 /
+ *  5,000 / 3,000 rollouts, and 50 / 25 games at 10,000) found IDENTICAL behaviour at every
+ *  point: 100% draw rate, 0% first-player win rate, 100% strong-vs-random — because
+ *  `remove-first/solid/threefold` is an exact-solved draw (`docs/research/games/fadeout-solve-
+ *  report.md` §1.1, 128,170 states, all 9 openings drawn), so EVERY budget reaches the correct
+ *  answer. There was no unsafe budget and no weak yardstick. The requirement below still
+ *  stands, but on its true (and honestly narrower) justification: an unscaled 10,000-rollout
+ *  suite costs 2802s against 3,000 rollouts' 848s for the IDENTICAL verdict — 3.3x cheaper for
+ *  the same answer — and a game team should not have to rediscover that by waiting 47 minutes.
+ *  It is a cost problem now, not a correctness one; `manifest.solvedValue` (C23) is what fixes
+ *  the correctness problem this comment originally (and wrongly) attributed to the budget. */
+export const MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE = 3000;
+
+export class MissingCiRolloutBudgetError extends Error {
+  constructor(gameId: string, shippedRuthlessN: number) {
+    super(
+      `runCiSuite: game "${gameId}"'s shipped "ruthless" tier budget (${shippedRuthlessN} rollouts) ` +
+        `exceeds ${MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE} — the ceiling below which no CI override is ` +
+        "needed — but the manifest declares no manifest.ciGateBudget.twoPlayerCiRollouts " +
+        "(platform-corrections.md C22: a budget nobody sets is not a default, it is a comment). " +
+        "Running the CI suite unscaled at this budget is a real cost problem, not a correctness " +
+        "one (C23: a witnessed sweep found EVERY budget from 3,000 to 10,000 rollouts reaches the " +
+        "identical verdict for Fadeout — 3,000 costs 848s against 10,000's 2802s for the same " +
+        "answer). Add an explicit manifest.ciGateBudget.twoPlayerCiRollouts, confirmed by a real " +
+        "self-play run that the scaled-down budget still separates the tiers (the tier-collapse " +
+        "guard checks that structurally) AND still reaches the same self-play verdict the shipped " +
+        "budget does — for a game with a manifest.solvedValue claim, that means still reaching the " +
+        "proven value at a healthy rate (see SOLVED_VALUE_SELF_PLAY_FLOOR), not an absolute " +
+        "'balanced' shape. Nightly is unaffected — this requirement applies only to suite \"ci\"."
+    );
+    this.name = "MissingCiRolloutBudgetError";
+  }
 }
 
 export class SuiteFailedError extends Error {
@@ -255,13 +427,52 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
   const thresholds: HarnessThresholds = { ...DEFAULT_HARNESS_THRESHOLDS, ...manifest.thresholds };
   const exceptions = manifest.exceptions ?? [];
 
-  const ruthlessTier = findTier(manifest, "ruthless");
-  if (!ruthlessTier) {
+  const shippedRuthlessTier = findTier(manifest, "ruthless");
+  if (!shippedRuthlessTier) {
     throw new Error(
       `runCiSuite: manifest "${manifest.id}" has no "ruthless" difficulty tier — the CI gate ` +
         "table's strong-vs-random and strong-self-play rows have no agent to run."
     );
   }
+
+  // C19: at suite "ci" only, measure with `ciGateBudget.twoPlayerCiRollouts` rollouts instead
+  // of the tier's own shipped budget, via an IN-MEMORY clone — the shipped tier object (what a
+  // real player's bot actually uses) is never touched (C20: "the shipped ruthless tier was
+  // never touched"). Nightly always uses the tier's real budget unscaled (the plan's "nightly
+  // keeps the full-budget table"). A `deadlineMs`-budgeted tier is left alone either way — this
+  // override only ever applies to the deterministic `rollouts` budget kind the harness gates
+  // with (platform §5.2).
+  const ciRolloutOverride = manifest.ciGateBudget?.twoPlayerCiRollouts;
+
+  // C22: a shipped budget expensive enough to matter MUST declare an override for suite "ci" —
+  // checked before anything else runs, so an absent override is a loud, immediate refusal
+  // (MissingCiRolloutBudgetError) rather than a silent full-cost run. See that error's own doc
+  // comment for why this module refuses to just compute-and-trust a scaled number instead.
+  if (
+    suite === "ci" &&
+    ciRolloutOverride === undefined &&
+    shippedRuthlessTier.budget.kind === "rollouts" &&
+    shippedRuthlessTier.budget.n > MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE
+  ) {
+    throw new MissingCiRolloutBudgetError(manifest.id, shippedRuthlessTier.budget.n);
+  }
+
+  const ruthlessTier =
+    suite === "ci" && ciRolloutOverride !== undefined && shippedRuthlessTier.budget.kind === "rollouts"
+      ? { ...shippedRuthlessTier, budget: { kind: "rollouts" as const, n: ciRolloutOverride } }
+      : shippedRuthlessTier;
+
+  const standardTier = findTier(manifest, "standard");
+  // C19/C20: a scaled-down ruthless budget must never collapse onto standard's own budget — a
+  // tier gate is meaningless once two tiers share a budget (Wrap's exact finding). Checked
+  // BEFORE running anything, so a collapse is a loud refusal, never a silently-meaningless
+  // ruthless-vs-standard ratio.
+  if (standardTier && ruthlessTier.budget.kind === "rollouts" && standardTier.budget.kind === "rollouts") {
+    if (ruthlessTier.budget.n <= standardTier.budget.n) {
+      throw new TierBudgetCollapseError(manifest.id, ruthlessTier.budget.n, standardTier.budget.n);
+    }
+  }
+
   const ruthless = tierAgent<S, M>("ruthless", ruthlessTier);
   const random = resolveNamedAgent<S, M>("random");
 
@@ -276,7 +487,6 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
     ...(opts.clock ? { clock: opts.clock } : {}),
   });
 
-  const standardTier = findTier(manifest, "standard");
   const ruthlessVsStandard = standardTier
     ? runMatchup(engine, ruthless, tierAgent<S, M>("standard", standardTier), {
         games,
@@ -298,7 +508,7 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
     ruthlessVsStandardWinRate: ruthlessVsStandard ? agentWinRate(ruthlessVsStandard.outcomes, "ruthless") : null,
   };
 
-  const gates = evaluateCiGates(inputs, thresholds, exceptions, suite);
+  const gates = evaluateCiGates(inputs, thresholds, exceptions, suite, manifest.solvedValue);
 
   return {
     gameId: manifest.id,

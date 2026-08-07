@@ -20,11 +20,14 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { classicTicTacToe } from "@twist-arcade/engine/testkit/fixtures/classic-ttt";
 import { bankRun, createBankRun, type BankRunMove, type BankRunState } from "@twist-arcade/engine/testkit/fixtures/bank-run";
+import { safeMove as mineRunSafeMove } from "@twist-arcade/mine-run";
 import type { GameManifest } from "@twist-arcade/game-spec";
 import {
   DEFAULT_CI_GATE_GAMES,
   DEFAULT_SOLO_SEED_COUNT,
   GateKindMismatchError,
+  HiddenInfoBudgetTooLowError,
+  MIN_HIDDEN_INFO_SAMPLES_PER_CANDIDATE,
   runGameCiGate,
   runSoloChaseCiGate,
   runSoloPuzzleCiGate,
@@ -34,6 +37,7 @@ import {
 import { certifyDay, writeCertificate } from "../src/certify";
 import { dfsSolver } from "../src/solver/generic-solo";
 import { holeWalk, type HoleWalkMove, type HoleWalkState } from "./fixtures/hole-walk";
+import { createAlwaysSafeBrokenMineRun, createAlwaysSafeHealthyMineRun } from "./fixtures/mine-run-mutants";
 
 // ---------------------------------------------------------------------------------------
 // selectGateKind / runGameCiGate — C2's runtime-enforced dispatch.
@@ -207,6 +211,138 @@ describe("runSoloChaseCiGate", () => {
     });
     expect(result.kind).toBe("solo-chase");
     expect(typeof result.ok).toBe("boolean");
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// platform-corrections.md C19's hidden-info follow-up (orchestrator finding, mid-task): for a
+// `hiddenInformation: true` engine, cost is `seeds x moves x K x rollouts-per-world` — K (the
+// determinization sample count) is COUPLED to the same rollout budget
+// (determinizedFlatMonteCarloPolicy: K = budget.n / legalMoves.length), so scaling the budget
+// down scales K down too, in the SAME step. C6 already proved a too-weak Strong makes every
+// solo gate meaningless (a gate defined relative to a reference agent is only as trustworthy
+// as that agent) — these tests prove a scaled-down budget either (a) stays above the floor
+// known to preserve real Always-Safe separation, using the SAME Mine Run healthy/degenerate
+// mutant fixtures probes-solo.test.ts's C6 close-out already validated the shipped roster
+// against, or (b) refuses loudly (HiddenInfoBudgetTooLowError) BEFORE running anything
+// expensive, rather than silently emitting a ratio measured against a Strong too weak to mean
+// anything.
+// ---------------------------------------------------------------------------------------
+
+describe("runSoloChaseCiGate — C19 hidden-info budget scaling (rollouts AND the coupled K)", () => {
+  const mineRunChaseManifest: GameManifest = {
+    id: "mine-run-fixture",
+    title: "Mine Run",
+    classic: "Minesweeper",
+    ruleSentence: "ci-gates.test.ts Mine Run fixture.",
+    tags: [],
+    estMinutes: 3,
+    modes: { bot: false, hotseat: false, asyncLink: false },
+    players: { min: 1, max: 1 },
+    difficultyTiers: [],
+    solo: { format: "score-chase", moveCap: 30 },
+  };
+
+  it("MIN_HIDDEN_INFO_SAMPLES_PER_CANDIDATE is a positive floor (sanity)", () => {
+    expect(MIN_HIDDEN_INFO_SAMPLES_PER_CANDIDATE).toBeGreaterThan(0);
+  });
+
+  it("refuses loudly, BEFORE running any self-play, when a scaled-down soloChaseCiRollouts drops K below the floor", () => {
+    // 6x6 board -> 36 root legal moves. At 50 rollouts, K ~= 1.4 per candidate — the exact
+    // shape probes-solo.test.ts's own tuning notes found insufficient (their ~60-rollout,
+    // ~1-2-samples/candidate case reproduced a naive majority-vote wrapper's weak separation).
+    const engine = createAlwaysSafeHealthyMineRun();
+    const manifest: GameManifest = {
+      ...mineRunChaseManifest,
+      ciGateBudget: { soloChaseCiRollouts: 50 },
+    };
+    expect(() =>
+      runSoloChaseCiGate(engine, manifest, {
+        seed: "ci-gates:c19:hidden-info-too-low",
+        seedCount: 100,
+        safeMove: mineRunSafeMove,
+        suite: "ci",
+      })
+    ).toThrow(HiddenInfoBudgetTooLowError);
+  });
+
+  it("does NOT throw the floor guard for the platform default (1000) on the same board — only an aggressive override trips it", () => {
+    const engine = createAlwaysSafeHealthyMineRun();
+    expect(() =>
+      runSoloChaseCiGate(engine, mineRunChaseManifest, {
+        seed: "ci-gates:c19:hidden-info-default",
+        seedCount: 3,
+        safeMove: mineRunSafeMove,
+        suite: "ci",
+      })
+    ).not.toThrow(HiddenInfoBudgetTooLowError);
+  }, 30_000);
+
+  it("a scaled-down but VIABLE budget (320, ~8.9 samples/candidate on this 36-cell board) still separates healthy from degenerate — the coordinator's exact ask, proven against the real Mine Run engine and its real mutant fixtures", () => {
+    const seeds = 15;
+    const manifest: GameManifest = {
+      ...mineRunChaseManifest,
+      ciGateBudget: { soloChaseCiRollouts: 320 },
+    };
+
+    const healthy = runSoloChaseCiGate(createAlwaysSafeHealthyMineRun(), manifest, {
+      seed: "ci-gates:c19:separation-healthy",
+      seedCount: seeds,
+      safeMove: mineRunSafeMove,
+      suite: "ci",
+    });
+    expect(healthy.alwaysSafeVsStrong).toBeLessThan(0.95);
+
+    const degenerate = runSoloChaseCiGate(createAlwaysSafeBrokenMineRun(), manifest, {
+      seed: "ci-gates:c19:separation-degenerate",
+      seedCount: seeds,
+      safeMove: mineRunSafeMove,
+      suite: "ci",
+    });
+    expect(degenerate.alwaysSafeVsStrong).toBeGreaterThanOrEqual(0.95);
+  }, 180_000);
+
+  it("suite 'nightly' ignores soloChaseCiRollouts and is never subject to the ci-only override (matches the two-player lane's rule)", () => {
+    const engine = createAlwaysSafeHealthyMineRun();
+    // An override this low would throw under suite "ci" (see the test above); "nightly" must
+    // ignore it entirely and fall back to the platform default, so this must NOT throw.
+    const manifest: GameManifest = {
+      ...mineRunChaseManifest,
+      ciGateBudget: { soloChaseCiRollouts: 50 },
+    };
+    expect(() =>
+      runSoloChaseCiGate(engine, manifest, {
+        seed: "ci-gates:c19:nightly-ignores-override",
+        seedCount: 3,
+        safeMove: mineRunSafeMove,
+        suite: "nightly",
+      })
+    ).not.toThrow(HiddenInfoBudgetTooLowError);
+  }, 30_000);
+
+  it("the guard never fires for a perfect-information game (bank-run) regardless of how low the budget goes", () => {
+    const chaseManifest: GameManifest = {
+      id: "bank-run-fixture",
+      title: "Bank Run",
+      classic: "press-your-luck",
+      ruleSentence: "Push your luck or bank it.",
+      tags: [],
+      estMinutes: 1,
+      modes: { bot: false, hotseat: false, asyncLink: false },
+      players: { min: 1, max: 1 },
+      difficultyTiers: [],
+      solo: { format: "score-chase" },
+      ciGateBudget: { soloChaseCiRollouts: 1 },
+    };
+    const alwaysBank = (_view: BankRunState): BankRunMove => ({ kind: "bank" });
+    expect(() =>
+      runSoloChaseCiGate(bankRun, chaseManifest, {
+        seed: "ci-gates:c19:perfect-info-immune",
+        seedCount: 20,
+        safeMove: alwaysBank,
+        suite: "ci",
+      })
+    ).not.toThrow(HiddenInfoBudgetTooLowError);
   });
 });
 
