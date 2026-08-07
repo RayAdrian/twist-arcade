@@ -1890,3 +1890,72 @@ knowingly rather than drift.
 
 Note also that `registry.ts` mixes quoted and unquoted keys. Cosmetic, but it is what made a
 plain-text check unreliable, and lint should settle on one form.
+
+---
+
+## C34 — C30's fix is inert. The guard is real; the mechanism I diagnosed probably is not.
+
+*Correcting C30 while the instrumentation runs, because the evidence against it is already in.*
+
+The paired re-gate, `preFix` hardcoded from C29 and `post` measured live:
+
+```
+ROW ci-0  pre(alwaysSafe=849, strong@750=630, ratio=1.348)  post(849, 630, 1.348)  decisions=40
+ROW ci-1  pre(alwaysSafe=686, strong@750= 91, ratio=7.538)  post(686,  91, 7.538)  decisions=37
+```
+
+**Byte-identical on both seeds.** Declaring `horizonValue: "heuristic"` changed Strong's play not at
+all.
+
+### The arithmetic I should have done before writing C30
+
+C30 claimed rollouts routinely hit `rolloutCapPlies = 60` while still `ongoing`, so leaves were
+valued by `score()` — banked only, blind to the live streak. **But Mine Run's budget is 60
+decisions.** A rollout starting at ply *k* has at most `60 − k` plies remaining, so it is always
+under the cap. If rollouts terminate naturally, `valueOfStatus` takes the `"scored"` branch —
+`status.scores[player]`, the true final banked score — the `"ongoing"` branch never executes, and
+`horizonValue` has nothing to change.
+
+That predicts exactly what was measured. The measured `decisions=40` and `decisions=37` are
+consistent with it.
+
+**I had the branch-reachability fact available and did not check it.** C30 reads as a careful
+diagnosis — it traced the call path, quoted the engine's own comment, explained why neither file
+was wrong — and it never asked the one cheap question: *does that branch ever run?* A mechanism
+can be internally coherent, correctly sourced, and still describe code that does not execute.
+
+### What survives, and it is not nothing
+
+**The contract guard is real and stays.** Orchestrator-verified: deleting `horizonValue` from Mine
+Run's engine fires `checkHorizonValueDeclared` with an accurate message; reverting returns 11
+green. Two independent layers (testkit contract check plus `HorizonValueUndeclaredError` in
+`valueOfStatus`), and it is **required rather than opt-in** whenever an engine implements both
+hooks — which is C22's lesson applied correctly. A future game whose rollouts *do* hit the horizon
+will be forced to declare which value it means, instead of silently inheriting a default nobody
+chose. That is worth keeping on its own merits; it simply is not the fix for Mine Run.
+
+### The original question is open again
+
+Why does Always-Safe outscore Strong by 1.3–11.9× against a 0.95 threshold, and why did 4× the
+search make Strong **worse** (630→378, 231→105)? If rollouts run to terminal and are valued by
+true final banked score, Strong is maximising the right quantity and should not lose to a trivial
+policy. Live candidates:
+
+1. **The rollout policy.** `greedyMoveSelector` drives rollouts and `rankingValueOf` prefers
+   `heuristic()`. If greedy rollouts bust constantly, every candidate's estimate is dominated by
+   rollout-policy noise rather than the candidate's own merit — and more samples average that
+   noise *more confidently*, which fits "more search, worse play" precisely.
+2. **Determinization bias.** Sampled worlds are consistent with the view; if sampling skews toward
+   mine-free layouts, Strong systematically underestimates risk.
+3. **A genuine game-design finding**, as C29 first suspected.
+
+**Standing: Mine Run still gets no board** (C16). Two mechanisms have now been proposed and one
+refuted; the game has still never been measured by a yardstick anyone has verified.
+
+### The lesson, which is not "check harder"
+
+C29 → C30 → C34 is three readings of one dataset in a day. What distinguishes the wrong two from
+the right one is not effort — C30 was the most carefully argued of the three. It is that **C29 and
+C30 were both explanations built from reading, and only instrumentation ever settles which code
+runs.** The cheap test (`is this branch reached?`) was available at every step and was reached for
+only after a fix demonstrably did nothing.
