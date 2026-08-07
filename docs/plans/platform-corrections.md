@@ -1975,3 +1975,70 @@ governs never executed.
 The number also settles *why* the fix was inert without any further measurement, which is what a
 discriminating experiment buys: one 3-minute instrumented run replaced a 4-seed paired re-gate
 that would have taken 12 minutes to say "identical" four times.
+
+---
+
+## C35 — Strong's rollout policy is weaker than the baseline it must beat. Its search cannot see the scores Always-Safe reaches.
+
+*One decision, one dump. The third cheap discriminating measurement of the day, and the one that finally answers C29.*
+
+Per-candidate rollout statistics at a real mid-game decision, 16 samples per candidate:
+
+```
+{"t":"reveal","cell":58}  n=16 mean=593.44 std=78.61 min=435 max=630 bustFrac=0.0%
+{"t":"reveal","cell":68}  n=16 mean=593.44 std=78.61 min=435 max=630 bustFrac=0.0%
+{"t":"reveal","cell":75}  n=16 mean=593.44 std=78.61 min=435 max=630 bustFrac=0.0%
+   … 4 more candidates, byte-identical mean AND std AND min AND max …
+{"t":"reveal","cell":59}  n=16 mean=581.25 std=87.21 min=435 max=630 bustFrac=0.0%
+   … 8 more, again all identical to each other …
+{"t":"bank"}              n=16 mean=456.00 std= 0.00 min=456 max=456 bustFrac=0.0%
+SEPARATION best=cell45 second=cell46 gap=0.00 pooledStd=0.00
+```
+
+### Three findings, in order of consequence
+
+**1. The rollout ceiling is below what the trivial policy achieves.** No rollout anywhere in this
+dump exceeds **630**. Always-Safe scored **849** on this seed. So Strong's search literally cannot
+represent the outcome its baseline attains — every candidate is valued by "what happens if I play
+*greedily* from here", and greedy tops out below Always-Safe.
+
+**That is the answer to C29.** More rollouts converge harder on a greedy-continuation estimate,
+and greedy is a worse policy than always-banking. It explains the direction (Always-Safe wins), the
+magnitude (1.3–11.9×), and the thing no other hypothesis explained: **why 4× the search made
+Strong *worse*** (630→378, 231→105). More samples do not fix a value model whose ceiling is wrong;
+they just commit to it with more confidence.
+
+**2. The candidate move barely affects the rollout outcome.** Seven candidates share mean 593.44,
+std 78.61, min 435 and max 630 — **identical multisets**, not merely similar. Nine more share
+581.25/87.21. The greedy continuation dominates the result so completely that which cell you reveal
+first is almost invisible in the estimate. Gaps between groups are ~12 against a standard error of
+~20 (78.61/√16), so the ordering is **not statistically distinguishable**, and the reported
+separation between the top two candidates is `gap=0.00` — an exact tie broken arbitrarily.
+
+**A search whose argmax is a coin flip between tied noise is not searching.**
+
+**3. My stated mechanism was wrong again, and the dump says so directly.** I predicted rollout
+*busting* — "if greedy busts constantly, estimates are dominated by noise." **`bustFrac=0.0%` on
+every single candidate.** Greedy never busts. It is not reckless; it is *timid and mediocre*, which
+produces the same symptom by the opposite route. The rollout-policy *family* was right; the
+specific failure I named was not.
+
+### What this means for Mine Run
+
+**Mine Run has still never been measured.** Three mechanisms proposed (C29 game-design, C30 horizon
+valuation, C35 rollout policy), two refuted by instrumentation, and the game has yet to face a
+yardstick anyone has verified. The `alwaysSafeVsStrong` gate has been correct and load-bearing
+throughout — it is the only guard that caught any of this, exactly as C6 intended.
+
+The fix is a rollout policy at least as strong as the baselines Strong is gated against. That is a
+real piece of work, not a knob. **Mine Run still gets no board** (C16).
+
+### The lesson this cost three attempts to learn
+
+C29, C30 and C35 were all explanations for one dataset. The two wrong ones were built by *reading
+code and reasoning*; the right one came from *dumping the numbers the search actually computes*.
+Each wrong mechanism was plausible, internally consistent, and sourced from the real code — and
+that is precisely what made them expensive, because plausibility is what stops you measuring.
+
+**When a search behaves strangely, dump its per-candidate statistics before theorising about its
+value function.** It is one run, it costs seconds, and it would have answered this at 09:00.
