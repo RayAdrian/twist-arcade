@@ -2186,3 +2186,85 @@ measurement, zero effect on existing games whose natural size always fit. Verifi
 Worth contrasting with Tilt, which was granted a floor *exception* for column strips. Nine Grids
 needed no exception because a different layout existed — and the reason we know that is that the
 arithmetic was done before the board, not after.
+
+---
+
+## C39 — S0a confirms the structural leak exactly. S0b exposes a disagreement inside the gate itself.
+
+### S0a: zero of 504,823
+
+A counting proxy around the real, unmodified `greedyMoveSelector`, wrapped into
+`determinizedFlatMonteCarloPolicy` at production Strong's exact constants, real launch board,
+seed `ci:mine-run:ci-0`:
+
+```
+RESULT finalScore=630 decisions=40 capHit=false
+FINAL  totalCalls=504823 bankCalls=0 bankFrac=0.0000%
+```
+
+The proxy's own transparency check holds — 630/40 reproduce the documented C27/C29/C34 baseline,
+so the wrapper altered nothing.
+
+**Bank was chosen zero times in 504,823 rollout-selector invocations.** The spec predicted "~0";
+the measurement is exactly 0. So §0's structural read is **confirmed rather than plausible**:
+inside a greedy rollout, bank is not rare — it is *unreachable*. A better `heuristic()` was never
+going to fix this, because the leak is in `greedyMoveSelector` evaluating a **resolved** sampled
+state, not in the value function it ranks by.
+
+That is the fourth mechanism proposed for this dataset and the first confirmed by direct count.
+
+### S0b: neither pre-registered branch fires cleanly, and that is itself informative
+
+35 combos × 23 seeds = 805 games in **2.166 seconds** — the spec's cost estimate was right, and
+the whole question that consumed hours of Strong runs is answerable in seconds with the right
+policies.
+
+Wiring was proven before the result was trusted, twice: a mutant that broke the safe-move
+tie-break **diverged from Always-Safe on 3/8 seeds** (so the equivalence check can catch a real
+bug rather than passing vacuously), and a planted wrong expected value made the bridge guard
+report `ok=false` and halt. `pCap = 0` then reproduced Always-Safe **byte-exact across all 161
+runs** — every T, all 23 seeds, on score, decision count and full move log.
+
+```
+alwaysSafeMedian = 686 (n=23)
+T=5,  pCap=0.30  median 725  winFraction 0.304   <- best median
+T=30, pCap=0.30  median 715  winFraction 0.348   <- best win fraction
+T any, pCap<=0.20  median 686 (flat)             <- the cap never changes the trajectory
+```
+
+**No combo reaches a majority win fraction** (max 0.348), so §1's literal rule sends this to the
+kill-priority branch. But the team flagged — correctly — that the *dark* branch did not fire
+either: the best combo's median sits **above** Always-Safe's. This is a small, inconsistent lift
+at n=23, exactly the shape C26 exists to stop anyone reading in either direction.
+
+### The finding underneath: the gate metric and the paired comparison disagree
+
+The gate is `median(AlwaysSafe) / median(policy) < 0.95`. At T=5/pCap=0.30 that is
+`686/725 = 0.946` — **it passes, barely.** And the same policy loses to Always-Safe on **70% of
+individual seeds**.
+
+Both numbers are correct; they measure different things. The gate compares **unpaired medians**
+across a seed set, while the win fraction is **paired per board**. A policy with a fatter right
+tail can lift the unpaired median while losing most head-to-head matchups.
+
+**A gate that a policy can pass while being worse on 70% of the boards a player would actually
+see is measuring the wrong thing.** This is not a Mine Run defect — it is in `solo-gates.ts` and
+applies to every solo-chase game. It has never mattered before because no policy has come near
+the threshold.
+
+**Required, before the n=100 verdict batch:** report the paired win fraction alongside the median
+ratio, and decide deliberately which one gates. My inclination is that the paired fraction is the
+honest primary for a solo score chase — a player plays one board at a time, not a distribution —
+but the n=100 batch is where that ruling should be made with real numbers in hand, not now.
+
+### Ruling on sequencing
+
+**Proceed to S1** (build the §2 survival-discounted policy), for a specific reason rather than
+optimism: the threshold family is a **two-knob hand policy**, and its `pCap ≤ 0.20` rows show it
+barely engages at all. It is a floor on what risk-awareness can buy, not a ceiling. The §2 model
+prices the compounding hazard properly and deserves its own measurement.
+
+But S0b lowers the prior. If a principled policy also lands near parity, that is C29's suspicion
+arriving on better evidence, and the three-leg kill standard (C37/R3) decides it — **including
+its one-round sweep bound**, which exists precisely so a marginal result cannot be tuned into a
+passing one.
