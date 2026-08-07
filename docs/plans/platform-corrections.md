@@ -1723,3 +1723,74 @@ tail wagging the dog.
 **C29 is superseded on its central question.** Mine Run is not known to have a design problem.
 Its yardstick was pointed at the wrong quantity, and the game must be re-gated once Strong can
 see the streak.
+
+---
+
+## C31 — Three plans landed. All three corrected the brief I gave them.
+
+*Plans for Order vs Chaos, Tilt and Bid-Tac-Toe are at `docs/plans/`. Rulings live in each
+plan's final section; this records what the round taught.*
+
+**Every one of the three planners found an error in my brief**, and in each case reported it
+rather than quietly working around it:
+
+1. **Tilt.** I described the mechanic as "you play a piece, then the board tips" — a *per-move*
+   tilt. The research entry specifies a **scheduled 90° rotation every 4th ply with a full
+   re-fall**. The planner followed the research entry, flagged the discrepancy in its header,
+   and noted why it matters: a scheduled rotation is *predictable chaos players can plan into*,
+   a clock both players see coming, not a weapon one player aims. That is the design point, and
+   my summary had destroyed it.
+2. **Bid-Tac-Toe.** I described it as hidden-information with private budgets. **Under the
+   shortlist's own winner-pays-loser rule that is arithmetically impossible**, and the proof is
+   three sentences: every chip transfer equals a winning bid; the payer knows it because they
+   bid it, the receiver because they received it; so both budgets are always derivable from the
+   public starting stack. "Private budgets" is not a presentation choice — it is a *payment-rule*
+   choice, and the shortlist had specified the rule that forecloses it.
+3. **Order vs Chaos.** Not an error in my brief but in my framing: I asked whether the gate table
+   *can* judge an asymmetric game. The answer is subtler than yes or no — it can judge *this*
+   game only because seat and role are confounded (seat 0 is always Order), so `first-player-win-
+   rate` accidentally measures exactly the right quantity. A future asymmetric game where role is
+   *chosen* would break the instrument, and the gate's **name** already mislabels what it
+   measures.
+
+### Why this pattern matters more than the three fixes
+
+Earlier today C25 recorded me repeating C22's own mistake in the brief that cited C22. This is
+the same failure at larger scale: **I am the highest-bandwidth source of wrong premises in this
+build.** Briefs are written fast, from memory, under a completion pressure the plans themselves
+are not under — and a wrong premise in a brief propagates into a plan, then an engine, then a
+gate that measures the wrong thing.
+
+The mitigation that worked was not care on my part. It was that **each planner read the primary
+source and treated my summary as a pointer rather than a specification.** Two of them said so
+explicitly. That behaviour is worth naming as expected practice, not lucky diligence:
+
+> **A brief is a pointer to the source, never a substitute for it. When a brief and a primary
+> document disagree, the document wins and the disagreement gets reported.**
+
+This cuts the same direction as *subagent claims are not evidence* — which C29/C30 showed I had
+been applying in one direction only.
+
+### Two rulings with reasoning worth keeping
+
+**Tilt's 48 px floor (§12.1): exception granted with mandatory two-tap commit, and 6×6 refused
+as the fix.** Seven columns at 320 px is ~41 px, under the floor. The mitigating fact is real — a
+~41 × ~290 px column strip is a far larger target than the 41 px square the floor was written
+for. But the reason 6×6 is *not* the answer matters more: **6×6 is reserved as a balance remedy**,
+and spending it on a layout problem would leave the balance ladder one rung short if the gate
+fails. Letting a UI constraint pick the board size would also invert the ordering the whole plan
+is built on. Carried caveat: the two-tap commit inherits the still-unverified TalkBack
+synthesized-click premise; the five-person playtest resolves both together.
+
+**Bid-Tac-Toe's variant (§14.1): Variant R (public Richman) ships.** Beyond the arithmetic, three
+things decide it. The balance theorem the game was shortlisted for is a theorem about the
+*public* winner-pays-loser game, so the hidden variant weakens the very claim it was chosen for.
+The hidden variant cannot run today — `runMatchup` and the bot worker host both refuse 2-player
+hidden-info games. And Variant R makes an **exact solve feasible** (~3.9M states at budget 16),
+which is the cheapest kill-test this game owns; the hidden variant puts it out of reach.
+
+**And a sequencing rule generalised from C29/C30:** every one of these plans now runs its
+*discriminating* experiment before its *accumulating* one — Bid-Tac-Toe solves before it
+self-plays, Tilt runs a kill-test sweep before its gates, Order vs Chaos runs a 10k-board
+line-probability script before anything is built. Two hours were spent today accumulating seeds
+on a question a five-minute code read answered.
