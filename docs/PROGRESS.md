@@ -41,6 +41,24 @@ and that was noise (2 wins in 15). Treated as a verdict it would have killed a b
 *and looked like corroboration of Wrap's pattern*. Cost measurements can run at 15 games;
 verdicts cannot.
 
+### The path to Phase 1's exit bar
+
+Roadmap §Phase 1 requires **six games live, each with published harness numbers and both gates
+passed**, plus `docs/tests/*.md` executed against each. Wrap's death (C20) removed one of the
+six two-player slots, so **Duel Draft** fills it.
+
+| Game | State |
+|---|---|
+| Fadeout · Crackstep | ✅ live |
+| Nine Grids | gates re-running after the A1 rules change; then board |
+| Bid-Tac-Toe | Fable plan in flight — its "none by construction" balance claim is C14's exact failure shape |
+| Order vs Chaos · Tilt · Duel Draft | not started: plan → engine → **gates** → UI |
+| Mine Run | blocked by C29 — Always-Safe beats Strong 2.2–2.5× at every budget measured |
+
+**Four of the exit criteria are not engineering** and cannot be closed from here: a ≥10k
+traffic spike, share rate ≥5%, any day-7 returners, and Lighthouse on a real mid-tier Android
+over 4G. Those need the domain, Vercel and Umami accounts, and a launch.
+
 ## Phase 2 — planned, first milestone in flight
 
 `docs/plans/phase-2-async-multiplayer.md` is written and reviewed. Orchestrator rulings are
