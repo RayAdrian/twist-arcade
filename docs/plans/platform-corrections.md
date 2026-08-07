@@ -2641,3 +2641,57 @@ the inverse of C41's vacuous-plant lesson: there, a plant landed where the guard
 here, a plant proved a guard was doing non-redundant work nobody could have inferred.
 
 All 8 plants fired, each verified to land somewhere the guard could have failed.
+
+---
+
+## C46 — Leg 2 found a configuration where the mechanic actually pays
+
+### The result
+
+```
+frozen  (20% density / 60 budget)  gateRatio 0.9499   decisive 49/86 = 0.570   sign-test p = 0.235
+leg-2   (22% density / 75 budget)  gateRatio 0.9208   decisive 58/94 = 0.617   sign-test p = 0.0298
+```
+
+**The frozen configuration was not statistically distinguishable from always-banking. The swept one
+is** — p = 0.0298, significant at α = 0.05 — and its gate ratio clears the 0.95 hard line by a real
+margin instead of the 0.0001 that C42 called "a coin landing on its edge."
+
+The bounded one-round sweep did exactly what it was pre-registered to do: it found that Mine Run's
+press-your-luck decision **does** reward skill, at a density and budget the original configuration
+was not sitting on. That is a materially different game from the one measured this morning, and it
+is a better one.
+
+### The confirmation step earned its keep, and C26 is the reason it exists
+
+The n=40 grid read **0.7105** decisive for 22%/75. The n=100 confirmation gave **0.6170** — the
+grid reading overstated by **9 points**.
+
+Had the sweep stopped at n=40 and reported its best cell, we would have recorded a design-healthy
+result that does not exist. This is the third time today a small sample pointed somewhere the large
+one did not (Nine Grids' 15-game pilot read 13.3% on a game that measured 46.0%; Order vs Chaos's
+mean-plies swung 19.8–28.4 at n=15). **The two-stage grid-then-confirm design is what converts a
+sweep from a fishing expedition into a measurement**, and the bound — one round, best cell only,
+fresh seed block — is what stops the confirmation from becoming another search.
+
+### Ruling: freeze at 22% density / 75 budget
+
+Per §5's table, `(0.70, 0.95)` is *gate passes, design target missed → one bounded round, then
+freeze or escalate.* The round is spent. **I am freezing at 22%/75**, and the reasoning is that
+0.95 is the **ship bar** while 0.70 is a **health aspiration** — this is a passing gate that misses
+an aspirational marker, not a failing gate I am waiving. Only the user may waive a finding, and
+there is no finding here to waive.
+
+**What is escalated, as information rather than as a blocker:** at gateRatio 0.9208 the skill edge
+is real, significant, and *modest*. A player's good decisions beat always-banking on ~62% of boards
+where the two differ. That is a working press-your-luck loop, not a thrilling one, and it is worth
+knowing before the game gets a board and a share artifact.
+
+**Binding on everything downstream:** 22%/75 is a **different game** from the one every prior Mine
+Run number describes (C25/C32). The C29/C34/C35/C36 measurements, the S0a/S0b sweeps, leg 1's
+table — all belong to 20%/60 and must not be carried forward. Anything the shipped configuration
+claims gets re-measured against it.
+
+**Leg 3 is still running** — the exact expectimax on a reduced board, which tests the *mechanic*
+rather than any policy we happened to write. It cannot reverse leg 2's result but it can tell us
+whether 0.9208 is near the structural ceiling or whether a better policy has room.
