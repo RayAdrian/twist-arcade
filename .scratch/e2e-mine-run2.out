@@ -1,0 +1,21 @@
+
+Running 14 tests using 7 workers
+
+  ✓   2 [chromium] › e2e/mine-run.spec.ts:38:7 › Mine Run — library card › the home page lists Mine Run exactly once, linking to /play/mine-run (429ms)
+  ✓   6 [chromium] › e2e/mine-run.spec.ts:31:7 › Mine Run — ROUTE-001: cold load, real board, zero console errors › the rule sentence is visible immediately (teaching layer 1) (460ms)
+  -   9 [chromium] › e2e/mine-run.spec.ts:157:8 › Mine Run — reduced motion (A11Y-008: verify the emulation actually applied, in-page, before trusting anything else) › a live bank/wipe on this route never animates under reduced motion, while the static vault/at-risk numbers still update — needs a deterministic seeded-board seam on /play/[gameId] (platform gap, not a Mine Run defect); content already verified with a planted-violation proof in games/mine-run/ui/BankBar.test.tsx
+  ✓   1 [chromium] › e2e/mine-run.spec.ts:78:7 › Mine Run — the BankBar decision UI (mine-run.md §8.1: at-risk/vault chips + Bank button, adjacent) › the C52 safe-move telegraph renders one of its two states, text-only (464ms)
+  ✓   7 [chromium] › e2e/mine-run.spec.ts:13:7 › Mine Run — ROUTE-001: cold load, real board, zero console errors › GET /play/mine-run is 200, renders role=grid with 100 gridcells, no console errors (467ms)
+  ✓   3 [chromium] › e2e/mine-run.spec.ts:69:7 › Mine Run — the BankBar decision UI (mine-run.md §8.1: at-risk/vault chips + Bank button, adjacent) › the informed-odds line, at-risk chip, vault chip, and Bank button are all visible from load (474ms)
+  ✓   5 [chromium] › e2e/mine-run.spec.ts:88:7 › Mine Run — keyboard-only play (APG grid pattern, single-tap/Enter commit) › Tab reaches the board's roving-tabindex cell, Enter reveals it and the board updates (509ms)
+  ✓   8 [chromium] › e2e/mine-run.spec.ts:131:7 › Mine Run — reduced motion (A11Y-008: verify the emulation actually applied, in-page, before trusting anything else) › matchMedia reads true inside the page, and the board still renders correctly (190ms)
+  ✓  10 [chromium] › e2e/route-smoke.spec.ts:29:7 › /play/crackstep returns 200 and renders a real board (224ms)
+  ✓  11 [chromium] › e2e/route-smoke.spec.ts:29:7 › /play/nine-grids returns 200 and renders a real board (222ms)
+  ✓  12 [chromium] › e2e/route-smoke.spec.ts:29:7 › /play/tilt returns 200 and renders a real board (221ms)
+  ✓  13 [chromium] › e2e/route-smoke.spec.ts:29:7 › /play/mine-run returns 200 and renders a real board (220ms)
+  ✓  14 [chromium] › e2e/route-smoke.spec.ts:29:7 › /play/fadeout returns 200 and renders a real board (189ms)
+  ✓   4 [chromium] › e2e/mine-run.spec.ts:48:7 › Mine Run — the 48px cell floor at a 320px viewport (BoardShell's zoom/pan, O2's exception withdrawn — C50) › every gridcell's rendered box is at least 48x48 CSS px, on a scrollable board frame (855ms)
+
+  1 skipped
+  13 passed (2.0s)
+E2E_EXIT=0

@@ -1,0 +1,272 @@
+$ vitest run
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+ RUN  v2.1.9 /Users/raymundrafael/Desktop/repos/claude-project-minerun
+
+ ✓ |@twist-arcade/harness| test/solo-gates.test.ts (33 tests) 4ms
+ ✓ |@twist-arcade/harness| test/solver/generic-solo.test.ts (18 tests) 4ms
+ ✓ |@twist-arcade/bots| test/search-utils.test.ts (15 tests) 3ms
+ ✓ |@twist-arcade/nine-grids| engine.scenarios.test.ts (23 tests) 12ms
+ ✓ |@twist-arcade/harness| test/certify.test.ts (25 tests) 38ms
+ ✓ |@twist-arcade/mine-run| test/csp.test.ts (7 tests) 16ms
+ ✓ |@twist-arcade/engine| test/testkit-self-test.test.ts (26 tests) 10ms
+ ✓ |@twist-arcade/bots| test/worker/host.test.ts (12 tests) 30ms
+ ✓ |scripts| test/new-game.test.ts (22 tests | 1 skipped) 212ms
+ ✓ |@twist-arcade/tilt| engine.test.ts (46 tests) 379ms
+ ✓ |@twist-arcade/harness| test/runner.test.ts (11 tests) 58ms
+ ✓ |@twist-arcade/bots| test/tiers.test.ts (16 tests) 534ms
+   ✓ tierPolicy: tier ordering holds at CI budget (free oracle, plan §9) > ruthless >= standard >= casual, measured as non-loss rate vs random on classic-ttt 432ms
+ ✓ |@twist-arcade/mine-run| test/view-honesty.test.ts (5 tests) 29ms
+ ✓ |@twist-arcade/fadeout| presentation.test.ts (27 tests) 29ms
+ ✓ |@twist-arcade/mine-run| test/redaction-mutant.test.ts (7 tests) 200ms
+ ✓ |@twist-arcade/order-vs-chaos| engine.test.ts (36 tests) 730ms
+   ✓ engineContract: order-vs-chaos > isLegal agrees with legalMoves in both directions (iff) 405ms
+ ✓ |@twist-arcade/harness| test/report.test.ts (13 tests) 3ms
+ ✓ |@twist-arcade/bots| test/determinized-flat-mc.test.ts (6 tests) 3ms
+ ✓ |@twist-arcade/bots| test/mcts.test.ts (10 tests) 333ms
+   ✓ mctsPolicy > mcts1k beats random >= 90% over a seeded batch on classic-ttt (free oracle, plan §9) 321ms
+ ✓ |@twist-arcade/mine-run| test/risk-policy.test.ts (14 tests) 6ms
+ ✓ |@twist-arcade/bots| test/flat-mc.test.ts (7 tests) 13ms
+ ✓ |@twist-arcade/harness| test/cli.test.ts (20 tests) 149ms
+ ✓ |scripts| test/ci-gates.test.ts (9 tests) 94ms
+ ✓ |@twist-arcade/mine-run| test/effects-content.test.ts (5 tests) 50ms
+ ✓ |@twist-arcade/mine-run| test/sample-consistent-state.test.ts (5 tests) 96ms
+ ✓ |@twist-arcade/mine-run| test/decode-throws.test.ts (19 tests) 3ms
+ ✓ |@twist-arcade/fadeout| engine.test.ts (110 tests) 1571ms
+ ✓ |scripts| test/chunk-budget.test.ts (10 tests) 11ms
+ ✓ |@twist-arcade/mine-run| test/engine-fixtures.test.ts (5 tests) 3ms
+ ✓ |@twist-arcade/mine-run| test/engine-legality-termination.test.ts (8 tests) 21ms
+ ✓ |@twist-arcade/order-vs-chaos| probes.test.ts (14 tests) 8ms
+ ✓ |@twist-arcade/harness| test/solo-metrics.test.ts (16 tests) 5ms
+ ✓ |@twist-arcade/crackstep| engine-fixtures.test.ts (8 tests) 167ms
+ ✓ |@twist-arcade/mine-run| ui/announce.test.ts (13 tests) 14ms
+ ✓ |@twist-arcade/mine-run| index.test.ts (15 tests) 10ms
+ ✓ |@twist-arcade/bots| test/beam.test.ts (6 tests) 13ms
+ ✓ |@twist-arcade/crackstep| solver.test.ts (9 tests) 4ms
+ ✓ |@twist-arcade/bots| test/minimax.test.ts (8 tests) 827ms
+   ✓ minimaxPolicy > never loses a full game against a random opponent, from either seat, across many seeds (free oracle, plan §9) 820ms
+ ✓ |@twist-arcade/harness| test/solo-runner.test.ts (11 tests) 8ms
+ ✓ |@twist-arcade/crackstep| board.test.ts (12 tests) 77ms
+ ✓ |@twist-arcade/engine| test/rng.test.ts (16 tests) 118ms
+ ✓ |@twist-arcade/crackstep| index.test.ts (12 tests) 933ms
+   ✓ shareArtifact — per-move glyph encoding, swept across real generated boards > the TRUE, locally-provable invariant: 🟨 count === moves - (walkable-1), swept across 150 real seeds — proves the encoding varies rather than collapsing to a constant (the C12/Fadeout precedent) 824ms
+ ✓ |@twist-arcade/mine-run| test/probes.test.ts (10 tests) 7ms
+ ✓ |@twist-arcade/nine-grids| ui/board-view.test.ts (12 tests) 20ms
+ ✓ |@twist-arcade/mine-run| ui/board-view.test.ts (11 tests) 7ms
+ ✓ |@twist-arcade/tilt| ui/board-view.test.ts (16 tests) 5ms
+ ✓ |@twist-arcade/fadeout| ui/board-view.test.ts (13 tests) 6ms
+ ✓ |@twist-arcade/harness| test/agents.test.ts (7 tests) 28ms
+ ✓ |@twist-arcade/bots| test/policy.test.ts (5 tests) 3ms
+ ✓ |scripts| test/verify-certificates.test.ts (6 tests) 120ms
+ ✓ |@twist-arcade/harness| test/index-importable.test.ts (6 tests) 3ms
+ ✓ |@twist-arcade/mine-run| test/secret-token-collision.test.ts (2 tests) 6ms
+ ✓ |@twist-arcade/harness| test/solver/retrograde.test.ts (9 tests) 119ms
+ ✓ |@twist-arcade/engine| test/verify-certificate.test.ts (10 tests) 3ms
+ ✓ |@twist-arcade/mine-run| test/board.test.ts (8 tests) 2ms
+ ✓ |@twist-arcade/harness| test/solver/solve.test.ts (5 tests) 204ms
+ ✓ |@twist-arcade/mine-run| test/heuristic.test.ts (4 tests) 4ms
+ ✓ |@twist-arcade/engine| test/fixtures-sanity.test.ts (5 tests) 3ms
+ ✓ |scripts| test/calibration-drift.test.ts (6 tests) 65ms
+ ✓ |@twist-arcade/engine| test/replay.test.ts (9 tests) 4ms
+ ✓ |@twist-arcade/engine| test/testkit-runs-parameter.test.ts (7 tests) 11ms
+ ✓ |@twist-arcade/harness| test/metrics.test.ts (9 tests) 2ms
+ ✓ |@twist-arcade/nine-grids| index.test.ts (10 tests) 5ms
+ ✓ |@twist-arcade/crackstep| decode-throws.test.ts (15 tests) 3ms
+ ✓ |@twist-arcade/bots| test/probes/greedy-only.test.ts (5 tests) 3ms
+ ✓ |@twist-arcade/engine| test/wire-006-golden-trajectory.test.ts (2 tests) 2ms
+ ✓ |@twist-arcade/harness| test/calibrate.test.ts (8 tests) 27ms
+ ✓ |@twist-arcade/crackstep| ui/board-view.test.ts (10 tests) 3ms
+ ✓ |@twist-arcade/tilt| index.test.ts (11 tests) 5ms
+ ✓ |@twist-arcade/mine-run| test/spectator-carveout.test.ts (2 tests) 3ms
+ ✓ |@twist-arcade/bots| test/random.test.ts (4 tests) 3ms
+ ✓ |@twist-arcade/harness| test/solver/reach.test.ts (9 tests) 422ms
+ ✓ |@twist-arcade/mine-run| manifest.test.ts (10 tests) 3ms
+ ✓ |@twist-arcade/mine-run| test/engine-generation.test.ts (4 tests) 4ms
+ ✓ |@twist-arcade/engine| test/check-engine-purity.test.ts (4 tests) 245ms
+ ✓ |@twist-arcade/engine| test/encode.test.ts (11 tests) 3ms
+ ✓ |scripts| test/certify-crackstep.test.ts (7 tests) 240ms
+ ✓ |@twist-arcade/game-spec| test/presentation.test.ts (3 tests) 2ms
+ ✓ |@twist-arcade/bots| test/probes/rush.test.ts (4 tests) 3ms
+ ✓ |@twist-arcade/engine| test/wire-006-fog-setup-rng.test.ts (2 tests) 3ms
+ ✓ |@twist-arcade/fadeout| probes.test.ts (5 tests) 2ms
+ ✓ |@twist-arcade/bots| test/probes/stall.test.ts (2 tests) 5ms
+ ✓ |@twist-arcade/bots| test/probes/suicide.test.ts (2 tests) 9ms
+ ✓ |@twist-arcade/fadeout| manifest.test.ts (8 tests) 3ms
+ ✓ |@twist-arcade/crackstep| manifest.test.ts (4 tests) 1ms
+ ✓ |@twist-arcade/tilt| manifest.test.ts (4 tests) 2ms
+ ✓ |@twist-arcade/order-vs-chaos| manifest.test.ts (3 tests) 2ms
+ ✓ |@twist-arcade/mine-run| test/index-importable.test.ts (1 test) 327ms
+   ✓ @twist-arcade/mine-run is importable by package name > resolves and exposes the expected public surface 326ms
+ ✓ |@twist-arcade/nine-grids| manifest.test.ts (3 tests) 2ms
+ ✓ |@twist-arcade/engine| test/bank-run.engineContract.test.ts (11 tests) 11ms
+ ✓ |@twist-arcade/crackstep| engine.test.ts (10 tests) 462ms
+ ✓ |@twist-arcade/engine| test/testkit-import-boundary.test.ts (2 tests) 1579ms
+   ✓ testkit import boundary (M1 review finding 2) > testkit/checks.ts (verifyCertificate + the check functions) imports cleanly in a plain Node/tsx process, outside vitest 981ms
+   ✓ testkit import boundary (M1 review finding 2) > testkit/contract.ts (the vitest adapter) throws when imported outside a real vitest worker — pinning WHY the split is necessary 598ms
+ ✓ |@twist-arcade/crackstep| solver/certify-day.test.ts (5 tests) 1331ms
+   ✓ certifyOneDay — an unreachable difficulty band is REJECTION, never a mis-banded ship > a minPar above every real board's L* rejects every attempt as trivial, not certified 1193ms
+ ✓ |@twist-arcade/engine| test/classic-ttt.engineContract.test.ts (10 tests) 18ms
+ ✓ |@twist-arcade/engine| test/mini-crackstep.engineContract.test.ts (10 tests) 45ms
+ ✓ |@twist-arcade/shell| test/share-frame.test.ts (36 tests) 52ms
+ ✓ |@twist-arcade/nine-grids| engine.test.ts (10 tests) 2339ms
+   ✓ engineContract: nine-grids > is deterministic: same seed + same moves ⇒ identical trajectory and effects 402ms
+   ✓ engineContract: nine-grids > isLegal agrees with legalMoves in both directions (iff) 1168ms
+ ✓ |@twist-arcade/shell| test/board-shell.test.tsx (38 tests) 696ms
+ ✓ |@twist-arcade/mine-run| test/engine-contract.test.ts (11 tests) 4628ms
+   ✓ engineContract: mine-run > is deterministic: same seed + same moves ⇒ identical trajectory and effects 873ms
+   ✓ engineContract: mine-run > encode/decode is canonical and excludes lastEffects; effects are never accumulated; status is stable under encode/decode 816ms
+   ✓ engineContract: mine-run > encode() is injective: logically distinct states never share an encoded string 494ms
+   ✓ engineContract: mine-run > isLegal agrees with legalMoves in both directions (iff) 834ms
+   ✓ engineContract: mine-run > playerView never throws, for any seat or the spectator 398ms
+   ✓ engineContract: mine-run > redacts all secrets (incl. from lastEffects) from every non-omniscient view 834ms
+ ✓ |supabase| test/schema-drift.test.ts (4 tests) 8426ms
+   ✓ checked-in migrations vs. the snapshotted remote (C21) > reproduce exactly the schema snapshot captured from the remote Supabase project 1545ms
+   ✓ checked-in migrations vs. the snapshotted remote (C21) > keeps RLS deny-all: enabled on all three tables, zero policies (plan §5, C21) 1162ms
+   ✓ checked-in migrations vs. the snapshotted remote (C21) > limits the public schema to exactly the three async-multiplayer tables, with no functions yet (Finding 1) 1991ms
+   ✓ checked-in migrations vs. the snapshotted remote (C21) > grants no privilege to anon/authenticated/service_role from the migrations themselves (Finding 1, orchestrator follow-up) 3727ms
+ ✓ |@twist-arcade/nine-grids| ui/Board.test.tsx (14 tests) 476ms
+ ✓ |@twist-arcade/shell| test/eslint-config.test.ts (23 tests) 288ms
+ ✓ |@twist-arcade/shell| test/tokens.contrast.test.ts (29 tests) 9ms
+ ✓ |@twist-arcade/mine-run| ui/Board.test.tsx (11 tests) 248ms
+ ✓ |@twist-arcade/daily| test/metrics.test.ts (15 tests) 6ms
+ ✓ |@twist-arcade/fadeout| ui/Board.test.tsx (12 tests) 180ms
+ ✓ |@twist-arcade/mine-run| ui/BankBar.test.tsx (16 tests) 169ms
+ ✓ |@twist-arcade/daily| test/manifest.test.ts (15 tests) 10ms
+ ✓ |@twist-arcade/shell| test/streak.test.ts (14 tests) 3ms
+ ✓ |@twist-arcade/daily| test/rotation.test.ts (10 tests) 8ms
+ ✓ |@twist-arcade/shell| test/worker-bot-driver.test.ts (6 tests) 34ms
+ ✓ |@twist-arcade/tilt| ui/Board.test.tsx (9 tests) 175ms
+stderr | test/ResultModal.test.tsx > ResultModal > shows Next twist as a REAL link to nextTwistHref (C4: no external navigation seam otherwise) and fires the click bookkeeping hook
+Error: Not implemented: navigation (except hash changes)
+    at module.exports (/Users/raymundrafael/Desktop/repos/claude-project-minerun/node_modules/.pnpm/jsdom@25.0.1_supports-color@7.2.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at navigateFetch (/Users/raymundrafael/Desktop/repos/claude-project-minerun/node_modules/.pnpm/jsdom@25.0.1_supports-color@7.2.0/node_modules/jsdom/lib/jsdom/living/window/navigation.js:77:3)
+    at exports.navigate (/Users/raymundrafael/Desktop/repos/claude-project-minerun/node_modules/.pnpm/jsdom@25.0.1_supports-color@7.2.0/node_modules/jsdom/lib/jsdom/living/window/navigation.js:55:3)
+    at Timeout._onTimeout (/Users/raymundrafael/Desktop/repos/claude-project-minerun/node_modules/.pnpm/jsdom@25.0.1_supports-color@7.2.0/node_modules/jsdom/lib/jsdom/living/nodes/HTMLHyperlinkElementUtils-impl.js:81:7)
+    at listOnTimeout (node:internal/timers:605:17)
+    at processTimers (node:internal/timers:541:7) undefined
+
+ ✓ |@twist-arcade/shell| test/ResultModal.test.tsx (11 tests) 310ms
+ ✓ |@twist-arcade/daily| test/era-guard.test.ts (11 tests) 4ms
+ ✓ |@twist-arcade/shell| test/motion.test.ts (7 tests) 8ms
+ ✓ |@twist-arcade/shell| test/effects-map.test.ts (13 tests) 5ms
+ ✓ |@twist-arcade/shell| test/AriaAnnouncer.test.tsx (8 tests) 74ms
+ ✓ |@twist-arcade/shell| test/useGame.test.ts (25 tests) 6208ms
+   ✓ useGame — loop + solo-bot > advances the loop on active(): human moves, then the bot's scripted reply lands automatically 379ms
+   ✓ useGame — undo (replay-based) > undo pops back to the human's previous decision point, and encode(state) equals encode(replayTo(record, k)) 808ms
+   ✓ useGame — input lockout > sets lockedUntil when the bot's move lands, but not for the human's own move 318ms
+   ✓ useGame — submitMove has its own conservative lockout guard (I3, belt-and-braces) > drops submitMove() called while `now < lockedUntil`, even if the caller bypasses BoardShell/Cell entirely 320ms
+   ✓ useGame — submitMove has its own conservative lockout guard (I3, belt-and-braces) > still applies submitMove() once `now >= lockedUntil` has passed 548ms
+   ✓ useGame — first-occurrence callout (once per device) > fires on first trigger, clears on the next move, and never fires again across a second hook lifetime 1046ms
+   ✓ useGame — first-game bot softening > sends soften:true on every bot request of the device's first game, and false after that game ends 1052ms
+   ✓ useGame — bot driver failure exposes a retryable error, never a silent hang (C2) > exposes botError on a rejected bot request (not a hang), and retryBot() with a now-succeeding driver recovers 315ms
+   ✓ useGame — undo re-dispatches the bot when the resulting state is the bot's turn (I2) > does not hang when undo rewinds all the way past the bot's own opening move (humanSeat: 1) 514ms
+   ✓ useGame — bot reply-delay floor (S2, plan §5.2.4: minReplyMs enforced in the shell, not the worker) > cancels the pending floor timer on undo, so a stale bot move never lands after a rewind 352ms
+ ✓ |@twist-arcade/crackstep| ui/Board.test.tsx (4 tests) 201ms
+ ✓ |@twist-arcade/shell| test/ControlsRow.test.tsx (10 tests) 243ms
+ ✓ |@twist-arcade/shell| test/next-twist.test.ts (8 tests) 13ms
+ ✓ |@twist-arcade/shell| test/announcer.test.ts (13 tests) 3ms
+ ✓ |@twist-arcade/shell| test/shelves.test.ts (7 tests) 3ms
+ ✓ |@twist-arcade/daily| test/guards-wired.test.ts (2 tests) 5ms
+ ✓ |@twist-arcade/daily| test/seed.test.ts (7 tests) 6ms
+ ✓ |@twist-arcade/daily| test/buffer.test.ts (9 tests) 6ms
+ ✓ |@twist-arcade/shell| test/reduced-motion-blanket.test.ts (3 tests) 2ms
+ ✓ |@twist-arcade/daily| test/immutability.test.ts (7 tests) 3ms
+ ✓ |@twist-arcade/shell| test/bot-driver.test.ts (12 tests) 3344ms
+   ✓ stubBotDriver > is deterministic: same seed + step ⇒ the same move every time 508ms
+   ✓ stubBotDriver > picks a different move for a different step (varies with the rng fork) 2278ms
+ ✓ |@twist-arcade/tilt| ui/Telegraph.test.tsx (5 tests) 129ms
+ ✓ |@twist-arcade/shell| test/CalloutLayer.test.tsx (6 tests) 289ms
+ ✓ |@twist-arcade/shell| test/persistence.test.ts (10 tests) 4ms
+ ✓ |@twist-arcade/daily| test/day.test.ts (9 tests) 4ms
+ ✓ |@twist-arcade/shell| test/HowSheet.test.tsx (5 tests) 169ms
+ ✓ |@twist-arcade/shell| test/callouts.test.ts (5 tests) 2ms
+ ✓ |@twist-arcade/shell| test/haptics.test.ts (6 tests) 5ms
+ ✓ |@twist-arcade/shell| test/PassDeviceInterstitial.test.tsx (5 tests) 163ms
+ ✓ |@twist-arcade/shell| test/GameCard.test.tsx (3 tests) 155ms
+ ✓ |@twist-arcade/daily| test/era.test.ts (5 tests) 2ms
+ ✓ |@twist-arcade/shell| test/StatusLine.test.tsx (7 tests) 83ms
+ ✓ |@twist-arcade/shell| test/TurnIndicator.test.tsx (4 tests) 84ms
+ ✓ |@twist-arcade/shell| test/RuleCard.test.tsx (5 tests) 92ms
+ ✓ |@twist-arcade/shell| test/ScoreHUD.test.tsx (6 tests) 86ms
+ ✓ |@twist-arcade/shell| test/cell-id.test.ts (3 tests) 2ms
+ ✓ |@twist-arcade/shell| test/CountdownBadge.test.tsx (3 tests) 75ms
+ ✓ |@twist-arcade/shell| test/GameShell.test.tsx (24 tests) 13712ms
+   ✓ GameShell — ready state, solo-bot > commits a move by clicking a cell, and the bot's scripted reply lands automatically 432ms
+   ✓ GameShell — result modal > opens the ResultModal (with Rematch) after a terminal status, and Rematch starts a fresh game 1477ms
+   ✓ GameShell — result modal > Describe board after game end does NOT re-fire the terminal assertive announcement (I7/describeBoard regression) 1111ms
+   ✓ GameShell — result modal > renders 'Next twist' as a real navigable link to the suggested game's canonical route (C4) 1439ms
+   ✓ GameShell — result modal > Share degrades to the failed state instead of crashing when the game's own shareArtifact() body is malformed (I4) 1480ms
+   ✓ GameShell — bot driver failure shows a retryable error, never a silent hang (C2) > shows Retry in the StatusLine region after a bot failure, and clicking it recovers (bot lands its move) 320ms
+   ✓ GameShell — hotseat Restart confirms after just ONE move (I10, orchestrator ruling) > solo-bot Restart still uses the >= 3 threshold, unaffected by the hotseat ruling 341ms
+   ✓ GameShell — restart count in the share text is gated to daily/solo contexts (minor) > omits the restart line entirely for a casual (non-daily) solo-bot rematch — restartCount reflects 'hit Rematch', not a meaningful retry signal there 3035ms
+   ✓ GameShell — restart count in the share text is gated to daily/solo contexts (minor) > still includes the attempt count (inline on the header, C8) for a daily game (orchestrator addendum §15.3 — comparability is sacred, even in a casual-shaped mode) 2924ms
+ ✓ |@twist-arcade/fadeout| solver/solve.test.ts (7 tests) 19625ms
+   ✓ solveAllConfigs() — covers exactly the 8 syntactic configs > returns one result per config, in allRulesetConfigs() order 19618ms
+ ✓ |@twist-arcade/fadeout| solver/strategy.test.ts (4 tests) 18470ms
+   ✓ extractStrategy() — draw/loss roots have no forced win to quote > remove-first/solid is a draw root: hasForcedWin=false, quotable=false, empty cells 6262ms
+   ✓ extractStrategy() — WIN roots extract a real, replayable forced line > hasForcedWin=true with a non-empty cell sequence for { decayTiming: 'remove-first', playThrough: true } 4590ms
+   ✓ extractStrategy() — WIN roots extract a real, replayable forced line > hasForcedWin=true with a non-empty cell sequence for { decayTiming: 'place-first', playThrough: true } 5625ms
+   ✓ extractStrategy() — WIN roots extract a real, replayable forced line > hasForcedWin=true with a non-empty cell sequence for { decayTiming: 'place-first', playThrough: false } 1991ms
+ ✓ |@twist-arcade/harness| test/suites.test.ts (82 tests) 24457ms
+   ✓ runCiSuite() — C19: ciGateBudget.twoPlayerCiRollouts scales ONLY the ci-suite ruthless measurement > suite 'nightly' ignores the override and runs the full shipped budget (the plan's 'nightly keeps the full-budget table') 2469ms
+   ✓ runCiSuite() — C19: ciGateBudget.twoPlayerCiRollouts scales ONLY the ci-suite ruthless measurement > no ciGateBudget declared at all, shipped budget within C22's no-override ceiling: behavior is unchanged (a genuinely cheap game never needs this field) 1544ms
+   ✓ runCiSuite() — C19/C20: a scaled budget that collapses ruthless onto standard fails LOUDLY > does NOT throw when the scaled budget stays strictly above standard's (real separation preserved) 537ms
+   ✓ runCiSuite() — C19/C20: a scaled budget that collapses ruthless onto standard fails LOUDLY > the nightly suite is immune — it never applies the ci-only override, so it cannot collapse 3611ms
+   ✓ runCiSuite() — C22: an expensive shipped ruthless budget REQUIRES an explicit CI override > does NOT throw when the shipped budget sits AT the ceiling — a cheap/small game never needs to touch this field (the unchanged, safe pass-through path) 709ms
+   ✓ runCiSuite() — C22: an expensive shipped ruthless budget REQUIRES an explicit CI override > nightly is exempt unconditionally — the full-budget table always runs there regardless of this ceiling 1501ms
+   ✓ runCiSuite() — C23 end-to-end: a real proven-draw fixture (classicTicTacToe), not hand-built GateInputs > classicTicTacToe (a REAL proven draw under optimal play) with solvedValue:draw passes cleanly — n/a where the old gates would have failed forever, pass on solved-value-reached 1351ms
+   ✓ evaluateCiGates/runCiSuite — C26: ruthless-vs-standard reports n/a (not a number) when a CI rollout override is active > real runCiSuite, Nine Grids' EXACT manifest shape: suite 'ci' (1,500-rollout override active) reports n/a, never a percentage 937ms
+   ✓ evaluateCiGates/runCiSuite — C26: ruthless-vs-standard reports n/a (not a number) when a CI rollout override is active > real runCiSuite, SAME manifest, suite 'nightly': the override is ignored — ruthless-vs-standard measures the REAL shipped 10,000-vs-1,000 gap for real, not n/a 4093ms
+   ✓ compareBudgets — C24: one seed, many rollout candidates, never a hand-rolled per-candidate seed > returns one point per candidate, in the SAME order, each carrying its own rollout count 1222ms
+   ✓ compareBudgets — C24: one seed, many rollout candidates, never a hand-rolled per-candidate seed > uses the IDENTICAL seed across every candidate — two candidates with the SAME rollout count produce byte-identical reports, proving determinism and same-seed usage together 1391ms
+   ✓ compareBudgets — C24: one seed, many rollout candidates, never a hand-rolled per-candidate seed > never mutates the manifest passed in — shipped difficultyTiers and any pre-existing ciGateBudget are untouched after the call 606ms
+   ✓ compareBudgets — C24: one seed, many rollout candidates, never a hand-rolled per-candidate seed > each candidate's report reflects ITS OWN rollout count, not the previous one (a real, observable difference across the sweep) 1631ms
+   ✓ runCiSuite — C27: real wiring, no self-play at all when deferral is active > suite 'nightly' IGNORES deferGatesToNightly entirely — real self-play runs, matchups is non-null, every row is measured for real (never 'deferred') 2386ms
+ ✓ |@twist-arcade/fadeout| solver/pass2-superko.test.ts (10 tests) 28741ms
+   ✓ solveSuperko() — budget/fallback contract > a budget of zero node visits falls back to the pass-1 value and flags budgetExceeded 3161ms
+   ✓ solveSuperko() — root-level exact proof on the fast (playThrough=true) configs > proves the root exactly (no budget fallback) for { decayTiming: 'remove-first', playThrough: true }, agreeing with pass 1 8772ms
+   ✓ solveSuperko() — root-level exact proof on the fast (playThrough=true) configs > proves the root exactly (no budget fallback) for { decayTiming: 'place-first', playThrough: true }, agreeing with pass 1 6504ms
+   ✓ solveSuperko() — root-level exact proof on the fast (playThrough=true) configs > the R1 axis collapse holds for the SUPERKO value too, not just pass 1 6199ms
+   ✓ solveSuperkoFromPosition() — plan §2.4 anchor 4: the ONLY non-losing move recreates history > C2 (raw graph) reports draw at this position; C1 (superko, with that move already in history) scores the mover LOST 1379ms
+   ✓ solveSuperkoFromPosition() — the no-legal-moves corner (plan §3.3): every raw-legal move already recreates history > a mover with every raw-legal reply blocked by superko history loses immediately, with zero recursion 1414ms
+   ✓ solveSuperkoFromPosition() — deep search core: blocking the raw graph's own witness forces real recursion, and the real answer differs > with the witness's own second position pre-visited, P1 loses despite the raw graph (and the blocked witness) saying win 1306ms
+ ✓ |@twist-arcade/fadeout| solver/raw-engine.test.ts (22 tests) 56562ms
+   ✓ solveRaw() — reachability cross-checked against an independent brute-force oracle > reachable state count matches the independent enumerator for { decayTiming: 'remove-first', playThrough: false } 4053ms
+   ✓ solveRaw() — reachability cross-checked against an independent brute-force oracle > reachable state count matches the independent enumerator for { decayTiming: 'remove-first', playThrough: true } 10306ms
+   ✓ solveRaw() — reachability cross-checked against an independent brute-force oracle > reachable state count matches the independent enumerator for { decayTiming: 'place-first', playThrough: false } 4995ms
+   ✓ solveRaw() — reachability cross-checked against an independent brute-force oracle > reachable state count matches the independent enumerator for { decayTiming: 'place-first', playThrough: true } 3823ms
+   ✓ solveRaw() — VALUE cross-checked against an independent sweep-to-fixpoint solver (not just reachability) > every reachable ongoing position's value matches the independent solver for { decayTiming: 'remove-first', playThrough: false } 2902ms
+   ✓ solveRaw() — VALUE cross-checked against an independent sweep-to-fixpoint solver (not just reachability) > every reachable ongoing position's value matches the independent solver for { decayTiming: 'remove-first', playThrough: true } 3808ms
+   ✓ solveRaw() — VALUE cross-checked against an independent sweep-to-fixpoint solver (not just reachability) > every reachable ongoing position's value matches the independent solver for { decayTiming: 'place-first', playThrough: false } 2709ms
+   ✓ solveRaw() — VALUE cross-checked against an independent sweep-to-fixpoint solver (not just reachability) > every reachable ongoing position's value matches the independent solver for { decayTiming: 'place-first', playThrough: true } 3453ms
+   ✓ solveRaw() — VALUE cross-checked against an independent sweep-to-fixpoint solver (not just reachability) > reproduces the solve report's own ongoing-position win/loss/draw splits for the two hard (playThrough=false) configs 1647ms
+   ✓ solveRaw() — hand-built cyclic mini-position converges (never loops, residue = draw) > a full-cap pure-rotation position (both sides rotating their own oldest mark forever) is a draw residue 1328ms
+   ✓ solveRaw() — hand-built forced win, cross-checked by the independent oracle > reports 'win' for { decayTiming: 'remove-first', playThrough: false } at a position with an immediate diagonal threat 1415ms
+   ✓ solveRaw() — hand-built forced win, cross-checked by the independent oracle > reports 'win' for { decayTiming: 'remove-first', playThrough: true } at a position with an immediate diagonal threat 1901ms
+   ✓ solveRaw() — hand-built forced win, cross-checked by the independent oracle > reports 'win' for { decayTiming: 'place-first', playThrough: false } at a position with an immediate diagonal threat 1180ms
+   ✓ solveRaw() — hand-built forced win, cross-checked by the independent oracle > reports 'win' for { decayTiming: 'place-first', playThrough: true } at a position with an immediate diagonal threat 1804ms
+   ✓ solveRaw() — R1 axis collapse: identical values for both decayTiming arms under playThrough > remove-first vs place-first, playThrough=true: identical reachable count, root value, and opening table 3819ms
+   ✓ winWitnessMoves() — extracted forced-win lines replay legally to a real win > for { decayTiming: 'remove-first', playThrough: false }, if root is WIN the extracted line replays to a real win under BOTH repetition rules 1400ms
+   ✓ winWitnessMoves() — extracted forced-win lines replay legally to a real win > for { decayTiming: 'remove-first', playThrough: true }, if root is WIN the extracted line replays to a real win under BOTH repetition rules 1846ms
+   ✓ winWitnessMoves() — extracted forced-win lines replay legally to a real win > for { decayTiming: 'place-first', playThrough: false }, if root is WIN the extracted line replays to a real win under BOTH repetition rules 1192ms
+   ✓ winWitnessMoves() — extracted forced-win lines replay legally to a real win > for { decayTiming: 'place-first', playThrough: true }, if root is WIN the extracted line replays to a real win under BOTH repetition rules 1806ms
+   ✓ winWitnessMoves() — extracted forced-win lines replay legally to a real win > place-first/solid is a concrete case where the root IS a win, worth pinning by name 1172ms
+ ✓ |@twist-arcade/harness| test/ci-gates.test.ts (31 tests) 111579ms
+   ✓ runSoloChaseCiGate — C19 hidden-info budget scaling (rollouts AND the coupled K) > refuses loudly, BEFORE running any self-play, when a scaled-down soloChaseCiRollouts drops K below the floor 1416ms
+   ✓ runSoloChaseCiGate — C19 hidden-info budget scaling (rollouts AND the coupled K) > does NOT throw the floor guard for the platform default (1000) on the same board — only an aggressive override trips it 28961ms
+   ✓ runSoloChaseCiGate — C19 hidden-info budget scaling (rollouts AND the coupled K) > a scaled-down but VIABLE budget (320, ~8.9 samples/candidate on this 36-cell board) still separates healthy from degenerate — the coordinator's exact ask, proven against the real Mine Run engine and its real mutant fixtures 42207ms
+   ✓ runSoloChaseCiGate — C19 hidden-info budget scaling (rollouts AND the coupled K) > suite 'nightly' ignores soloChaseCiRollouts and is never subject to the ci-only override (matches the two-player lane's rule) 38197ms
+   ✓ runSoloChaseCiGate — C27: manifest.ciGateBudget.deferGatesToNightly > real Mine Run engine (6x6 fixture): suite 'ci' with deferral active never runs Strong — proven by real elapsed time staying near Random/Greedy's cost, not Strong's (which alone took tens of seconds in the C19 tests above at the same seed count) 712ms
+ ✓ |@twist-arcade/harness| test/probes-solo.test.ts (15 tests) 214835ms
+   ✓ grindProbe — the real, shipping Mine Run engine > finds nothing on the real engine (structural termination proof, mine-run.md §4.1) 509ms
+   ✓ alwaysSafeVsStrongRatio — a zero-scoring Strong is a gate-worthy condition, not a float (C4) > reproduces the live finding against the REAL engine: an artificially tiny moveCap (10) against the shipped 10x10/20-mine/60-budget config makes every policy hit the cap before banking, and the shipped roster.strong scores a genuine median of 0 — throws ZeroScoringYardstickError rather than returning Infinity 156688ms
+   ✓ alwaysSafeVsStrongRatio — real engine vs. a planted density violation (mine-run.md §4.2) > healthy density (~22%): Always-Safe stays below the 0.95 hard-fail line 5714ms
+   ✓ alwaysSafeVsStrongRatio — real engine vs. a planted density violation (mine-run.md §4.2) > sanity: the SHIPPED default-wiring roster.strong still runs end-to-end here 576ms
+   ✓ alwaysSafeVsStrongRatio — against the SHIPPED buildSoloRoster(engine).strong (C6 close-out) > healthy density (~22%): Always-Safe stays below the 0.95 hard-fail line against the shipped Strong 50633ms
+   ✓ alwaysSafeVsStrongRatio — against the SHIPPED buildSoloRoster(engine).strong (C6 close-out) > planted violation — near-zero density (~5.5%): Always-Safe closes to >= 0.95 of the shipped Strong (the risk is fake) 436ms
+
+ Test Files  153 passed (153)
+      Tests  1782 passed | 1 skipped (1783)
+   Start at  22:15:44
+   Duration  216.18s (transform 11.61s, setup 10.60s, collect 30.15s, tests 529.74s, environment 18.72s, prepare 7.58s)
+

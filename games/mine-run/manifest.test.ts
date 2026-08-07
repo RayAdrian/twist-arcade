@@ -34,11 +34,8 @@ describe("mine-run manifest", () => {
     });
   });
 
-  it("carries exactly one manifest exception: the 32px cell-size floor, conditioned on two-tap commit (O2)", () => {
-    expect(mineRunManifest.exceptions).toHaveLength(1);
-    const exception = mineRunManifest.exceptions![0]!;
-    expect(exception.gate).toBe("cell-size-48px");
-    expect(exception.justification).toMatch(/two-tap/i);
+  it("carries no manifest exceptions — the O2 cell-size-48px exception is withdrawn (Board.tsx uses BoardShell's standard 48px floor + zoom/pan, matching C50's withdrawal of the analogous Tilt exception)", () => {
+    expect(mineRunManifest.exceptions ?? []).toHaveLength(0);
   });
 
   it("tags include press-your-luck", () => {

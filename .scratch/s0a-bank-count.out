@@ -1,0 +1,8 @@
+S0a start: 2026-08-07T07:46:16.140Z
+config: board=10x10/20mines/budget60 moveCap=400 rolloutCapPlies=60 rolloutsBudget=750
+RESULT seed=ci:mine-run:ci-0 finalScore=630 decisions=40 capHit=false elapsedMs=172321
+BANK_COUNT_RUNNING seed=ci:mine-run:ci-0 totalCalls=504823 bankCalls=0 bankFrac=0.0000%
+FINAL totalCalls=504823 bankCalls=0
+FINAL bankFrac=0.0000%
+S0a end: 2026-08-07T07:49:08.462Z
+S0A_COMPLETE

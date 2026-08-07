@@ -1,8 +1,19 @@
 // games/mine-run/manifest.ts — GameManifest (mine-run.md §13's DoD list, §1's frozen rule
-// sentence, §8.4/O2's cell-size exception). Mine Run is a solo score chase (`players.max === 1`,
-// `meta.maxPlayers === 1`) with NO opponent at all — there is nothing to play "against" but the
-// board and the budget, so `modes` is all-false and `difficultyTiers` is empty, mirroring the
-// established solo-fixture convention (packages/shell/test/fixtures/crackstep-definition.ts).
+// sentence). Mine Run is a solo score chase (`players.max === 1`, `meta.maxPlayers === 1`) with
+// NO opponent at all — there is nothing to play "against" but the board and the budget, so
+// `modes` is all-false and `difficultyTiers` is empty, mirroring the established solo-fixture
+// convention (packages/shell/test/fixtures/crackstep-definition.ts).
+//
+// NO manifest exceptions (revised from the plan's O2 — see games/mine-run/ui/Board.tsx's module
+// doc for the full reasoning). mine-run.md §8.4/O2 pre-authorized a 32px cell-size-48px exception
+// conditioned on mandatory two-tap commit. That exception is withdrawn here, on the same grounds
+// platform-corrections.md C50 withdrew the analogous exception once granted to Tilt: BoardShell's
+// natural-size zoom/pan mechanism (built for Nine Grids' 9x9 board, C38) renders every cell at
+// the real 48px floor and lets the frame scroll instead, with zero per-cell shrinkage — and,
+// concretely for Mine Run, the OLD 32px exception never actually made the board fit a 320px
+// viewport either (10*32 + 9*4 = 356px vs. a ~288px frame — still 24% over), so an
+// overflow-handling mechanism was always required regardless of which floor was chosen. Flagged
+// for review as a documented deviation, not a silent one.
 
 import type { GameManifest } from "@twist-arcade/game-spec";
 import { assertRuleSentenceLength } from "@twist-arcade/game-spec";
@@ -39,24 +50,8 @@ export const mineRunManifest: GameManifest = {
     comparisonMetric: "score",
   },
 
-  // O2 (orchestrator addendum, 2026-08-02): the 32px cell exception is granted CONDITIONALLY —
-  // mandatory two-tap commit on every platform (games/mine-run/ui/Board.tsx implements this via
-  // the shell's Cell `armed`/`onArm` seam). Recorded here so the exception is visible in review,
-  // per platform-corrections.md's own framing ("the shell team is being informed their
-  // constraint has one sanctioned violation and why").
-  exceptions: [
-    {
-      gate: "cell-size-48px",
-      justification:
-        "10-column board; a 320px viewport cannot reach the 48px floor without either shrinking " +
-        "the board (which would change mine density and the whole Always-Safe gap the design " +
-        "depends on) or overflowing the viewport. Mitigated by mandatory two-tap commit on every " +
-        "platform (tap/Enter stages, a second tap/Enter on the same cell commits) plus an " +
-        "enlarged, outlined confirm affordance on the staged cell — a mis-tap here doesn't cost a " +
-        "turn, it hits a mine and wipes an unbanked streak, so the mitigation is load-bearing, " +
-        "not cosmetic.",
-    },
-  ],
+  // No exceptions (see this file's module doc — the O2 cell-size-48px exception is withdrawn;
+  // Board.tsx renders every cell at the shell's standard 48px floor via BoardShell's zoom/pan).
 
   // platform-corrections.md C23: no solve exists for Mine Run (a score chase with no single
   // "solved" terminal value — R5/R6/R7 make banked monotone and unbounded, so there is no
@@ -75,7 +70,7 @@ export const mineRunManifest: GameManifest = {
   // and the harness refuses (HiddenInfoBudgetTooLowError) below the empirically-set floor of
   // MIN_HIDDEN_INFO_SAMPLES_PER_CANDIDATE = 8 samples/candidate.
   //
-  // Measured against the REAL shipped 10x10 board (not the smaller 6x6/36-cell fixture
+  // Measured against the 10x10/20-mine/budget-60 board (not the smaller 6x6/36-cell fixture
   // packages/harness/test/ci-gates.test.ts uses to prove 320 is viable there — that number is
   // NOT transferable here): `engine.legalMoves(engine.setup(1, rngFromSeed(<the harness's own
   // fixed probe seed>)), 0).length` = 87 root legal moves (the opening reveal is wide open;
@@ -87,6 +82,18 @@ export const mineRunManifest: GameManifest = {
   // unlike Fadeout, board-scaling relief here is capped by K, not by rollout count alone. See
   // the gate-run report for the wall-clock consequence: seed count x move count dominate this
   // game's CI cost far more than the rollout budget does, and this field cannot touch either.
+  //
+  // STALE INPUT, FLAGGED RATHER THAN SILENTLY CARRIED (found while wiring the UI, not fixed
+  // here): the "87 root legal moves" measurement above predates C46/C52's freeze at 22%/75 —
+  // it was taken at the 20%/60 pair engine.ts's DEFAULT_MINES/DEFAULT_BUDGET shipped until this
+  // pass. A denser board (22% vs 20%) tends to produce a SMALLER opening flood on average, which
+  // would lower the root branching factor and could narrow (or, in the worst case, erase) the
+  // 8.62x margin this floor claims. `soloChaseCiRollouts: 750` is left UNCHANGED here — recomput-
+  // ing the 87-move probe and the resulting K margin against the real 22%/75 board is a harness/
+  // gate-table concern, not a board-UI one, and re-deriving it without measuring would be exactly
+  // the "comment asserting an invariant the code doesn't verify" failure this codebase keeps
+  // finding. Recommend the orchestrator route a re-measurement to whichever team owns
+  // ciGateBudget before this number is trusted again.
   ciGateBudget: {
     soloChaseCiRollouts: 750,
     // platform-corrections.md C27: Strong-dependent solo-chase gates (strongVsRandomRatio,

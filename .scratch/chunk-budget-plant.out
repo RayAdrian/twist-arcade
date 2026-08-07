@@ -1,0 +1,12 @@
+$ tsx scripts/chunk-budget.ts
+chunk-budget: per-game dynamic-import chunk budget (platform-corrections.md C38/C50), budget = 75 kB gzip/game
+  measured from: .next/react-loadable-manifest.json (react-loadable-manifest, per-import-site attribution — see script header)
+
+  crackstep: 7.22 kB gzip [ok]  (files: static/chunks/152.f905264712d3fbd5.js, static/chunks/737.d2acdad23c4cb81f.js)
+  fadeout: 8.27 kB gzip [ok]  (files: static/chunks/131-88951e1c0e510130.js, static/chunks/502.6e45f2f6c6724d8b.js, static/chunks/507.8dd376d7c879d22e.js)
+  mine-run: 96.11 kB gzip [OVER BUDGET]  (files: static/chunks/45.0b1e7b2330a27886.js, static/chunks/552-c9d266aee7a4cba0.js)
+  nine-grids: 4.84 kB gzip [ok]  (files: static/chunks/59.4df53f0462b47327.js, static/chunks/855-70d7cb205a834f29.js)
+  tilt: 5.34 kB gzip [ok]  (files: static/chunks/309.9b21a29611a76f55.js, static/chunks/487-7bcd1a66dee1d863.js)
+
+chunk-budget: FAIL — "mine-run" is 96.11 kB gzip, over the 75 kB budget by 21.11 kB.
+[ELIFECYCLE] Command failed with exit code 1.

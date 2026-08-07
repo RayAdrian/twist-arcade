@@ -1,0 +1,37 @@
+=== LEG 3 — reduced-board exact expectimax ===
+
+--- 4x4/3mines/budget8 (n=8 seeds, exact per seed) ---
+  4x4/3mines/budget8 seed=c37:mine-run:leg3-exact:4x4/3mines/budget8-0 rootWitnesses=4 optimalEV=15.0000 alwaysSafeEV=15.0000 ratio(opt/safe)=1.0000 nodes(opt=9591,safe=15) elapsed=225ms
+  4x4/3mines/budget8 seed=c37:mine-run:leg3-exact:4x4/3mines/budget8-1 rootWitnesses=8 optimalEV=28.0000 alwaysSafeEV=28.0000 ratio(opt/safe)=1.0000 nodes(opt=89504,safe=32) elapsed=2111ms
+  4x4/3mines/budget8 seed=c37:mine-run:leg3-exact:4x4/3mines/budget8-2 rootWitnesses=4 optimalEV=15.0000 alwaysSafeEV=15.0000 ratio(opt/safe)=1.0000 nodes(opt=9945,safe=18) elapsed=191ms
+  4x4/3mines/budget8 seed=c37:mine-run:leg3-exact:4x4/3mines/budget8-3 rootWitnesses=1 optimalEV=10.0000 alwaysSafeEV=10.0000 ratio(opt/safe)=1.0000 nodes(opt=871,safe=5) elapsed=15ms
+  4x4/3mines/budget8 seed=c37:mine-run:leg3-exact:4x4/3mines/budget8-4 rootWitnesses=4 optimalEV=15.0000 alwaysSafeEV=15.0000 ratio(opt/safe)=1.0000 nodes(opt=9945,safe=18) elapsed=203ms
+  4x4/3mines/budget8 seed=c37:mine-run:leg3-exact:4x4/3mines/budget8-5 rootWitnesses=28 optimalEV=40.5357 alwaysSafeEV=32.6429 ratio(opt/safe)=1.2418 nodes(opt=1557950,safe=137) elapsed=45063ms
+  4x4/3mines/budget8 seed=c37:mine-run:leg3-exact:4x4/3mines/budget8-6 rootWitnesses=28 optimalEV=40.5357 alwaysSafeEV=32.8929 ratio(opt/safe)=1.2324 nodes(opt=1557950,safe=132) elapsed=46156ms
+  4x4/3mines/budget8 seed=c37:mine-run:leg3-exact:4x4/3mines/budget8-7 rootWitnesses=1 optimalEV=1.0000 alwaysSafeEV=1.0000 ratio(opt/safe)=1.0000 nodes(opt=16,safe=2) elapsed=0ms
+
+  4x4/3mines/budget8 SUMMARY (n=8/8 seeds completed exactly):
+    sum(optimalEV)=165.0714 sum(alwaysSafeEV)=149.5357
+    pooled ratio (optimal/alwaysSafe) = 1.1039
+    mean of per-seed ratios           = 1.0593
+    per-seed ratios: 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.2418, 1.2324, 1.0000
+    spec's criterion: optimalEV <= 1.05 * alwaysSafeEV  =>  pooled: false
+LEG3_4x4/3mines/budget8_COMPLETE n=8/8 pooledRatio=1.1039 meanRatio=1.0593 infeasibleCount=0
+
+--- 5x5/4mines/budget12 (n=5 seeds, exact per seed) ---
+  5x5/4mines/budget12 seed=c37:mine-run:leg3-exact:5x5/4mines/budget12-0 rootWitnesses=4 optimalEV=66.0000 alwaysSafeEV=66.0000 ratio(opt/safe)=1.0000 nodes(opt=1178727,safe=15) elapsed=63082ms
+  5x5/4mines/budget12 seed=c37:mine-run:leg3-exact:5x5/4mines/budget12-1 rootWitnesses=6 optimalEV=36.0000 alwaysSafeEV=33.6667 ratio(opt/safe)=1.0693 nodes(opt=303711,safe=26) elapsed=13362ms
+  5x5/4mines/budget12 seed=c37:mine-run:leg3-exact:5x5/4mines/budget12-2 rootWitnesses=1 optimalEV=6.0000 alwaysSafeEV=6.0000 ratio(opt/safe)=1.0000 nodes(opt=562,safe=4) elapsed=15ms
+  5x5/4mines/budget12 seed=c37:mine-run:leg3-exact:5x5/4mines/budget12-3 rootWitnesses=6 optimalEV=36.0000 alwaysSafeEV=36.0000 ratio(opt/safe)=1.0000 nodes(opt=524148,safe=32) elapsed=23281ms
+  5x5/4mines/budget12 seed=c37:mine-run:leg3-exact:5x5/4mines/budget12-4: INFEASIBLE during search (rootWitnesses=40) — node budget (3000000) exceeded
+  1/5 seed(s) INFEASIBLE (node budget 3000000): c37:mine-run:leg3-exact:5x5/4mines/budget12-4
+
+  5x5/4mines/budget12 SUMMARY (n=4/5 seeds completed exactly):
+    sum(optimalEV)=144.0000 sum(alwaysSafeEV)=141.6667
+    pooled ratio (optimal/alwaysSafe) = 1.0165
+    mean of per-seed ratios           = 1.0173
+    per-seed ratios: 1.0000, 1.0693, 1.0000, 1.0000
+    spec's criterion: optimalEV <= 1.05 * alwaysSafeEV  =>  pooled: true
+LEG3_5x5/4mines/budget12_COMPLETE n=4/5 pooledRatio=1.0165 meanRatio=1.0173 infeasibleCount=1
+
+LEG3_ALL_COMPLETE

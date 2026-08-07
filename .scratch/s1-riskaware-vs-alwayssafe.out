@@ -1,0 +1,42 @@
+=== BRIDGE CHECK (re-verify before trusting this run) ===
+seed=ci:mine-run:ci-0 score=849 expected=849 match=true
+seed=ci:mine-run:ci-1 score=686 expected=686 match=true
+seed=ci:mine-run:ci-2 score=1247 expected=1247 match=true
+BRIDGE_CHECK_RESULT ok=true
+
+=== riskAwareMove (Tier B, standalone) vs Always-Safe, n=23 (paired seeds) ===
+seed,alwaysSafe,riskAware,riskAwareWins,alwaysSafeDecisions,riskAwareDecisions
+ci:mine-run:ci-0,849,812,false,38,39
+ci:mine-run:ci-1,686,747,true,40,38
+ci:mine-run:ci-2,1247,788,false,64,63
+c29:mine-run:pilot-0,826,838,true,63,56
+c29:mine-run:pilot-1,710,715,true,57,51
+c29:mine-run:pilot-2,312,350,true,58,52
+c29:mine-run:pilot-3,469,468,false,65,64
+c29:mine-run:pilot-4,725,724,false,51,50
+c29:mine-run:pilot-5,888,883,false,67,62
+c29:mine-run:pilot-6,1304,1316,true,26,25
+c29:mine-run:pilot-7,2628,2628,false,32,33
+c29:mine-run:pilot-8,597,610,true,49,49
+c29:mine-run:pilot-9,1296,1294,false,45,41
+c29:mine-run:pilot-10,274,269,false,62,57
+c29:mine-run:pilot-11,241,250,true,53,43
+c29:mine-run:pilot-12,313,316,true,35,34
+c29:mine-run:pilot-13,849,829,false,52,46
+c29:mine-run:pilot-14,188,199,true,58,52
+c29:mine-run:pilot-15,353,352,false,51,51
+c29:mine-run:pilot-16,367,231,false,39,41
+c29:mine-run:pilot-17,485,586,true,58,53
+c29:mine-run:pilot-18,722,862,true,57,48
+c29:mine-run:pilot-19,154,153,false,59,49
+elapsed: 134ms
+
+=== SUMMARY ===
+alwaysSafeMedian=686 riskAwareMedian=715
+medianRatio (riskAware/alwaysSafe) = 1.0423
+gateRatio (alwaysSafe/riskAware, gate's own convention, healthy<=0.70, fail>=0.95) = 0.9594
+PAIRED win/loss/tie = 11/11/1 out of 23
+PAIRED_WIN_FRACTION = 0.4783
+alwaysSafeCapHitRate=0/23
+riskAwareCapHitRate=0/23
+S1_MEASUREMENT_COMPLETE

@@ -1,0 +1,96 @@
+=== BRIDGE CHECK ===
+seed=ci:mine-run:ci-0 score=849 expected=849 match=true
+seed=ci:mine-run:ci-1 score=686 expected=686 match=true
+seed=ci:mine-run:ci-2 score=1247 expected=1247 match=true
+BRIDGE_CHECK_RESULT ok=true
+
+=== LEG 1 — n=100, root="c29:mine-run:v1" ===
+Always-Safe: 362ms
+alwaysSafeMedian=692.5 capHits=0/100
+RiskAware-B: 298ms
+RiskAware-B          median=  729 gateRatio=0.9499 win/loss/tie=49/37/14 winFraction=0.4900 capHits=0
+Random: 310ms
+Random               median=    7 gateRatio=98.9286 win/loss/tie=0/100/0 winFraction=0.0000 capHits=0
+T=5,pCap=0.05        median=  693 gateRatio=0.9993 win/loss/tie=3/0/97 winFraction=0.0300 capHits=0
+T=5,pCap=0.1         median=  695 gateRatio=0.9964 win/loss/tie=8/0/92 winFraction=0.0800 capHits=0
+T=5,pCap=0.15        median=  697 gateRatio=0.9935 win/loss/tie=18/0/82 winFraction=0.1800 capHits=0
+T=5,pCap=0.2         median=  702 gateRatio=0.9865 win/loss/tie=24/2/74 winFraction=0.2400 capHits=0
+T=5,pCap=0.3         median=  702 gateRatio=0.9865 win/loss/tie=43/6/51 winFraction=0.4300 capHits=0
+T=10,pCap=0.05       median=  694 gateRatio=0.9978 win/loss/tie=3/0/97 winFraction=0.0300 capHits=0
+T=10,pCap=0.1        median=  700 gateRatio=0.9893 win/loss/tie=10/0/90 winFraction=0.1000 capHits=0
+T=10,pCap=0.15       median=  702 gateRatio=0.9865 win/loss/tie=21/0/79 winFraction=0.2100 capHits=0
+T=10,pCap=0.2        median=  705 gateRatio=0.9823 win/loss/tie=26/2/72 winFraction=0.2600 capHits=0
+T=10,pCap=0.3        median=  719 gateRatio=0.9631 win/loss/tie=43/8/49 winFraction=0.4300 capHits=0
+T=15,pCap=0.05       median=  696 gateRatio=0.9950 win/loss/tie=3/0/97 winFraction=0.0300 capHits=0
+T=15,pCap=0.1        median=  701 gateRatio=0.9879 win/loss/tie=11/0/89 winFraction=0.1100 capHits=0
+T=15,pCap=0.15       median=  702 gateRatio=0.9865 win/loss/tie=22/0/78 winFraction=0.2200 capHits=0
+T=15,pCap=0.2        median=  705 gateRatio=0.9823 win/loss/tie=27/2/71 winFraction=0.2700 capHits=0
+T=15,pCap=0.3        median=721.5 gateRatio=0.9598 win/loss/tie=40/12/48 winFraction=0.4000 capHits=0
+T=20,pCap=0.05       median=  696 gateRatio=0.9950 win/loss/tie=3/0/97 winFraction=0.0300 capHits=0
+T=20,pCap=0.1        median=  702 gateRatio=0.9865 win/loss/tie=14/0/86 winFraction=0.1400 capHits=0
+T=20,pCap=0.15       median=  702 gateRatio=0.9865 win/loss/tie=24/0/76 winFraction=0.2400 capHits=0
+T=20,pCap=0.2        median=  705 gateRatio=0.9823 win/loss/tie=29/2/69 winFraction=0.2900 capHits=0
+T=20,pCap=0.3        median=  722 gateRatio=0.9591 win/loss/tie=39/13/48 winFraction=0.3900 capHits=0
+T=30,pCap=0.05       median=  696 gateRatio=0.9950 win/loss/tie=3/0/97 winFraction=0.0300 capHits=0
+T=30,pCap=0.1        median=  702 gateRatio=0.9865 win/loss/tie=15/0/85 winFraction=0.1500 capHits=0
+T=30,pCap=0.15       median=701.5 gateRatio=0.9872 win/loss/tie=25/1/74 winFraction=0.2500 capHits=0
+T=30,pCap=0.2        median=  702 gateRatio=0.9865 win/loss/tie=30/3/67 winFraction=0.3000 capHits=0
+T=30,pCap=0.3        median=  715 gateRatio=0.9685 win/loss/tie=41/13/46 winFraction=0.4100 capHits=0
+T=50,pCap=0.05       median=  701 gateRatio=0.9879 win/loss/tie=4/0/96 winFraction=0.0400 capHits=0
+T=50,pCap=0.1        median=  705 gateRatio=0.9823 win/loss/tie=16/0/84 winFraction=0.1600 capHits=0
+T=50,pCap=0.15       median=  702 gateRatio=0.9865 win/loss/tie=27/1/72 winFraction=0.2700 capHits=0
+T=50,pCap=0.2        median=717.5 gateRatio=0.9652 win/loss/tie=31/3/66 winFraction=0.3100 capHits=0
+T=50,pCap=0.3        median=728.5 gateRatio=0.9506 win/loss/tie=41/15/44 winFraction=0.4100 capHits=0
+T=inf,pCap=0.05      median=  701 gateRatio=0.9879 win/loss/tie=4/0/96 winFraction=0.0400 capHits=0
+T=inf,pCap=0.1       median=  705 gateRatio=0.9823 win/loss/tie=18/0/82 winFraction=0.1800 capHits=0
+T=inf,pCap=0.15      median=  705 gateRatio=0.9823 win/loss/tie=30/2/68 winFraction=0.3000 capHits=0
+T=inf,pCap=0.2       median=728.5 gateRatio=0.9506 win/loss/tie=35/4/61 winFraction=0.3500 capHits=0
+T=inf,pCap=0.3       median=735.5 gateRatio=0.9415 win/loss/tie=40/23/37 winFraction=0.4000 capHits=0
+threshold grid: 10188ms
+
+TOTAL elapsed: 11159ms
+
+=== LEG 1 VERDICT ===
+BEST (lowest) gateRatio: T=inf,pCap=0.3 gateRatio=0.9415 median=735.5 winFraction=0.4000
+LEG1_FIRES (every policy median <= AlwaysSafe's) = false
+
+Policies whose OWN median exceeded Always-Safe's (gateRatio < 1.0): 36 / 37
+  RiskAware-B gateRatio=0.9499 median=729 winFraction=0.4900
+  T=5,pCap=0.05 gateRatio=0.9993 median=693 winFraction=0.0300
+  T=5,pCap=0.1 gateRatio=0.9964 median=695 winFraction=0.0800
+  T=5,pCap=0.15 gateRatio=0.9935 median=697 winFraction=0.1800
+  T=5,pCap=0.2 gateRatio=0.9865 median=702 winFraction=0.2400
+  T=5,pCap=0.3 gateRatio=0.9865 median=702 winFraction=0.4300
+  T=10,pCap=0.05 gateRatio=0.9978 median=694 winFraction=0.0300
+  T=10,pCap=0.1 gateRatio=0.9893 median=700 winFraction=0.1000
+  T=10,pCap=0.15 gateRatio=0.9865 median=702 winFraction=0.2100
+  T=10,pCap=0.2 gateRatio=0.9823 median=705 winFraction=0.2600
+  T=10,pCap=0.3 gateRatio=0.9631 median=719 winFraction=0.4300
+  T=15,pCap=0.05 gateRatio=0.9950 median=696 winFraction=0.0300
+  T=15,pCap=0.1 gateRatio=0.9879 median=701 winFraction=0.1100
+  T=15,pCap=0.15 gateRatio=0.9865 median=702 winFraction=0.2200
+  T=15,pCap=0.2 gateRatio=0.9823 median=705 winFraction=0.2700
+  T=15,pCap=0.3 gateRatio=0.9598 median=721.5 winFraction=0.4000
+  T=20,pCap=0.05 gateRatio=0.9950 median=696 winFraction=0.0300
+  T=20,pCap=0.1 gateRatio=0.9865 median=702 winFraction=0.1400
+  T=20,pCap=0.15 gateRatio=0.9865 median=702 winFraction=0.2400
+  T=20,pCap=0.2 gateRatio=0.9823 median=705 winFraction=0.2900
+  T=20,pCap=0.3 gateRatio=0.9591 median=722 winFraction=0.3900
+  T=30,pCap=0.05 gateRatio=0.9950 median=696 winFraction=0.0300
+  T=30,pCap=0.1 gateRatio=0.9865 median=702 winFraction=0.1500
+  T=30,pCap=0.15 gateRatio=0.9872 median=701.5 winFraction=0.2500
+  T=30,pCap=0.2 gateRatio=0.9865 median=702 winFraction=0.3000
+  T=30,pCap=0.3 gateRatio=0.9685 median=715 winFraction=0.4100
+  T=50,pCap=0.05 gateRatio=0.9879 median=701 winFraction=0.0400
+  T=50,pCap=0.1 gateRatio=0.9823 median=705 winFraction=0.1600
+  T=50,pCap=0.15 gateRatio=0.9865 median=702 winFraction=0.2700
+  T=50,pCap=0.2 gateRatio=0.9652 median=717.5 winFraction=0.3100
+  T=50,pCap=0.3 gateRatio=0.9506 median=728.5 winFraction=0.4100
+  T=inf,pCap=0.05 gateRatio=0.9879 median=701 winFraction=0.0400
+  T=inf,pCap=0.1 gateRatio=0.9823 median=705 winFraction=0.1800
+  T=inf,pCap=0.15 gateRatio=0.9823 median=705 winFraction=0.3000
+  T=inf,pCap=0.2 gateRatio=0.9506 median=728.5 winFraction=0.3500
+  T=inf,pCap=0.3 gateRatio=0.9415 median=735.5 winFraction=0.4000
+
+Policies beating Always-Safe on a MAJORITY of paired seeds (winFraction > 0.5): 0 / 37
+LEG1_COMPLETE
