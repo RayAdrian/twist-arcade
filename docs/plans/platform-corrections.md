@@ -2966,3 +2966,63 @@ inside `"moved"` that the tilt ended the match. `useGame.ts` dispatches both in 
 they arrive together in practice. The team documented the constraint instead of claiming a
 concatenation it could not deliver, which is the difference between a known limitation and a
 comment asserting an invariant that does not hold.
+
+---
+
+## C51 — Bid-Tac-Toe is an exact, pure draw at every candidate budget. "None by construction" is now proven.
+
+### The result
+
+**Budgets {8, 12, 16, 20} all solve to a PURE, PROVEN, EXACT DRAW with ZERO star-holder
+advantage.** The saddle-point census examined **2,521,056 bid nodes across four budgets and found
+zero impure ones** — Develin–Payne's pure-optimal-bid theory holds exactly for this game's specific
+tie/transfer variant, verified exhaustively rather than sampled.
+
+That is **stronger than the plan predicted.** §2's hypothesis was a ~2-point deficit for the
+non-star-holder; under optimal play there is no deficit at all.
+
+**C14 rated "none by construction" as the exact shape of confidence that failed on Wrap.** It is no
+longer confidence — it is a proof artifact, computed on the shipped ruleset. C14's *deeper* point
+still stands and binds B3: **a theorem about optimal play is not a prediction about the bots we
+ship.** Wrap's strategy-stealing theorem was true and its bots measured 76% the other way.
+
+### The surprising number was cross-checked before anything was built on it
+
+B=1 and B=2 solve to a **forced win for the star-holder** — unexpected, and exactly the kind of
+result that has misled this project twice today. Before proceeding, the team wrote an independent
+brute-force oracle: real `apply()` per matrix cell, no successor dedup, no precompute table,
+**deliberately unoptimised so it cannot share the main solver's failure modes.** It agreed exactly
+at B=0,1,2,3 including the forced-win cases.
+
+That is the M1 anti-tautology discipline applied unprompted: an oracle that shares the
+implementation's shortcuts proves only that the shortcuts are self-consistent.
+
+### An unanticipated finding the plan argued for in prose
+
+The per-first-auction value table shows **winning cheap is good and winning expensive flips the game
+against the winner**, with a consistent breakeven around **30–38% of budget at every size**. The
+anti-snowball property §1 claimed as a design rationale is now visible directly in the numbers
+rather than asserted.
+
+### Ruling: B=8 is the working candidate into B3; the freeze happens after bots are measured
+
+All four budgets are identical on every exact-solve axis, so the tiebreakers are practical and the
+team's reasoning holds: **B=8's bid branching (9–18) sits inside the design-gate band of 4–30 while
+B=16's (17–34) already touches its edge, and B=8 costs ~3.6× less to gate.** Recommending rather
+than unilaterally freezing was correct.
+
+**What B3 must now measure, and why the proof does not substitute for it:** with a proof artifact,
+C23's relief becomes available — `solvedValue: { value: "draw" }` with a pointer to the solve
+report. But whether that relief *applies* is empirical. Fadeout is the precedent: its proven draw
+was **reached by the bots at every budget**, so self-play was 100% draws, FPA was 0%, and the
+decisiveness gates became unsatisfiable-by-construction (C23). Bid-Tac-Toe's tree is far larger, so
+the bots may *not* reach the value — in which case games are decisive, FPA is meaningful, and the
+band applies in full.
+
+**`solved-value-reached` is the gate that answers it**, and this is exactly the inversion C23 was
+built for: the proof buys relief from gates it makes meaningless, and simultaneously creates a new
+gate checking that the bots actually attain the proven value. Neither is available without the
+other.
+
+**Quotability passes at every budget** — there is no forced win to quote, matching Fadeout's own
+reasoning for its shipped config.
