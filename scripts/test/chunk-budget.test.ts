@@ -1,89 +1,161 @@
-// scripts/test/chunk-budget.test.ts — unit coverage for the pure parse-and-attribute core of
-// scripts/chunk-budget.ts (platform-corrections.md C38). Exercises `attributeOwnChunkIds`
-// against small synthetic source strings SHAPED like webpack's real compiled output (verified
-// against the actual build in the fix-up report — see that script's header for the real
-// crackstep/nine-grids/fadeout numbers), so this suite runs without a `pnpm build` on disk and
-// stays fast in `pnpm test`. The filesystem half (chunk-id -> built file -> gzip size) is
-// deliberately NOT unit-tested here — it only means something against real webpack output, and
+// scripts/test/chunk-budget.test.ts — unit coverage for the two pure steps of
+// scripts/chunk-budget.ts (platform-corrections.md C38, rewritten for C50):
+//
+//   1. extractGameImportSpecifiers — parses AUTHORED (never-minified) games/registry.ts source,
+//      shaped like the real file (verified against the real 4-game build in the C50 fix-up
+//      report — see that script's header for the real crackstep/fadeout/nine-grids/tilt
+//      numbers), so this suite runs without a `pnpm build` on disk and stays fast in `pnpm
+//      test`.
+//   2. attributeOwnFiles — attributes a game's specifiers to built files via a synthetic
+//      react-loadable-manifest.json-shaped object, again with no real build needed.
+//
+// The filesystem-integration half (resolving files under .next/ and gzipping them) is
+// deliberately NOT unit-tested here — it only means something against real Next.js output, and
 // is covered by the real `pnpm build && pnpm chunk-budget` integration path instead.
 
 import { describe, expect, it } from "vitest";
-import { attributeOwnChunkIds, ChunkBudgetProbeError } from "../chunk-budget";
+import { extractGameImportSpecifiers, attributeOwnFiles, ChunkBudgetProbeError, type LoadableManifest } from "../chunk-budget";
 
-// Mirrors the real compiled shape (confirmed against `.next/static/chunks/app/play/[gameId]/
-// page-*.js` at the time this guard was built): an object keyed by game id, each entry's
-// loadEngine/loadPresentation/loadSolver calling `n.e(<chunkId>)` — sometimes standalone,
-// sometimes inside `Promise.all([...])` — before `.then(n.bind(n, <moduleId>))`.
-const SYNTHETIC_SOURCE = `
-var d = {
-  crackstep: {
-    manifest: l.e,
-    loadEngine: () => Promise.all([n.e(678), n.e(994), n.e(737)]).then(n.bind(n, 9737)).then(e => e.crackstep),
-    loadPresentation: () => Promise.all([n.e(678), n.e(994), n.e(737)]).then(n.bind(n, 9737)).then(e => e.presentation),
-    loadSolver: () => n.e(152).then(n.bind(n, 5152)).then(e => e.solver),
+// Mirrors the real authored shape of games/registry.ts at the time this test was written
+// (confirmed against the real file in the C50 fix-up): a `const registry = {...}` object keyed
+// by game id, entries built from `defineGame(...)` calls but with `loadEngine`/
+// `loadPresentation`/`loadSolver` as plain arrow functions calling `import(...)` — some games
+// split engine/presentation into separate specifiers (fadeout), some share one specifier for
+// both (crackstep, nine-grids, tilt).
+const SYNTHETIC_REGISTRY_SOURCE = `
+import type { Registry } from "@twist-arcade/game-spec";
+import { fadeoutManifest } from "./fadeout/manifest";
+
+export const registry: Registry = {
+  "crackstep": {
+    manifest: crackstepManifest,
+    loadEngine: () => import("@twist-arcade/crackstep").then((m) => m.crackstep),
+    loadPresentation: () => import("@twist-arcade/crackstep").then((m) => m.presentation),
+    loadSolver: () => import("@twist-arcade/crackstep/solver").then((m) => m.solver),
   },
   "nine-grids": {
-    manifest: a.e,
-    loadEngine: () => Promise.all([n.e(678), n.e(994), n.e(855), n.e(59)]).then(n.bind(n, 5059)).then(e => e.nineGrids),
-    loadPresentation: () => Promise.all([n.e(678), n.e(994), n.e(855), n.e(59)]).then(n.bind(n, 5059)).then(e => e.presentation),
+    manifest: nineGridsManifest,
+    loadEngine: () => import("@twist-arcade/nine-grids").then((m) => m.nineGrids),
+    loadPresentation: () => import("@twist-arcade/nine-grids").then((m) => m.presentation),
   },
   fadeout: {
-    manifest: r._m,
-    loadEngine: () => n.e(507).then(n.bind(n, 1507)).then(e => e.createFadeoutEngine(r.dl)),
-    loadPresentation: () => Promise.all([n.e(678), n.e(994), n.e(131), n.e(502)]).then(n.bind(n, 1502)).then(e => e.fadeoutPresentation),
+    manifest: fadeoutManifest,
+    loadEngine: () => import("./fadeout/engine").then((m) => m.createFadeoutEngine(FADEOUT_RULESET_CONFIG)),
+    loadPresentation: () => import("./fadeout/presentation").then((m) => m.fadeoutPresentation),
   },
 };
 `;
 
 const GAME_IDS = ["crackstep", "fadeout", "nine-grids"];
 
-describe("attributeOwnChunkIds", () => {
-  it("excludes chunk ids referenced by every registered game (678, 994 — shell-equivalent) and attributes the rest per game", () => {
-    const result = attributeOwnChunkIds(SYNTHETIC_SOURCE, GAME_IDS);
-    expect(result.get("crackstep")).toEqual([152, 737]);
-    expect(result.get("nine-grids")).toEqual([59, 855]);
-    expect(result.get("fadeout")).toEqual([131, 502, 507]);
+describe("extractGameImportSpecifiers", () => {
+  it("reads each game's dynamic-import specifiers from authored (unminified) source", () => {
+    const result = extractGameImportSpecifiers(SYNTHETIC_REGISTRY_SOURCE, GAME_IDS);
+    expect(result.get("crackstep")).toEqual(["@twist-arcade/crackstep", "@twist-arcade/crackstep/solver"]);
+    expect(result.get("nine-grids")).toEqual(["@twist-arcade/nine-grids"]);
+    expect(result.get("fadeout")).toEqual(["./fadeout/engine", "./fadeout/presentation"]);
   });
 
-  it("charges a chunk id shared by SOME but not ALL games in full to every game that references it (no partial-shared discount)", () => {
-    // 2001 is shared by nine-grids and fadeout only — crackstep never references it — so it
-    // must NOT be excluded as universal, and must count in full toward both games that use it.
+  it("throws when a registered game id has no matching entry in the source (drift, not a silent 0-specifier report)", () => {
+    expect(() => extractGameImportSpecifiers(SYNTHETIC_REGISTRY_SOURCE, [...GAME_IDS, "closing-walls"])).toThrow(ChunkBudgetProbeError);
+    expect(() => extractGameImportSpecifiers(SYNTHETIC_REGISTRY_SOURCE, [...GAME_IDS, "closing-walls"])).toThrow(/closing-walls/);
+  });
+
+  it("throws when the source's registry keys don't exactly match the expected id set (fewer ids passed than the source declares)", () => {
+    expect(() => extractGameImportSpecifiers(SYNTHETIC_REGISTRY_SOURCE, ["crackstep", "fadeout"])).toThrow(ChunkBudgetProbeError);
+  });
+
+  it("throws when no 'const registry = {...}' declaration exists at all", () => {
+    expect(() => extractGameImportSpecifiers("export const somethingElse = {};", GAME_IDS)).toThrow(ChunkBudgetProbeError);
+  });
+
+  it("throws when a game entry is missing the required loadEngine or loadPresentation property", () => {
     const source = `
-var d = {
-  crackstep: { manifest: l.e, loadEngine: () => Promise.all([n.e(678), n.e(737)]).then(n.bind(n, 1)) },
-  "nine-grids": { manifest: a.e, loadEngine: () => Promise.all([n.e(678), n.e(2001), n.e(59)]).then(n.bind(n, 2)) },
-  fadeout: { manifest: r.e, loadEngine: () => Promise.all([n.e(678), n.e(2001), n.e(507)]).then(n.bind(n, 3)) },
+export const registry: Registry = {
+  crackstep: {
+    loadEngine: () => import("@twist-arcade/crackstep").then((m) => m.crackstep),
+  },
 };
 `;
-    const result = attributeOwnChunkIds(source, GAME_IDS);
-    expect(result.get("crackstep")).toEqual([737]); // 678 is universal (all 3 reference it), excluded
-    expect(result.get("nine-grids")).toEqual([59, 2001]); // 2001 charged in full, not shared-discounted
-    expect(result.get("fadeout")).toEqual([507, 2001]); // same 2001 charged again to fadeout too
+    expect(() => extractGameImportSpecifiers(source, ["crackstep"])).toThrow(/loadPresentation/);
   });
 
-  it("throws when a registered game id has no matching entry in the compiled chunk (drift, not a silent 0-byte report)", () => {
-    expect(() => attributeOwnChunkIds(SYNTHETIC_SOURCE, [...GAME_IDS, "closing-walls"])).toThrow(ChunkBudgetProbeError);
-    expect(() => attributeOwnChunkIds(SYNTHETIC_SOURCE, [...GAME_IDS, "closing-walls"])).toThrow(/closing-walls/);
-  });
-
-  it("throws when no object literal in the source matches the expected id set exactly (build shape changed, or wrong ids passed)", () => {
-    expect(() => attributeOwnChunkIds(SYNTHETIC_SOURCE, ["crackstep", "fadeout"])).toThrow(ChunkBudgetProbeError);
-  });
-
-  it("throws when MORE THAN ONE object literal in the source matches the expected id set exactly (ambiguous — refuses to guess)", () => {
-    const duplicated = SYNTHETIC_SOURCE + "\nvar d2 = " + SYNTHETIC_SOURCE.replace(/^var d = /, "") ;
-    expect(() => attributeOwnChunkIds(duplicated, GAME_IDS)).toThrow(ChunkBudgetProbeError);
-  });
-
-  it("returns an empty own-chunk list for a game whose load functions reference nothing but universally-shared chunks", () => {
+  it("returns an empty specifier list for a game whose load functions contain no import() calls (legitimate zero, not an error)", () => {
     const source = `
-var d = {
-  crackstep: { manifest: l.e, loadEngine: () => n.e(678).then(n.bind(n, 1)) },
-  fadeout: { manifest: r.e, loadEngine: () => n.e(678).then(n.bind(n, 2)) },
+export const registry: Registry = {
+  crackstep: {
+    loadEngine: () => eagerEngine,
+    loadPresentation: () => eagerPresentation,
+  },
 };
 `;
-    const result = attributeOwnChunkIds(source, ["crackstep", "fadeout"]);
+    const result = extractGameImportSpecifiers(source, ["crackstep"]);
     expect(result.get("crackstep")).toEqual([]);
-    expect(result.get("fadeout")).toEqual([]);
+  });
+});
+
+describe("attributeOwnFiles", () => {
+  const specifiersByGame = new Map<string, string[]>([
+    ["crackstep", ["@twist-arcade/crackstep", "@twist-arcade/crackstep/solver"]],
+    ["nine-grids", ["@twist-arcade/nine-grids"]],
+    ["fadeout", ["./fadeout/engine", "./fadeout/presentation"]],
+  ]);
+
+  function manifestEntry(id: number, files: string[]) {
+    return { id, files };
+  }
+
+  it("excludes files referenced by every registered game (shell-equivalent) and attributes the rest per game", () => {
+    const manifest: LoadableManifest = {
+      "games/registry.ts -> @twist-arcade/crackstep": manifestEntry(1, ["shared-a.js", "shared-b.js", "crackstep-own.js"]),
+      "games/registry.ts -> @twist-arcade/crackstep/solver": manifestEntry(2, ["solver-own.js"]),
+      "games/registry.ts -> @twist-arcade/nine-grids": manifestEntry(3, ["shared-a.js", "shared-b.js", "ninegrids-own.js"]),
+      "games/registry.ts -> ./fadeout/engine": manifestEntry(4, ["fadeout-engine-own.js"]),
+      "games/registry.ts -> ./fadeout/presentation": manifestEntry(5, ["shared-a.js", "shared-b.js", "fadeout-pres-own.js"]),
+    };
+    const result = attributeOwnFiles(specifiersByGame, manifest);
+    expect(result.get("crackstep")).toEqual(["crackstep-own.js", "solver-own.js"]);
+    expect(result.get("nine-grids")).toEqual(["ninegrids-own.js"]);
+    expect(result.get("fadeout")).toEqual(["fadeout-engine-own.js", "fadeout-pres-own.js"]);
+  });
+
+  it("charges a file shared by SOME but not ALL games in full to every game that references it (no partial-shared discount)", () => {
+    const manifest: LoadableManifest = {
+      "games/registry.ts -> @twist-arcade/crackstep": manifestEntry(1, ["crackstep-own.js"]),
+      "games/registry.ts -> @twist-arcade/crackstep/solver": manifestEntry(2, []),
+      "games/registry.ts -> @twist-arcade/nine-grids": manifestEntry(3, ["partial-shared.js", "ninegrids-own.js"]),
+      "games/registry.ts -> ./fadeout/engine": manifestEntry(4, ["partial-shared.js", "fadeout-own.js"]),
+      "games/registry.ts -> ./fadeout/presentation": manifestEntry(5, []),
+    };
+    const result = attributeOwnFiles(specifiersByGame, manifest);
+    // partial-shared.js is referenced by nine-grids and fadeout but not crackstep, so it is
+    // NOT universal and must be charged in full to both games that use it.
+    expect(result.get("nine-grids")).toEqual(["ninegrids-own.js", "partial-shared.js"]);
+    expect(result.get("fadeout")).toEqual(["fadeout-own.js", "partial-shared.js"]);
+  });
+
+  it("throws naming the game and specifier when a specifier the source declares has no matching manifest entry", () => {
+    const manifest: LoadableManifest = {
+      "games/registry.ts -> @twist-arcade/crackstep": manifestEntry(1, ["crackstep-own.js"]),
+      "games/registry.ts -> @twist-arcade/nine-grids": manifestEntry(3, ["ninegrids-own.js"]),
+      "games/registry.ts -> ./fadeout/engine": manifestEntry(4, ["fadeout-own.js"]),
+      "games/registry.ts -> ./fadeout/presentation": manifestEntry(5, []),
+      // "@twist-arcade/crackstep/solver" is deliberately missing — simulates a stale build.
+    };
+    expect(() => attributeOwnFiles(specifiersByGame, manifest)).toThrow(ChunkBudgetProbeError);
+    expect(() => attributeOwnFiles(specifiersByGame, manifest)).toThrow(/crackstep\/solver/);
+    expect(() => attributeOwnFiles(specifiersByGame, manifest)).toThrow(/crackstep/);
+  });
+
+  it("matches manifest keys by suffix on the file part, not strict equality (tolerates an absolute-path prefix)", () => {
+    const manifest: LoadableManifest = {
+      "/abs/repo/root/games/registry.ts -> @twist-arcade/crackstep": manifestEntry(1, ["crackstep-own.js"]),
+      "/abs/repo/root/games/registry.ts -> @twist-arcade/crackstep/solver": manifestEntry(2, []),
+      "/abs/repo/root/games/registry.ts -> @twist-arcade/nine-grids": manifestEntry(3, ["ninegrids-own.js"]),
+      "/abs/repo/root/games/registry.ts -> ./fadeout/engine": manifestEntry(4, ["fadeout-own.js"]),
+      "/abs/repo/root/games/registry.ts -> ./fadeout/presentation": manifestEntry(5, []),
+    };
+    const result = attributeOwnFiles(specifiersByGame, manifest);
+    expect(result.get("crackstep")).toEqual(["crackstep-own.js"]);
   });
 });
