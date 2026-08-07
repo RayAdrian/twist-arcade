@@ -26,6 +26,21 @@ export interface CellProps {
    *  MIN_CELL_PX and the `min-w-[48px]`/`min-h-[48px]` classes were hardcoded here with no way
    *  for any game to opt into a different floor at all. */
   minCellPx?: number;
+  /** Two-tap confirm seam (mine-run.md §8.4/O2 — "tap stages, second tap commits," mandatory on
+   *  EVERY platform, not just touch, wherever a game's cells sit below the 48px floor). Whether
+   *  THIS cell is the currently-armed (staged-for-confirm) one — a Board-owned, single-cell-at-
+   *  a-time piece of state, analogous to how `staged` is Board-owned today. Distinct from
+   *  `staged` on purpose: `staged` already has a tested, shipped meaning (I8's 0.5-opacity
+   *  dimming) that this must not disturb; `armed` renders an outline+scale EMPHASIS instead
+   *  (plan §8.4: "staged = outline + scale"), because an armed cell is about to be committed,
+   *  not de-emphasized. Only meaningful when `onArm` is also supplied. */
+  armed?: boolean;
+  /** Called on a tap/Enter/Space activation when `onArm` is supplied and `armed` is NOT yet
+   *  true — arms this cell (Board-local UI state only) INSTEAD of committing. A second
+   *  activation once the caller has re-rendered with `armed=true` commits normally via
+   *  `board.commit`. Omitting `onArm` entirely (e.g. every other game's Board) preserves the
+   *  original single-tap-commits behavior byte-for-byte — this is purely additive. */
+  onArm?(): void;
 }
 
 const DEFAULT_MIN_CELL_PX = 48;
@@ -42,6 +57,8 @@ export function Cell({
   accessibleName,
   disabled,
   minCellPx = DEFAULT_MIN_CELL_PX,
+  armed,
+  onArm,
 }: CellProps) {
   const board = useBoardContext();
   const ref = useRef<HTMLDivElement>(null);
@@ -86,6 +103,16 @@ export function Cell({
   const isCursor = board.cursor.row === row && board.cursor.col === col;
 
   function tryCommit(actionAt: number) {
+    // Two-tap confirm seam: gate BOTH the per-cell and the board-global disabled state up front
+    // (the same two conditions `board.commit` already enforces internally) so an unarmed tap on
+    // an inert cell can never arm it either — a guard that only gated the eventual `commit()`
+    // call would leave `onArm()` reachable on a disabled cell, arming UI state for a move that
+    // was never going to be legal in the first place.
+    if (disabled || board.disabled) return;
+    if (onArm && !armed) {
+      onArm();
+      return;
+    }
     board.commit(id, actionAt, disabled);
   }
 
@@ -142,6 +169,14 @@ export function Cell({
   // in the computed value itself, not just as a class alongside it.
   const opacity = staged ? 0.5 : ageStep === 1 ? AGE_OPACITY[1] : ageStep === 2 ? AGE_OPACITY[2] : AGE_OPACITY[0];
   const transitionClass = board.reducedMotion ? "" : "transition-opacity duration-age ease-arcade";
+  // Two-tap "armed" emphasis (plan §8.4/O2: "staged = outline + scale") — deliberately NOT the
+  // dimmed 0.5 opacity `staged` already owns (I8): an armed cell is the one about to be
+  // committed, so it must read as EMPHASIZED, not de-emphasized. `armed` and `staged` are
+  // independent channels; nothing here changes `opacity`'s own computation above.
+  const armedStyle = armed
+    ? { outlineWidth: 2, outlineStyle: "solid" as const, outlineColor: "currentColor", transform: "scale(1.12)" }
+    : {};
+  const armedTransitionClass = board.reducedMotion || !onArm ? "" : "transition-transform duration-age ease-arcade";
 
   return (
     <div
@@ -154,6 +189,7 @@ export function Cell({
       aria-colindex={col + 1}
       data-age={ageStep}
       data-staged={staged ? "true" : undefined}
+      data-armed={armed ? "true" : undefined}
       tabIndex={isCursor ? 0 : -1}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
@@ -164,8 +200,8 @@ export function Cell({
       // Tailwind's JIT scanner only ever sees LITERAL source text — a runtime-interpolated class
       // string never generates real CSS for it. Inline style has no such limitation and is
       // exactly how `opacity`/`aspectRatio` already work on this same element.
-      style={{ opacity, aspectRatio: "1 / 1", minWidth: minCellPx, minHeight: minCellPx }}
-      className={`relative flex items-center justify-center border border-ink-muted ${transitionClass} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring`}
+      style={{ opacity, aspectRatio: "1 / 1", minWidth: minCellPx, minHeight: minCellPx, ...armedStyle }}
+      className={`relative flex items-center justify-center border border-ink-muted ${transitionClass} ${armedTransitionClass} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring`}
     >
       {ghost && (
         <span aria-hidden="true" className="absolute inset-2 border border-dashed border-ink-muted">

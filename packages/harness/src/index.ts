@@ -127,7 +127,13 @@ export {
 export { median } from "./solo-metrics";
 
 export type { GrindCycleStep, GrindOptions, GrindResult } from "./probes-solo";
-export { alwaysSafeVsStrongRatio, grindProbe, MissingSafeMoveError, runAlwaysSafeProbe } from "./probes-solo";
+export {
+  alwaysSafeVsStrongRatio,
+  grindProbe,
+  MissingSafeMoveError,
+  runAlwaysSafeProbe,
+  ZeroScoringYardstickError,
+} from "./probes-solo";
 
 export type {
   EvaluateSoloGatesInput,

@@ -27,9 +27,19 @@ export { randomPolicy } from "./random";
 // determinized Strong (e.g. the harness's `resolveStrongPolicy`) needs to pass
 // `greedyMoveSelector` into `flatMonteCarloPolicy`'s `rolloutMoveSelector` option.
 // `rankingValueOf`/`valueOfStatus`/`rolloutToHorizon` stay internal (see search-utils.ts's
-// module doc) — nothing outside this package needs to call them directly.
+// module doc) — nothing outside this package needs to call THEM directly. `HorizonValueUndeclaredError`
+// (platform-corrections.md C30) IS exported despite that, mirroring every other policy-specific
+// error below (MinimaxHeuristicRequiredError, FlatMonteCarloTerminalStateError, ...): it can
+// propagate at runtime out of every exported policy that calls valueOfStatus internally
+// (flatMonteCarloPolicy, determinizedFlatMonteCarloPolicy, mctsPolicy), so a caller of those
+// needs the type to identify it without reaching into this package's internals.
 export type { MoveSelector } from "./search-utils";
-export { RankingValueUnavailableError, greedyMoveSelector, uniformRandomMoveSelector } from "./search-utils";
+export {
+  HorizonValueUndeclaredError,
+  RankingValueUnavailableError,
+  greedyMoveSelector,
+  uniformRandomMoveSelector,
+} from "./search-utils";
 
 export type { MinimaxOptions } from "./minimax";
 export { MinimaxHeuristicRequiredError, MinimaxUnsupportedGameError, minimaxPolicy } from "./minimax";

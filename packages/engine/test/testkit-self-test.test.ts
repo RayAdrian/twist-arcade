@@ -9,6 +9,7 @@ import {
   checkDeterminism,
   checkEncodeDecodeAndEffects,
   checkEncodeInjectivity,
+  checkHorizonValueDeclared,
   checkLegalityCoherence,
   checkPurity,
   checkRedaction,
@@ -16,6 +17,7 @@ import {
   checkStatusDiscipline,
   checkTermination,
 } from "../testkit/checks";
+import { createBankRun, type BankRunState } from "../testkit/fixtures/bank-run";
 import {
   fogEffectsLeakSecretExtractor,
   fogFixtureCorrect,
@@ -183,6 +185,47 @@ describe("testkit self-test: every mutant fails exactly the property it targets"
   it("mutantMutatesMovesMap fails checkPurity, specifically naming the `moves` argument", () => {
     expect(() => checkPurity(mutantMutatesMovesMap, { maxPlies: 9 })).toThrow(/purity/);
     expect(() => checkPurity(mutantMutatesMovesMap, { maxPlies: 9 })).toThrow(/moves/);
+  });
+});
+
+// platform-corrections.md C30: "Strong cannot see Mine Run's central mechanic" was a defect
+// that lived BETWEEN two files (search-utils.ts's valueOfStatus, mine-run/engine.ts's
+// score()/heuristic() split) — no single-file check could have caught it, and none did; every
+// existing property in this kit passed throughout. checkHorizonValueDeclared is the guard C30
+// asked for: any engine implementing BOTH score() and heuristic() must declare horizonValue,
+// enforced statically (no playout needed) at contract-suite time — before any expensive gate,
+// let alone the multi-hour solo-chase gates C30's own root cause hid inside.
+describe("checkHorizonValueDeclared (platform-corrections.md C30)", () => {
+  it("PLANTED VIOLATION: an engine implementing both score() and heuristic() with no horizonValue fails the check, naming the game id", () => {
+    // bank-run standing in for Mine Run's real score()/heuristic() split, exactly as the
+    // search-utils.ts suite already does — this is literally the shape of the bug that shipped
+    // (score() === banked only, heuristic() === banked + streak, nothing declaring which a
+    // search should trust at a non-terminal horizon).
+    const engine = {
+      ...createBankRun(),
+      heuristic: (state: BankRunState, _player: 0) => state.banked + state.streak,
+    };
+    expect(() => checkHorizonValueDeclared(engine)).toThrow(/horizon-value-declared/);
+    expect(() => checkHorizonValueDeclared(engine)).toThrow(/bank-run-fixture/);
+  });
+
+  it("passes once horizonValue is declared", () => {
+    const engine = {
+      ...createBankRun(),
+      heuristic: (state: BankRunState, _player: 0) => state.banked + state.streak,
+      horizonValue: "heuristic" as const,
+    };
+    expect(() => checkHorizonValueDeclared(engine)).not.toThrow();
+  });
+
+  it("does NOT fire for an engine implementing only score() (bank-run as shipped) or only heuristic() (classic-ttt) — no ambiguity exists to declare", () => {
+    expect(() => checkHorizonValueDeclared(createBankRun())).not.toThrow();
+    expect(() => checkHorizonValueDeclared(classicTicTacToe)).not.toThrow();
+  });
+
+  it("also fails loudly on the 'declared but the named hook doesn't exist' typo — as silent a failure as declaring nothing", () => {
+    const engine = { ...createBankRun(), horizonValue: "heuristic" as const }; // no heuristic() at all
+    expect(() => checkHorizonValueDeclared(engine)).toThrow(/horizon-value-declared/);
   });
 });
 

@@ -545,6 +545,22 @@ export function createMineRun(opts: CreateMineRunOptions = {}): GameEngine<MineR
     // press-your-luck decision the way bare score() (== banked) is.
     heuristic: createMineRunHeuristic(width, height),
 
+    // platform-corrections.md C30: Mine Run implements BOTH score() and heuristic(), which
+    // testkit's checkHorizonValueDeclared now requires declaring explicitly. "heuristic" is
+    // the only correct answer here — score() (== banked only) is exactly the quantity C30
+    // found Strong's rollouts were blindly averaging, unable to see a single point of live
+    // streak value. This does NOT change score()'s own contract or magnitude (it still must
+    // equal banked, still feeds the "scored" terminal unchanged) — it only changes which
+    // number packages/bots's valueOfStatus uses to value a rollout that hits
+    // STRONG_HIDDEN_INFO_ROLLOUT_CAP_PLIES (agents.ts) while still `ongoing`, which C27
+    // measured happens on nearly every real game (38-60 decisions against a 60-ply cap).
+    // Used RAW, not squashed: because score() also exists here, valueOfStatus treats this as a
+    // "scored"-terminal engine and keeps the horizon estimate commensurate with banked's own
+    // raw scale (see search-utils.ts's valueOfStatus and this field's doc in
+    // packages/engine/src/types.ts for why squashing is decided by the engine's terminal
+    // convention, not by which hook supplied the number).
+    horizonValue: "heuristic",
+
     /**
      * View-honest by construction (csp.ts never touches MineRunState/mines — it operates
      * only on MineRunView). Powers determinized MCTS/hint (plan §4.4/O1) and its own

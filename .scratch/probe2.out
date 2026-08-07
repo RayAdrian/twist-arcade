@@ -1,0 +1,3 @@
+probe: seedCount=2 rollouts=750 (real 10x10 board)
+healthy alwaysSafeVsStrong=Infinity elapsed=184628ms
+degenerate alwaysSafeVsStrong=1.000 elapsed=41ms

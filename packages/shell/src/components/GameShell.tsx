@@ -401,6 +401,16 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
             prefs={{ reducedMotion, theme }}
           />
         </BoardShell>
+
+        {presentation.extraControls && (
+          <presentation.extraControls
+            view={game.view}
+            legal={game.legal}
+            onMove={(m: Json) => handleCellAction(moveToCellId(m))}
+            seat={mode === "hotseat" ? game.presentingSeat : (humanSeat ?? 0)}
+            prefs={{ reducedMotion, theme }}
+          />
+        )}
       </div>
 
       <div className="mt-2">

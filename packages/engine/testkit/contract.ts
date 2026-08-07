@@ -14,6 +14,7 @@ import {
   checkDeterminism,
   checkEncodeDecodeAndEffects,
   checkEncodeInjectivity,
+  checkHorizonValueDeclared,
   checkLegalityCoherence,
   checkPerfectInfoIdentity,
   checkPlayerViewTotal,
@@ -86,6 +87,13 @@ export function engineContract<S extends WithEffects, M extends Json, V extends 
         checkScoreCoherence(engine, opts);
       });
     }
+
+    // platform-corrections.md C30: static, no playout needed, so this runs unconditionally
+    // (not gated on engine.score, unlike the check above) — an engine with heuristic() alone
+    // needs no declaration, but one is required the moment BOTH exist.
+    it("declares horizonValue when it implements both score() and heuristic() (C30)", () => {
+      checkHorizonValueDeclared(engine);
+    });
 
     if (isSolo) {
       describe("solo branch", () => {

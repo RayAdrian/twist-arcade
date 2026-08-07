@@ -95,6 +95,26 @@ export interface GamePresentation<
    * CURRENT view, with no lag or exception.
    */
   boardDimensions(view: V): { rows: number; cols: number };
+  /**
+   * OPTIONAL, additive (Mine Run, mine-run.md §8.1): a game-owned control block rendered as a
+   * SIBLING immediately after `BoardShell`/`Board` and before `ControlsRow` — never inside the
+   * board grid itself. Exists because a handful of games have exactly one bespoke control that
+   * needs live `view`/`onMove` access but is not a board cell (Mine Run's BankBar: the
+   * bank/continue decision, shown as a wide button beside the at-risk-streak and vault chips).
+   *
+   * Deliberately NOT rendered inside `BoardShell`'s children: that container is a CSS grid
+   * sized exactly `rows x cols` (`BoardShell.tsx`'s `gridTemplateColumns`/`gridTemplateRows`),
+   * and its `role="row"` wrapper's children are expected to be `role="gridcell"`s by every
+   * assistive-tech consumer of the APG grid pattern — an extra non-cell child there risks both
+   * a broken grid track (an 11th implicit-row item bleeding past the intended board box) and an
+   * ARIA structural violation. A sibling slot avoids both while still reusing the exact same
+   * `BoardProps` shape a Board already receives, so a game's extras component reads the same
+   * `view`/`legal`/`onMove`/`seat`/`prefs` its Board does.
+   *
+   * Omitted entirely by every game that doesn't need it (Fadeout, Crackstep) — no behavior
+   * change for them.
+   */
+  extraControls?: ComponentType<BoardProps<V, M>>;
   announce(ev: GameEvent<V>): string;
   /**
    * ARRAY, not a single entry (platform-corrections.md, folded in while this shape is still

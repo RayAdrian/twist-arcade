@@ -16,6 +16,8 @@ function DummyBoard({
   stagedCell,
   ageStep,
   minCellPx,
+  armedCell,
+  onArm,
 }: {
   onCellAction(cellId: string): void;
   disabled?: boolean;
@@ -24,6 +26,8 @@ function DummyBoard({
   stagedCell?: string;
   ageStep?: 0 | 1 | 2;
   minCellPx?: number;
+  armedCell?: string;
+  onArm?(id: string): void;
 }) {
   return (
     <BoardShell rows={3} cols={3} disabled={disabled} onCellAction={onCellAction} boardLabel="Dummy board" lockedUntil={lockedUntil}>
@@ -41,6 +45,7 @@ function DummyBoard({
               staged={stagedCell === id}
               {...(ageStep !== undefined ? { ageStep } : {})}
               {...(minCellPx !== undefined ? { minCellPx } : {})}
+              {...(onArm !== undefined ? { armed: armedCell === id, onArm: () => onArm(id) } : {})}
             />
           );
         })
@@ -295,6 +300,101 @@ describe("Cell — staged visual (I8)", () => {
     render(<DummyBoard onCellAction={() => {}} ageStep={2} />);
     const cell = screen.getAllByRole("gridcell")[0]!;
     expect(cell.style.opacity).toBe("0.6"); // AGE_OPACITY[2]
+  });
+});
+
+describe("Cell — two-tap confirm seam (armed/onArm — Mine Run's O2 mitigation for the 32px exception)", () => {
+  it("a first tap on an unarmed cell calls onArm and does NOT commit", () => {
+    const onCellAction = vi.fn();
+    const onArm = vi.fn();
+    render(<DummyBoard onCellAction={onCellAction} onArm={onArm} />);
+    const cell = screen.getAllByRole("gridcell")[0]!;
+    cell.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 0 }));
+    expect(onArm).toHaveBeenCalledWith("0-0");
+    expect(onCellAction).not.toHaveBeenCalled();
+  });
+
+  it("a second tap on the SAME cell, once armed=true, commits normally", () => {
+    const onCellAction = vi.fn();
+    const onArm = vi.fn();
+    render(<DummyBoard onCellAction={onCellAction} onArm={onArm} armedCell="0-0" />);
+    const cell = screen.getAllByRole("gridcell")[0]!;
+    cell.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 0 }));
+    expect(onCellAction).toHaveBeenCalledWith("0-0");
+  });
+
+  it("tapping a DIFFERENT cell while another is armed calls the new cell's onArm, not a commit (tap-elsewhere re-stages)", () => {
+    const onCellAction = vi.fn();
+    const onArm = vi.fn();
+    // "0-0" is the currently-armed cell; the tap under test lands on "0-1".
+    render(<DummyBoard onCellAction={onCellAction} onArm={onArm} armedCell="0-0" />);
+    const other = screen.getAllByRole("gridcell")[1]!;
+    other.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 0 }));
+    expect(onArm).toHaveBeenCalledWith("0-1");
+    expect(onCellAction).not.toHaveBeenCalled();
+  });
+
+  it("keyboard: Enter arms, a second Enter on the same (still-focused) cell commits", async () => {
+    const user = userEvent.setup();
+    const onCellAction = vi.fn();
+    let armed: string | undefined;
+    const onArm = vi.fn((id: string) => {
+      armed = id;
+    });
+    const { rerender } = render(
+      <DummyBoard onCellAction={onCellAction} onArm={onArm} {...(armed !== undefined ? { armedCell: armed } : {})} />
+    );
+    screen.getAllByRole("gridcell")[0]!.focus();
+    await user.keyboard("{Enter}");
+    expect(onArm).toHaveBeenCalledWith("0-0");
+    expect(onCellAction).not.toHaveBeenCalled();
+
+    rerender(<DummyBoard onCellAction={onCellAction} onArm={onArm} {...(armed !== undefined ? { armedCell: armed } : {})} />);
+    expect(screen.getAllByRole("gridcell")[0]).toHaveFocus(); // same element, never remounted
+    await user.keyboard("{Enter}");
+    expect(onCellAction).toHaveBeenCalledWith("0-0");
+  });
+
+  it("without onArm at all (e.g. Fadeout's Board), a single tap still commits immediately — no regression", () => {
+    const onCellAction = vi.fn();
+    render(<DummyBoard onCellAction={onCellAction} />);
+    const cell = screen.getAllByRole("gridcell")[0]!;
+    cell.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 0 }));
+    expect(onCellAction).toHaveBeenCalledWith("0-0");
+  });
+
+  it("a disabled cell neither arms nor commits — a mis-tap on an illegal cell must never advance any state (planted-violation check)", () => {
+    const onCellAction = vi.fn();
+    const onArm = vi.fn();
+    render(<DummyBoard onCellAction={onCellAction} onArm={onArm} cellDisabled="0-0" />);
+    const cell = screen.getAllByRole("gridcell")[0]!;
+    cell.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 0 }));
+    expect(onArm).not.toHaveBeenCalled();
+    expect(onCellAction).not.toHaveBeenCalled();
+  });
+
+  it("the board's own global `disabled` (not just the cell's) also blocks arming — a guard that must guard even when the whole board is inert", () => {
+    const onCellAction = vi.fn();
+    const onArm = vi.fn();
+    render(<DummyBoard onCellAction={onCellAction} onArm={onArm} disabled />);
+    const cell = screen.getAllByRole("gridcell")[0]!;
+    cell.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 0 }));
+    expect(onArm).not.toHaveBeenCalled();
+    expect(onCellAction).not.toHaveBeenCalled();
+  });
+
+  it("renders a visibly distinct outline+scale treatment when armed, via data-armed (never opacity alone, never conflated with `staged`)", () => {
+    render(<DummyBoard onCellAction={() => {}} onArm={() => {}} armedCell="0-0" />);
+    const armedCellEl = screen.getAllByRole("gridcell")[0]!;
+    const unarmedCellEl = screen.getAllByRole("gridcell")[1]!;
+    expect(armedCellEl).toHaveAttribute("data-armed", "true");
+    expect(unarmedCellEl).not.toHaveAttribute("data-armed");
+    // Outline + scale (plan §8.4/O2's "enlarged confirm affordance"), NOT the dimmed 0.5 opacity
+    // `staged` already owns (I8) — armed must stay full-opacity so it reads as EMPHASIZED, not
+    // de-emphasized.
+    expect(armedCellEl.style.opacity).not.toBe("0.5");
+    expect(armedCellEl.style.transform).toContain("scale(");
+    expect(armedCellEl.style.outlineWidth).not.toBe("");
   });
 });
 

@@ -1,0 +1,41 @@
+
+ RUN  v2.1.9 /Users/raymundrafael/Desktop/repos/claude-project-minerun/packages/harness
+
+ ✓ test/report.test.ts (8 tests) 2ms
+ ✓ test/solo-gates.test.ts (23 tests) 4ms
+ ✓ test/solver/generic-solo.test.ts (18 tests) 6ms
+ ✓ test/agents.test.ts (7 tests) 21ms
+ ✓ test/solo-runner.test.ts (11 tests) 9ms
+ ✓ test/solver/retrograde.test.ts (9 tests) 90ms
+ ✓ test/solo-metrics.test.ts (14 tests) 2ms
+ ✓ test/index-importable.test.ts (6 tests) 3ms
+ ✓ test/certify.test.ts (25 tests) 167ms
+ ✓ test/runner.test.ts (11 tests) 102ms
+ ✓ test/solver/solve.test.ts (5 tests) 206ms
+ ✓ test/metrics.test.ts (9 tests) 2ms
+ ✓ test/cli.test.ts (20 tests) 217ms
+ ✓ test/calibrate.test.ts (8 tests) 35ms
+ ✓ test/solver/reach.test.ts (9 tests) 430ms
+ ✓ test/suites.test.ts (59 tests) 5248ms
+   ✓ runCiSuite() — C19: ciGateBudget.twoPlayerCiRollouts scales ONLY the ci-suite ruthless measurement > suite 'nightly' ignores the override and runs the full shipped budget (the plan's 'nightly keeps the full-budget table') 1356ms
+   ✓ runCiSuite() — C19: ciGateBudget.twoPlayerCiRollouts scales ONLY the ci-suite ruthless measurement > no ciGateBudget declared at all, shipped budget within C22's no-override ceiling: behavior is unchanged (a genuinely cheap game never needs this field) 738ms
+   ✓ runCiSuite() — C19/C20: a scaled budget that collapses ruthless onto standard fails LOUDLY > the nightly suite is immune — it never applies the ci-only override, so it cannot collapse 903ms
+   ✓ runCiSuite() — C22: an expensive shipped ruthless budget REQUIRES an explicit CI override > nightly is exempt unconditionally — the full-budget table always runs there regardless of this ceiling 638ms
+   ✓ runCiSuite() — C23 end-to-end: a real proven-draw fixture (classicTicTacToe), not hand-built GateInputs > classicTicTacToe (a REAL proven draw under optimal play) with solvedValue:draw passes cleanly — n/a where the old gates would have failed forever, pass on solved-value-reached 778ms
+ ✓ test/ci-gates.test.ts (25 tests) 99599ms
+   ✓ runSoloChaseCiGate — C19 hidden-info budget scaling (rollouts AND the coupled K) > does NOT throw the floor guard for the platform default (1000) on the same board — only an aggressive override trips it 18070ms
+   ✓ runSoloChaseCiGate — C19 hidden-info budget scaling (rollouts AND the coupled K) > a scaled-down but VIABLE budget (320, ~8.9 samples/candidate on this 36-cell board) still separates healthy from degenerate — the coordinator's exact ask, proven against the real Mine Run engine and its real mutant fixtures 40914ms
+   ✓ runSoloChaseCiGate — C19 hidden-info budget scaling (rollouts AND the coupled K) > suite 'nightly' ignores soloChaseCiRollouts and is never subject to the ci-only override (matches the two-player lane's rule) 40505ms
+ ✓ test/probes-solo.test.ts (15 tests) 203906ms
+   ✓ grindProbe — the real, shipping Mine Run engine > finds nothing on the real engine (structural termination proof, mine-run.md §4.1) 517ms
+   ✓ alwaysSafeVsStrongRatio — a zero-scoring Strong is a gate-worthy condition, not a float (C4) > reproduces the live finding against the REAL engine: an artificially tiny moveCap (10) against the shipped 10x10/20-mine/60-budget config makes every policy hit the cap before banking, and the shipped roster.strong scores a genuine median of 0 — throws ZeroScoringYardstickError rather than returning Infinity 144834ms
+   ✓ alwaysSafeVsStrongRatio — real engine vs. a planted density violation (mine-run.md §4.2) > healthy density (~22%): Always-Safe stays below the 0.95 hard-fail line 5943ms
+   ✓ alwaysSafeVsStrongRatio — real engine vs. a planted density violation (mine-run.md §4.2) > sanity: the SHIPPED default-wiring roster.strong still runs end-to-end here 595ms
+   ✓ alwaysSafeVsStrongRatio — against the SHIPPED buildSoloRoster(engine).strong (C6 close-out) > healthy density (~22%): Always-Safe stays below the 0.95 hard-fail line against the shipped Strong 51383ms
+   ✓ alwaysSafeVsStrongRatio — against the SHIPPED buildSoloRoster(engine).strong (C6 close-out) > planted violation — near-zero density (~5.5%): Always-Safe closes to >= 0.95 of the shipped Strong (the risk is fake) 433ms
+
+ Test Files  18 passed (18)
+      Tests  282 passed (282)
+   Start at  10:50:58
+   Duration  204.52s (transform 963ms, setup 0ms, collect 2.55s, tests 310.05s, environment 2ms, prepare 2.60s)
+
