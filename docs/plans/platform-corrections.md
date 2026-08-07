@@ -2376,3 +2376,73 @@ every policy agrees, an input outside the branch under test. The instruction bec
 Five of my own probes failed the first half today. This is the first documented instance of the
 second half, and it is subtler: nothing looks wrong. A green result on a correctly-applied plant is
 the most convincing wrong answer available.
+
+---
+
+## C42 — Leg 1 does not fire, and the reason is not what the headline number says
+
+### The measurement (n=100, 37 policies, 11.16s total)
+
+```
+Always-Safe median 692.5   (bridge check 849/686/1247 byte-exact first)
+RiskAware-B  median 729    gateRatio 0.9499   paired 49W / 37L / 14T
+best grid    median 735.5  gateRatio 0.9415   paired 40W / 23L / 37T
+Random       median   7    gateRatio 98.9     paired  0W /100L /  0T
+```
+
+`LEG1_FIRES = false`, computed exactly as pre-registered.
+
+### The headline "win fraction 0.49" understates the result, and ties are why
+
+`0.490` counts **ties in the denominator**, and 14% of boards tie. On boards where the two
+policies actually differ, RiskAware-B wins **49 of 86 — 57.0%**. A two-sided sign test gives
+**p ≈ 0.235**: a real directional edge, not statistically established at this n.
+
+So all three readings now agree in direction — median higher, gate ratio passing, paired
+decisive-board edge 57%. **Mine Run's mechanic does reward skill.** Modestly, and not yet
+significantly, but the C29 suspicion in its dark form — *"always-banking dominates, the decision
+is fake"* — is **not supported at n=100.**
+
+That matters because it reverses the direction the evidence pointed all day. C29, S0b and the n=23
+S1 run all read as "risk does not pay." At n=100 with ties handled correctly, it does.
+
+**Correcting the metric, not the verdict:** `winFraction` must exclude ties or be reported as
+W/L/T. A tie-inclusive fraction makes a 57% edge look like a 49% deficit, and this is the second
+metric defect found in `solo-gates.ts` today (C39 was the unpaired/paired split). Both were
+invisible until a policy came near the threshold.
+
+### The other number: the gate flipped on 0.0001
+
+RiskAware-B's gate ratio moved from **0.959 (fail) at n=23** to **0.9499 (pass) at n=100** — a
+**0.0001 margin** against the 0.95 line, while its paired reading barely moved (0.478 → 0.490
+tie-inclusive). The median-based verdict changed sides of the threshold; the paired one did not.
+
+**A pass with a 0.0001 margin is not a pass, it is a coin landing on its edge.** Nothing about
+this policy is robustly better than always-banking, and treating 0.9499 as "green" would be
+reading precision the measurement does not have.
+
+### Ruling: proceed to leg 2, the pre-registered one-round lever sweep
+
+The spec's §5 table is explicit for `best ratio in (0.70, 0.95)` — **gate passes, design target
+missed → one bounded lever-sweep round, then freeze or escalate.** 0.9499 sits in that band, barely,
+and the design-healthy target is **0.70**. The mechanic pays; it does not pay *well*.
+
+Leg 2 as pre-registered in C37/R3, and the bound is the point: the grid {18, 20, 22}% density ×
+{50, 60, 75} budget, n=40 direction-only, best config confirmed at n=100 on a **fresh derived seed
+block** (each config is a different game — C25/C32). **One round.** If no configuration lifts the
+best policy meaningfully below 0.95 — toward the 0.70 target rather than tickling the line — the
+finding is that Mine Run's press-your-luck decision is technically real and practically negligible,
+and that is an escalation to the user, not a kill I make alone.
+
+**I am not moving the goalposts.** C39 pre-registered *the question* of which metric gates and
+recorded my inclination toward the paired reading **before** these numbers existed; this ruling
+uses the criterion as written and corrects only the tie-handling arithmetic, which is a bug in the
+statistic, not a change to the standard.
+
+### Process note, and it is the fourth today
+
+The team followed the **codebase** over my prose: the spec said seeds derive as `:i`, the real
+`pairedSeeds` export uses `-i`, and `ci:mine-run:ci-{0,1,2}` themselves are already in that form.
+It used the code and flagged the discrepancy rather than silently choosing. That is C31 working
+exactly as intended — and the reason the bridge check reproduced byte-exact instead of quietly
+measuring a different seed set.
