@@ -57,6 +57,37 @@ export const mineRunManifest: GameManifest = {
         "not cosmetic.",
     },
   ],
+
+  // platform-corrections.md C23: no solve exists for Mine Run (a score chase with no single
+  // "solved" terminal value — R5/R6/R7 make banked monotone and unbounded, so there is no
+  // "optimal outcome" to prove the way Fadeout proved an exact draw). `{ value: "unknown" }` IS
+  // the default when this field is omitted entirely, but it is declared explicitly here rather
+  // than left implicit — the same "explicit N/A over silent omission" discipline C2 established
+  // for inapplicable gates, extended to this claim. Grants NO gate relief; do not change this
+  // without a proof artifact this manifest can point to (the harness refuses a non-"unknown"
+  // claim with no `proof`, and `solved-value-reached` fails a false one — see suites.ts).
+  solvedValue: { value: "unknown" },
+
+  // platform-corrections.md C19/C22: CI-only rollout budget for the hidden-info solo-chase
+  // lane. UNLIKE Fadeout's 3x3 board, this number is NOT freely scalable down — Mine Run's
+  // hiddenInformation:true engine couples this rollout count directly to the determinization
+  // sample count K (K = n / root branching factor, packages/bots/src/determinized-flat-mc.ts),
+  // and the harness refuses (HiddenInfoBudgetTooLowError) below the empirically-set floor of
+  // MIN_HIDDEN_INFO_SAMPLES_PER_CANDIDATE = 8 samples/candidate.
+  //
+  // Measured against the REAL shipped 10x10 board (not the smaller 6x6/36-cell fixture
+  // packages/harness/test/ci-gates.test.ts uses to prove 320 is viable there — that number is
+  // NOT transferable here): `engine.legalMoves(engine.setup(1, rngFromSeed(<the harness's own
+  // fixed probe seed>)), 0).length` = 87 root legal moves (the opening reveal is wide open;
+  // the board's actual initial-safe-reveal flood fill varies this roughly 58-90 seed to seed,
+  // so 87 is a representative near-worst-case, matching the guard's own stated conservative
+  // intent). Floor: 8 * 87 = 696. 750 clears it with a real (if modest) margin — K ≈ 8.62 at
+  // the guarded seed, vs K ≈ 11.36 at the platform default of 1000. This buys only a ~25% cut
+  // versus leaving this unset, because the branching-factor floor sits close to the default —
+  // unlike Fadeout, board-scaling relief here is capped by K, not by rollout count alone. See
+  // the gate-run report for the wall-clock consequence: seed count x move count dominate this
+  // game's CI cost far more than the rollout budget does, and this field cannot touch either.
+  ciGateBudget: { soloChaseCiRollouts: 750 },
 };
 
 assertRuleSentenceLength(mineRunManifest);

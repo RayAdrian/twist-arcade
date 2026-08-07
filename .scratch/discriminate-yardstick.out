@@ -1,0 +1,8 @@
+start: 2026-08-07T03:15:50.667Z
+seed,alwaysSafe,strong@750,strong@3000,ratio@750,ratio@3000,strong3000ElapsedMs
+seed=ci:mine-run:ci-0 strong@750: REUSED from prior run -> score=630
+seed=ci:mine-run:ci-0 strong@3000: elapsed=656779ms score=378 decisions=47 capHit=false
+ROW seed=ci:mine-run:ci-0 alwaysSafe=849 (elapsed=11ms) strong@750=630 strong@3000=378 ratio@750=1.348 ratio@3000=2.246
+seed=ci:mine-run:ci-1 strong@750: REUSED from prior run -> score=91
+seed=ci:mine-run:ci-1 strong@3000: elapsed=4977176ms score=276 decisions=38 capHit=false
+ROW seed=ci:mine-run:ci-1 alwaysSafe=686 (elapsed=2ms) strong@750=91 strong@3000=276 ratio@750=7.538 ratio@3000=2.486

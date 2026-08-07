@@ -239,11 +239,39 @@ export function runAlwaysSafeProbe<S extends WithEffects, M extends Json, V exte
   return runSoloAgentOverSeeds(engine, agent, seeds, opts);
 }
 
+/** Thrown by `alwaysSafeVsStrongRatio` when Strong's median score is 0 — see the function's own
+ *  doc comment for the full reasoning (platform-corrections.md C4, applied one level up from
+ *  `decode`). Found live: an artificially tiny `moveCap` against the real 10x10/20-mine/
+ *  60-budget Mine Run config made every run hit the cap before anything could be banked
+ *  (`capHitRate: 1`), and the OLD implementation silently returned `Infinity`. */
+export class ZeroScoringYardstickError extends Error {
+  constructor(strongName: string, sampleCount: number) {
+    super(
+      `alwaysSafeVsStrongRatio: "${strongName}"'s median score across ${sampleCount} run(s) is 0 -- ` +
+        "the yardstick every solo gate is defined relative to (platform-corrections.md C6) scored " +
+        "nothing. That is either a broken Strong policy or a broken/misconfigured engine (e.g. a " +
+        "moveCap far below what the game needs to bank anything at all -- every run hitting the cap " +
+        "before banking is the observed live cause). This is a gate-worthy condition in its own " +
+        "right and must not silently become Infinity (thresholds as a fail today, but is " +
+        "unthresholdable in general and serializes to `null` via JSON.stringify, so a JSON report " +
+        "artifact would carry a silent hole where this number was) or a misleadingly-neutral 1 " +
+        "(platform-corrections.md C4's reasoning: a boundary value is a real value or a loud typed " +
+        "failure, never a plausible-looking float that flows onward)."
+    );
+    this.name = "ZeroScoringYardstickError";
+  }
+}
+
 /** Always-Safe's median as a fraction of Strong's median. Hard fail >= 0.95 (the risk
- *  mechanic is decorative); design target <= 0.70 (platform §7.4, solo-games-lens §3.6). */
+ *  mechanic is decorative); design target <= 0.70 (platform §7.4, solo-games-lens §3.6).
+ *
+ *  Throws `ZeroScoringYardstickError` whenever Strong's median score is 0, REGARDLESS of
+ *  Always-Safe's median — the old code's two branches (`return 1` when both are 0, `return
+ *  Infinity` otherwise) both papered over the same underlying problem with a plausible-looking
+ *  float instead of surfacing it. */
 export function alwaysSafeVsStrongRatio(alwaysSafe: SoloRunSummary, strong: SoloRunSummary): number {
   const strongMedian = strong.scores.length === 0 ? 0 : median(strong.scores);
+  if (strongMedian === 0) throw new ZeroScoringYardstickError(strong.name, strong.scores.length);
   const safeMedian = alwaysSafe.scores.length === 0 ? 0 : median(alwaysSafe.scores);
-  if (strongMedian === 0) return safeMedian === 0 ? 1 : Number.POSITIVE_INFINITY;
   return safeMedian / strongMedian;
 }

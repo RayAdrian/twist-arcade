@@ -1,0 +1,6 @@
+start: 2026-08-07T03:02:40.338Z
+seed=ci:mine-run:ci-0 strong: elapsed=178349ms (178.3s) decisions=40 finalScore=630 capHit=false avgPerDecision=4459ms
+seed=ci:mine-run:ci-1 strong: elapsed=152297ms (152.3s) decisions=37 finalScore=91 capHit=false avgPerDecision=4116ms
+always-safe (both seeds): 6ms scores=[849,686]
+end: 2026-08-07T03:08:10.995Z
+MEASURE_COMPLETE

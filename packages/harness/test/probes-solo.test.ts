@@ -14,8 +14,10 @@ import {
   grindProbe,
   MissingSafeMoveError,
   runAlwaysSafeProbe,
+  ZeroScoringYardstickError,
 } from "../src/probes-solo";
 import { runSoloAgentOverSeeds, pairedSeeds } from "../src/solo-runner";
+import type { SoloRunSummary } from "../src/solo-runner";
 import {
   createAlwaysSafeBrokenMineRun,
   createAlwaysSafeHealthyMineRun,
@@ -194,6 +196,55 @@ describe("runAlwaysSafeProbe", () => {
       MissingSafeMoveError
     );
   });
+});
+
+describe("alwaysSafeVsStrongRatio — a zero-scoring Strong is a gate-worthy condition, not a float (C4)", () => {
+  // Found live: an orchestrator diagnostic against the REAL 10x10/20-mine/60-budget board at
+  // moveCap=10 (an artificial trim, not the shipped moveCap) produced strong.scores=[0,0] --
+  // every run hit the cap before anything could be banked (capHitRate=1) -- and the OLD
+  // alwaysSafeVsStrongRatio silently returned Infinity. Infinity is unthresholdable in spirit
+  // only (>= a finite threshold is technically still "fail"), but it serializes to `null` via
+  // JSON.stringify (toGameCiGateReportJson), so a JSON report artifact would carry a silent
+  // hole where the actual number was. A zero-scoring Strong means the yardstick every solo
+  // gate is defined relative to (C6) measured nothing -- that is itself the finding, and it
+  // must surface as a loud, named, typed error (platform-corrections.md C4's reasoning for
+  // decode: a boundary value is a real value or a loud typed failure, never a
+  // plausible-looking artifact that flows onward), not as a number a caller has to notice is
+  // suspicious.
+
+  it("throws ZeroScoringYardstickError (not Infinity) when Strong's median score is 0 and Always-Safe's is not", () => {
+    const strong: SoloRunSummary = { name: "strong", runs: [], scores: [0, 0], decisionsList: [10, 10], capHitRate: 1 };
+    const alwaysSafe: SoloRunSummary = { name: "always-safe", runs: [], scores: [3, 5], decisionsList: [10, 10], capHitRate: 0 };
+    expect(() => alwaysSafeVsStrongRatio(alwaysSafe, strong)).toThrow(ZeroScoringYardstickError);
+  });
+
+  it("also throws (not a silent 1) when BOTH Strong's and Always-Safe's median scores are 0 — the old code's OTHER branch", () => {
+    const strong: SoloRunSummary = { name: "strong", runs: [], scores: [0, 0], decisionsList: [10, 10], capHitRate: 1 };
+    const alwaysSafe: SoloRunSummary = { name: "always-safe", runs: [], scores: [0, 0], decisionsList: [10, 10], capHitRate: 1 };
+    expect(() => alwaysSafeVsStrongRatio(alwaysSafe, strong)).toThrow(ZeroScoringYardstickError);
+  });
+
+  it("the error message names the summary and points at what to check (broken Strong or broken/misconfigured engine)", () => {
+    const strong: SoloRunSummary = { name: "strong", runs: [], scores: [0], decisionsList: [10], capHitRate: 1 };
+    const alwaysSafe: SoloRunSummary = { name: "always-safe", runs: [], scores: [3], decisionsList: [10], capHitRate: 0 };
+    expect(() => alwaysSafeVsStrongRatio(alwaysSafe, strong)).toThrow(/strong.*median.*0/is);
+  });
+
+  it("does NOT throw for a genuine, non-degenerate ratio (sanity — the guard is specific to strongMedian === 0)", () => {
+    const strong: SoloRunSummary = { name: "strong", runs: [], scores: [10, 10], decisionsList: [10, 10], capHitRate: 0 };
+    const alwaysSafe: SoloRunSummary = { name: "always-safe", runs: [], scores: [3, 5], decisionsList: [10, 10], capHitRate: 0 };
+    expect(alwaysSafeVsStrongRatio(alwaysSafe, strong)).toBeCloseTo(0.4, 5);
+  });
+
+  it("reproduces the live finding against the REAL engine: an artificially tiny moveCap (10) against the shipped 10x10/20-mine/60-budget config makes every policy hit the cap before banking, and the shipped roster.strong scores a genuine median of 0 — throws ZeroScoringYardstickError rather than returning Infinity", () => {
+    const engine = createMineRun({ width: 10, height: 10, mines: 20, budget: 60 });
+    const seeds = pairedSeeds("zero-scoring-strong-real", 2);
+    const runOpts = { moveCap: 10, budget: { kind: "rollouts" as const, n: 750 } };
+    const strong = runSoloAgentOverSeeds(engine, buildSoloRoster(engine).strong, seeds, runOpts);
+    expect(strong.scores.every((s) => s === 0)).toBe(true); // pins the live finding before asserting the throw
+    const alwaysSafe = runAlwaysSafeProbe(engine, mineRunSafeMove, seeds, runOpts);
+    expect(() => alwaysSafeVsStrongRatio(alwaysSafe, strong)).toThrow(ZeroScoringYardstickError);
+  }, 300_000);
 });
 
 describe("alwaysSafeVsStrongRatio — real engine vs. a planted density violation (mine-run.md §4.2)", () => {

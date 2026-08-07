@@ -1,0 +1,14 @@
+
+=== healthy (mines=20) ===
+random: 6ms scores=[0,0] decisions=[10,10] capHitRate=1
+greedy: 22ms scores=[0,0] decisions=[10,10] capHitRate=1
+strong: 219129ms scores=[0,0] decisions=[10,10] capHitRate=1
+always-safe: 6ms scores=[0,7]
+ratio=Infinity
+
+=== degenerate (mines=2) ===
+random: 1ms scores=[3,0] decisions=[2,0] capHitRate=0
+greedy: 0ms scores=[3,0] decisions=[2,0] capHitRate=0
+strong: 64ms scores=[3,0] decisions=[2,0] capHitRate=0
+always-safe: 0ms scores=[3,0]
+ratio=1
