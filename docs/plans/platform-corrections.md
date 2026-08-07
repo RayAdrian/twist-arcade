@@ -3026,3 +3026,66 @@ other.
 
 **Quotability passes at every budget** — there is no forced win to quote, matching Fadeout's own
 reasoning for its shipped config.
+
+---
+
+## C52 — Mine Run survives all three legs. The verdict, and what leg 3 actually showed.
+
+### Leg 3, both reduced boards
+
+```
+4×4 / 3 mines / budget 8    n=8/8   pooled 1.1039  mean-of-ratios 1.0593
+                            per-seed: 1.0000 ×5, 1.2418, 1.2324, 1.0000
+                            criterion (optimal <= 1.05 × alwaysSafe): FALSE — does not fire
+
+5×5 / 4 mines / budget 12   n=4/5   pooled 1.0165  mean-of-ratios 1.0173   (1 seed infeasible)
+                            per-seed: 1.0000, 1.0693, 1.0000, 1.0000
+                            criterion: TRUE — fires
+```
+
+**Split.** The smaller board says optimal play beats always-banking by 10%; the larger says by 1.7%.
+
+### The shape both boards agree on, which matters more than the split
+
+On **both** boards, the *majority* of seeds return **exactly 1.0000** — optimal play and always-banking
+are identical. Five of eight on the 4×4, three of four on the 5×5. The entire edge comes from a
+minority of boards where pushing pays, and on those it pays substantially (+24%, +7%).
+
+So the honest description of Mine Run's mechanic is: **most boards contain no interesting decision,
+and a minority contain a very consequential one.** That is a different game from "press your luck
+every turn," and it is coherent with everything else measured — leg 2's 6 ties in 100 paired games,
+and RiskAware-B winning 58 of 94 *decisive* boards while the rest were boards where both policies
+correctly did the same thing.
+
+It also suggests the optimal edge **shrinks as the board grows** (10% at 4×4, 1.7% at 5×5). Whether
+that extrapolates to 10×10 is unknown and **not inferable** — C25: a number is evidence about the
+board it was measured on, and neither reduced board is the shipped configuration.
+
+### Verdict: Mine Run is not killed
+
+The kill standard required **all three legs**:
+
+| leg | result |
+|---|---|
+| 1 — every policy ≤ Always-Safe at n=100 | **did not fire** (best gateRatio 0.9208) |
+| 2 — one bounded lever sweep still failing | **did not fire** (22%/75 gives p = 0.0298) |
+| 3 — reduced-board exact check | **split** (fires at 5×5, not at 4×4) |
+
+Leg 1 alone settles it. **Mine Run survives, frozen at 22% density / 75 budget**, and proceeds to
+UI under the ordinary loop.
+
+### What is escalated to the user, as information rather than a blocker
+
+The mechanic is **real, statistically significant, and modest**: skilled play beats always-banking on
+~62% of boards where the two differ, and on most boards the two do not differ at all. The gate passes
+at 0.9208 against a 0.95 bar while the design-healthy target is 0.70.
+
+Three legs of a pre-registered standard were run and the game survived on evidence rather than on
+anyone's confidence — including mine, which pointed the wrong way twice (C29's "the decision may be
+fake", C30's horizon-valuation mechanism, both refuted by measurement). **The process worked
+specifically because the standard was fixed before the numbers arrived**, and because leg 1's
+condition was written as *"every policy"* rather than something I could argue about afterwards.
+
+**One methodological note carried forward:** leg 3's 5×5 arm recorded `infeasibleCount=1` — one seed
+exceeded the enumeration budget and was excluded. The spec pre-registered that fallback, and the
+result is reported as n=4/5 rather than silently pooled over four as though five had run.
