@@ -2893,3 +2893,76 @@ measurement corrected — C34/C36 for Mine Run's horizon valuation, and now this
 error had the same shape: **a coherent story built from reading numbers, believed before it was
 tested.** The team's instinct to ask for a second seed rather than accept my endorsement of its own
 finding is what caught it.
+
+---
+
+## C50 — Tilt ships. The chunk-budget guard broke at four games, and the accessibility exception I granted was never needed.
+
+### Tilt is the fourth playable game
+
+Registered, board built, 91 unit/component tests green, e2e against a real production build passing,
+**150/150 test files and 1,725/1,726 workspace tests with zero regressions.** Route smoke covers
+`/play/tilt` for free via the registry-driven loop.
+
+The load-bearing pieces are real, not decorative: a static telegraph sharing `pliesUntilNextTilt`
+with `announce()` so the visual countdown and the spoken one cannot drift; just-moved markers driven
+from `lastEffects` and present under **both** motion preferences, with the settle-pulse gated to full
+motion only — **verified by planting**: removing the `!prefs.reducedMotion` gate failed the
+reduced-motion test with the exact class name, then reverted.
+
+### The exception I granted was unnecessary, and it is withdrawn
+
+C31/§12.1 granted Tilt a sub-48px column-strip target with two-tap commit, because 7 columns at a
+320px viewport computes to ~41px. **The team did not use it.** `Cell.tsx` forces a 1:1 aspect ratio,
+which fights a literal 41×290px strip, so they rendered the full 7×7 grid at the standard **48px
+floor** and let `BoardShell`'s zoom/pan carry narrow viewports — **Nine Grids' own validated
+precedent**, applied without being told to.
+
+**Ruling: the §12.1 exception is withdrawn.** An unused accessibility exception sitting on the books
+is a hazard, not a harmless leftover — the next team to hit a tight layout will cite it as precedent
+for shrinking a target, and the precedent will be wrong, because the case that justified it turned
+out to have a better answer.
+
+This is the second time a team declined an accommodation I offered and found a solution that needed
+none. Nine Grids did it first with the 81-cell problem. **Both times the arithmetic was done before
+the board rather than after**, which is what left room to change the layout instead of the standard.
+
+### C43's chunk budget broke at four games — loudly, which is the only reason this is a finding and not a lie
+
+```
+pnpm tsx scripts/chunk-budget.ts
+  expected exactly 1 object literal in the compiled route chunk... found 0
+```
+
+Verified on a clean `rm -rf .next` rebuild. **Registering a fourth game changed webpack's
+chunk-splitting topology**: the compiled registry map is no longer inlined as a single object
+literal in one route chunk, so the structural probe that locates it — the very mechanism that made
+the tool registry-derived per C33 — no longer finds anything.
+
+**The guard was built, planted against, and verified this morning at three games. It broke at four,
+the same day.**
+
+What saves it from being another entry in the 23-defect table is *how* it broke: it **refused
+loudly** rather than reporting 0 bytes or silently measuring the wrong chunk. A structural probe
+that cannot find its target and says so is doing its job; one that returns a plausible number is the
+defect this whole file is about.
+
+**Required:** the detection must not assume the registry compiles to one object literal in one
+chunk. It also very likely invalidates the three numbers measured this morning — crackstep 7.21 kB,
+fadeout 8.26 kB, nine-grids 4.83 kB were all taken at a three-game topology and have not been
+re-measured at four.
+
+The team's fallback — grepping for Tilt-unique markers (`TiltDecodeError`, `createTiltEngine`,
+`tilt-settle-pulse`), finding exactly one chunk containing them and no other game's markers, and
+measuring **4.5 kB gzipped** — is a sound directional signal and was correctly labelled as *not the
+sanctioned methodology*. It was reported as a limitation rather than patched around, which is the
+behaviour that keeps a tool honest.
+
+### A platform limitation, documented rather than claimed
+
+`announce()`'s tilt summary cannot literally concatenate a tilt-ending win, because `GameEvent`'s
+`"moved"` variant carries only `effects` — no `view`, no `status` — so a game cannot detect from
+inside `"moved"` that the tilt ended the match. `useGame.ts` dispatches both in the same update so
+they arrive together in practice. The team documented the constraint instead of claiming a
+concatenation it could not deliver, which is the difference between a known limitation and a
+comment asserting an invariant that does not hold.
