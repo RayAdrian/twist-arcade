@@ -81,6 +81,22 @@ jobs:
         # .size-limit.json: 75 kB gz per game route (app/play/[gameId]) and the catalog route
         # (app/page.tsx) must not grow past its own budget. Runs against the `next build`
         # output from the previous step — must stay AFTER Build in this job's ordering.
+        # NOTE (platform-corrections.md C38): this ONLY measures the shared /play/[gameId]
+        # shell chunk (1.64 kB) — never a game's own dynamically-imported engine/presentation/
+        # solver code, which is measured by the step below instead.
+
+      - name: Per-game chunk budget (chunk-budget, platform-corrections.md C38)
+        run: pnpm chunk-budget
+        # C38: .size-limit.json's "game route" entry measures only the shared /play/[gameId]
+        # shell chunk — the actual per-game code (loaded via games/registry.ts's dynamic
+        # import()) was measured by nothing, so a game could exceed the 75 kB route budget the
+        # plan and every game's own plan treat as real, and stay green forever. This parses the
+        # SAME built chunk size-limit already read (must stay AFTER Build, same as size-limit)
+        # to find each registered game's OWN webpack chunk(s) and gzip them individually —
+        # derived from games/registry.ts, so a newly registered game is covered automatically
+        # with no edit here (same C33 discipline the route-smoke e2e spec below already
+        # follows). See scripts/chunk-budget.ts's header for why this shape was chosen over a
+        # Playwright network-transfer capture or a second webpack pass.
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
