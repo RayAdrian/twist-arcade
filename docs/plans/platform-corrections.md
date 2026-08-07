@@ -2268,3 +2268,53 @@ But S0b lowers the prior. If a principled policy also lands near parity, that is
 arriving on better evidence, and the three-leg kill standard (C37/R3) decides it — **including
 its one-round sweep bound**, which exists precisely so a marginal result cannot be tuned into a
 passing one.
+
+---
+
+## C40 — Order vs Chaos clears OV0/OV1, and a plan's decode spec was unreachable as written
+
+**OV0 (the cheap kill-check):** `P(a uniformly-random filled 6×6 contains a ≥5-run) = 8243/10000
+= 0.8243`, against the plan's ≈0.8 prediction. Well under the 0.95 escalation threshold, so
+rollouts do carry Chaos signal and the game survived its cheapest possible death.
+
+The team went further than the number: naive independence gives `P(no run) ≈ e⁻² ≈ 0.135`, but
+measured `P(no run) = 0.1757` — **window overlap raises it, exactly as the plan's own parenthetical
+predicted.** A measurement matching a prediction *and* its stated caveat is much stronger evidence
+than a bare number, because a coding error would rarely reproduce both.
+
+**OV1 (the engine):** 53/53 green, full workspace 1,628 passed, typecheck and lint clean. Six
+planted violations, each verified applied and observed firing — purity, `encode`-excludes-effects,
+win-precedence, the C4 dual-winner rejection (planted removal proved the test isn't vacuous), the
+lint import boundary, and the rule-sentence length assertion.
+
+### The C15/C28 scaffold fix validated itself in production use, one day old
+
+`pnpm new-game order-vs-chaos` printed **"UNREGISTERED"** and left `games/registry.ts`
+byte-identical. The gap that had been open since M5 — every scaffolded game silently routable
+before an engine existed — is closed and confirmed by a team that had no reason to test it.
+
+### The judgment call worth recording
+
+Plan §5 item 7 lists five `decode` throw conditions verbatim, two of which are **structurally
+unreachable as written**: "a 5-run present while status is `ongoing`" and "a full board with no
+line while `ongoing`". Status is never stored — it is derived fresh from the board each call
+(Fadeout's convention), and §5.7 pins `encode` to exactly `cells + toMove + config id`. A decoded
+board carrying a completed line therefore *always* derives `won`; it can never present as
+`ongoing`, so there is nothing to reject.
+
+The team honored them as **positive correctness tests** (decode succeeds; `status()` reports the
+right winner; never `ongoing`) and operationalized the umbrella "status inconsistent with board"
+bullet as the one genuinely undecidable case: **a completed run for both symbols at once**, which
+is impossible because the game halts the instant either appears. That is C28/A3 extended to this
+game by someone reasoning from the contract rather than transcribing the list.
+
+**This is the fourth time today a plan or brief specified something that could not be what it
+claimed** (Tilt's mechanic, Bid-Tac-Toe's private budgets, my C30 diagnosis, now this). Each was
+caught by an implementer treating the document as a claim to check rather than an instruction to
+follow. That is the behaviour to keep — and the reason to keep writing specs precise enough to be
+*wrong* rather than vague enough to be unfalsifiable.
+
+**Deliberately not done, all correct:** the pairing-bot probe is built and mechanically verified
+but its `<40% vs Strong` measurement is OV2 work; `ciGateBudget` is left unset so `runCiSuite`
+**refuses** the ci suite until OV2's sweep sets it (C22's refusal working as designed, not a gap);
+and the game is unregistered.
