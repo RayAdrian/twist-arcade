@@ -1,0 +1,44 @@
+$ next build
+   ▲ Next.js 15.5.22
+
+   Creating an optimized production build ...
+   Using tsconfig file: ./tsconfig.app.json
+   Using tsconfig file: ./tsconfig.app.json
+   Using tsconfig file: ./tsconfig.app.json
+
+warn - Your `content` configuration includes a pattern which looks like it's accidentally matching all of `node_modules` and can cause serious performance issues.
+warn - Pattern: `./games/**/*.ts`
+warn - See our documentation for recommendations:
+warn - https://tailwindcss.com/docs/content-configuration#pattern-recommendations
+ ✓ Compiled successfully in 8.0s
+   Linting and checking validity of types ...
+
+ ⚠ The Next.js plugin was not detected in your ESLint configuration. See https://nextjs.org/docs/app/api-reference/config/eslint#migrating-existing-config
+   Collecting page data ...
+   Generating static pages (0/9) ...
+   Generating static pages (2/9) 
+   Generating static pages (4/9) 
+   Generating static pages (6/9) 
+ ✓ Generating static pages (9/9)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                 Size  First Load JS
+┌ ○ /                                      263 B         170 kB
+├ ○ /_not-found                            130 B         104 kB
+└ ● /play/[gameId]                        5.4 kB         175 kB
+    ├ /play/crackstep
+    ├ /play/nine-grids
+    ├ /play/tilt
+    └ [+2 more paths]
++ First Load JS shared by all             104 kB
+  ├ chunks/719e80af-4ac6f4c8d62db883.js  54.2 kB
+  ├ chunks/755-9ee877c5966d7990.js       11.2 kB
+  ├ chunks/97-5eb45078064cc9cd.js        35.9 kB
+  └ other shared chunks (total)          2.31 kB
+
+
+○  (Static)  prerendered as static content
+●  (SSG)     prerendered as static HTML (uses generateStaticParams)
+
+BUILD_EXIT=0

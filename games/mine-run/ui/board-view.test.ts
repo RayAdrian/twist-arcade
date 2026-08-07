@@ -115,3 +115,49 @@ describe("mineCountSummary — the always-visible informed-odds HUD line (lens �
     expect(mineCountSummary(view)).toBe(`\u{1F4A3} ${view.minesTotal} \u{00B7} ${view.minesExploded} hit`);
   });
 });
+
+describe("hasProvenSafeMove — the C52 'is this turn's decision even live' telegraph (existence only, never location)", () => {
+  it("is FALSE on a view with nothing revealed yet — no constraint exists to prove anything safe", () => {
+    const view: MineRunView = {
+      width: 4,
+      height: 4,
+      cells: {},
+      minesTotal: 1,
+      minesExploded: 0,
+      streakLen: 0,
+      streakValue: 0,
+      nextGain: 1,
+      banked: 0,
+      revealsLeft: 10,
+      lastEffects: [],
+    };
+    expect(hasProvenSafeMove(view)).toBe(false);
+  });
+
+  it("is TRUE when a revealed 0-count cell's unrevealed neighbors are forced safe by single-point deduction alone", () => {
+    // 4x4 board, corner cell 0 revealed with n=0 -> its 3 neighbors (1, 4, 5) are each safe in
+    // EVERY consistent world (a 0 forbids a mine on any neighbor). The 1 remaining mine has 12
+    // other unrevealed background cells to occupy, so the view is internally consistent.
+    const view: MineRunView = {
+      width: 4,
+      height: 4,
+      cells: { 0: { n: 0 } },
+      minesTotal: 1,
+      minesExploded: 0,
+      streakLen: 0,
+      streakValue: 0,
+      nextGain: 1,
+      banked: 0,
+      revealsLeft: 10,
+      lastEffects: [],
+    };
+    expect(hasProvenSafeMove(view)).toBe(true);
+  });
+
+  it("view-honest by construction: takes a MineRunView (never a state/mines field exists on its parameter type)", () => {
+    const { view } = firstView("board-view-a");
+    // Type-level guarantee exercised at runtime: calling with the real engine-produced view
+    // (never a hand-built object carrying a `mines` field) must not throw.
+    expect(() => hasProvenSafeMove(view)).not.toThrow();
+  });
+});

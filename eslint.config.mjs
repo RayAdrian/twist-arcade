@@ -218,6 +218,13 @@ export default tseslint.config(
       // Next-generated, gitignored (.gitignore's own entry) — its triple-slash reference to
       // .next/types/routes.d.ts is Next's own required convention, not something to lint.
       "next-env.d.ts",
+      // Throwaway analysis/kill-standard/measurement scripts (every team's `.scratch/*.ts` —
+      // leg1-kill-standard.ts, leg2-lever-sweep.ts, chunk-budget plants, etc.), never shipped,
+      // never imported by production code. Found blocking `pnpm lint` repo-wide from a leftover
+      // unused import in an earlier pass's scratch script (games/mine-run's S1 risk-policy work)
+      // — matches the existing convention of excluding generated/non-shipped content
+      // (**/dist/**, **/coverage/**) rather than hand-fixing lint noise in disposable scripts.
+      ".scratch/**",
     ],
   },
   js.configs.recommended,

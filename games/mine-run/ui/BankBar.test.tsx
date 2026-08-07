@@ -9,7 +9,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { MineRunMove, MineRunView } from "../engine";
 import { BankBar } from "./BankBar";
@@ -31,8 +31,20 @@ function makeView(overrides: Partial<MineRunView> = {}): MineRunView {
   };
 }
 
-function renderBar(view: MineRunView, onMove: (m: MineRunMove) => void = vi.fn()) {
-  return render(<BankBar view={view} legal={[]} onMove={onMove} seat={0} prefs={{ reducedMotion: false, theme: "light" }} />);
+function renderBar(
+  view: MineRunView,
+  onMove: (m: MineRunMove) => void = vi.fn(),
+  opts?: { reducedMotion?: boolean }
+) {
+  return render(
+    <BankBar
+      view={view}
+      legal={[]}
+      onMove={onMove}
+      seat={0}
+      prefs={{ reducedMotion: opts?.reducedMotion ?? false, theme: "light" }}
+    />
+  );
 }
 
 describe("BankBar — the informed-odds HUD line (lens §1.7: mine counts always visible)", () => {
@@ -86,6 +98,65 @@ describe("BankBar — the Bank button (R6: bank requires streakLen >= 1, costs n
     renderBar(makeView({ streakLen: 0, streakValue: 0 }), onMove);
     await user.click(screen.getByRole("button", { name: /^Bank$/ }));
     expect(onMove).not.toHaveBeenCalled();
+  });
+});
+
+describe("BankBar — the C52 safe-move telegraph (existence only, text-only, never colour alone)", () => {
+  it("reads 'No proven-safe move right now.' on a view with nothing revealed yet", () => {
+    renderBar(makeView({ cells: {} }));
+    expect(screen.getByText("No proven-safe move right now.")).toBeInTheDocument();
+    expect(document.querySelector('[data-safe-move-status="none"]')).not.toBeNull();
+  });
+
+  it("reads 'A safe move is available.' when a revealed 0-count cell forces a neighbor safe", () => {
+    // 10x10 view, corner cell 0 revealed at n=0 -> its neighbors (1, 10, 11) are provably safe;
+    // 20 mines have 96 other unrevealed background cells to occupy (internally consistent).
+    renderBar(makeView({ cells: { 0: { n: 0 } } }));
+    expect(screen.getByText("A safe move is available.")).toBeInTheDocument();
+    expect(document.querySelector('[data-safe-move-status="available"]')).not.toBeNull();
+  });
+});
+
+describe("BankBar — bank/wipe narration (mine-run.md §8.2): static content always, animation gated on reduced motion (A11Y-008)", () => {
+  it("a just-banked move shows the vault total both under full motion and reduced motion (static content, motion-independent)", () => {
+    const bankedEffects: MineRunView["lastEffects"] = [{ type: "banked", points: 28 }];
+    renderBar(makeView({ banked: 96, lastEffects: bankedEffects }), vi.fn(), { reducedMotion: false });
+    expect(screen.getByText(/banked 96/i)).toBeInTheDocument();
+  });
+
+  it("a just-banked move plays the bank-slide animation under FULL motion", () => {
+    const bankedEffects: MineRunView["lastEffects"] = [{ type: "banked", points: 28 }];
+    renderBar(makeView({ banked: 96, lastEffects: bankedEffects }), vi.fn(), { reducedMotion: false });
+    const vault = document.querySelector('[data-vault="true"]') as HTMLElement;
+    expect(vault.style.animation).toContain("mine-run-bank-slide");
+  });
+
+  it("a just-banked move has NO animation under reduced motion — the static vault number still updates (A11Y-008)", () => {
+    const bankedEffects: MineRunView["lastEffects"] = [{ type: "banked", points: 28 }];
+    renderBar(makeView({ banked: 96, lastEffects: bankedEffects }), vi.fn(), { reducedMotion: true });
+    const vault = document.querySelector('[data-vault="true"]') as HTMLElement;
+    expect(vault.style.animation).toBe("");
+    expect(screen.getByText(/banked 96/i)).toBeInTheDocument();
+  });
+
+  it("a just-wiped move shows a static '-N' note under BOTH motion preferences, and only animates under full motion", () => {
+    const explodedEffects: MineRunView["lastEffects"] = [{ type: "exploded", cell: 5, streakLost: 28 }];
+
+    renderBar(makeView({ streakLen: 0, streakValue: 0, lastEffects: explodedEffects }), vi.fn(), { reducedMotion: false });
+    expect(screen.getByText("−28")).toBeInTheDocument();
+    const wipedFull = document.querySelector('[data-just-wiped="true"]') as HTMLElement;
+    expect(wipedFull.style.animation).toContain("mine-run-wipe-drain");
+    cleanup();
+
+    renderBar(makeView({ streakLen: 0, streakValue: 0, lastEffects: explodedEffects }), vi.fn(), { reducedMotion: true });
+    expect(screen.getByText("−28")).toBeInTheDocument();
+    const wipedReduced = document.querySelector('[data-just-wiped="true"]') as HTMLElement;
+    expect(wipedReduced.style.animation).toBe("");
+  });
+
+  it("no bank/wipe effect in lastEffects -> no animated span rendered at all", () => {
+    renderBar(makeView({ lastEffects: [] }));
+    expect(document.querySelector('[data-just-wiped="true"]')).toBeNull();
   });
 });
 
