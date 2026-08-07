@@ -45,6 +45,7 @@
     "@twist-arcade/crackstep": "workspace:*",
     "@twist-arcade/harness": "workspace:*",
     "@twist-arcade/nine-grids": "workspace:*",
+    "@twist-arcade/tilt": "workspace:*",
     "@types/node": "^20.14.0",
     "@types/pg": "^8.20.4",
     "@types/react": "^19.0.0",

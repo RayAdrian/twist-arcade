@@ -13,6 +13,7 @@ import type { Registry } from "@twist-arcade/game-spec";
 import { FADEOUT_RULESET_CONFIG, fadeoutManifest } from "./fadeout/manifest";
 import { manifest as crackstepManifest } from "./crackstep/manifest";
 import { manifest as nineGridsManifest } from "./nine-grids/manifest";
+import { manifest as tiltManifest } from "./tilt/manifest";
 
 export const registry: Registry = {
   "crackstep": {
@@ -31,6 +32,11 @@ export const registry: Registry = {
     manifest: nineGridsManifest,
     loadEngine: () => import("@twist-arcade/nine-grids").then((m) => m.nineGrids),
     loadPresentation: () => import("@twist-arcade/nine-grids").then((m) => m.presentation),
+  },
+  "tilt": {
+    manifest: tiltManifest,
+    loadEngine: () => import("@twist-arcade/tilt").then((m) => m.tilt),
+    loadPresentation: () => import("@twist-arcade/tilt").then((m) => m.presentation),
   },
   // <new-game:insert>
   fadeout: {
