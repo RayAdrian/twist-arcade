@@ -3167,3 +3167,79 @@ today, is the difference between a repair and a rescheduled failure.
 
 150/150 test files, 1,729 passed, plus 10 new unit tests covering the fail-loud paths without
 requiring a build.
+
+---
+
+## C54 — The shipped engine was still playing the killed configuration. Nothing checked.
+
+### The find
+
+`games/mine-run/engine.ts`'s `DEFAULT_MINES` / `DEFAULT_BUDGET` were **still 20 / 60** — the exact
+configuration that failed its gates and that C46 replaced. `games/registry.ts` loads the default
+engine, so **the game a player would have played was the killed 20%/60 config**, while every
+document, correction and measurement said 22%/75.
+
+C46 recorded the freeze. C52 recorded the survival. Both describe a configuration the code did not
+implement. **117 engine tests and the full 1,782-test suite passed before and after the fix**,
+because they reference the constants symbolically — a change to the shipped game that no test could
+observe.
+
+This is a new species of the recurring defect. Every prior instance was *a guard that did not
+guard*. This is **a measurement and a shipped artifact that were never checked against each other**:
+the numbers we froze lived in prose, the numbers we ship lived in code, and nothing compared them.
+
+**Required:** a test asserting the engine's shipped defaults equal the frozen configuration, with
+the correction that froze it named in the assertion. Any game whose config is frozen by a
+measurement needs it. Prose is not a binding.
+
+**Consequence to route:** `manifest.ts`'s `soloChaseCiRollouts: 750` rests on an "87 root legal
+moves" branching measurement taken at **20%** density. It may not hold at 22%. The team flagged it
+and declined to recompute a number outside its scope rather than guessing — correct, and it needs
+the harness owner.
+
+### The exception that was never a solution
+
+The plan pre-authorised a 32px/two-tap-commit exception for Mine Run's 10×10 board. The team did the
+arithmetic **before building** and found:
+
+- 48px standard: `10×48 + 9×4 = 516px` against a 288px frame — **79% over**
+- 32px exception: `10×32 + 9×4 = 356px` — **still 24% over**
+
+**The exception shrank the tap target without ever making the board fit.** A pan mechanism was
+required either way. Someone would have paid a real accessibility cost and solved nothing.
+
+That is now the **third** exception declined in favour of `BoardShell`'s zoom/pan (Nine Grids, Tilt
+via C50, now this) — and the first proved *useless* rather than merely unnecessary. All three teams
+did the arithmetic before the board rather than after, which is what left room to change the layout
+instead of the standard.
+
+### Two more plan-vs-reality catches, reported rather than worked around
+
+**The share artifact's own example is ungrammatical.** `mine-run.md`'s body (`"🏦7 🏦12 …"`) cannot
+pass the shell's real `share-frame.ts` grammar — `HOUSE_ALPHABET` is bare glyphs, no digits or
+spaces. The team followed Crackstep's and Fadeout's established convention and asserted
+grammar-legality directly in a test.
+
+**`textureLine` shipped only what its signature can compute.** Two of the plan's three templates
+narrate a past event the `(finalView) => string` hook cannot see. Documented as a scope cut instead
+of fabricated.
+
+### A test that proved nothing, caught by its author
+
+The first keyboard e2e test pressed Enter on the roving-tabindex cursor's starting cell — **already
+revealed by the opening flood, so the assertion could not fail.** Fixed by reading
+`aria-rowindex`/`aria-colindex` to navigate to a genuinely enabled cell first.
+
+That is C41's lesson applied by an author to their *own* test rather than to a planted mutant, which
+is the harder direction: a plant you expect to fire announces itself when it does not, but a test
+you expect to pass says nothing when it passes vacuously.
+
+### Mine Run ships
+
+193/193 package tests, 1,782 workspace tests, typecheck and lint clean, build green, e2e 13 passed
+with one documented `test.fixme` (the deterministic-bot seam gap Nine Grids and Tilt already carry).
+Chunk budget **4.75 kB — 6.3% of the 75 kB limit**, verified by planting 90 kB of incompressible
+noise into a genuinely-called path and watching it fail at 96.11 kB, correctly attributed.
+
+The safe-move telegraph is existence-only and never names the cell — it calibrates tension without
+solving the deduction, which is the design point C52's exact solve made available.
