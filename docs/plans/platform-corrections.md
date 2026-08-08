@@ -3508,3 +3508,73 @@ the old rule.
 
 That is C41's lesson built in from the start: a test that would have passed before the fix has not
 tested the fix.
+
+---
+
+## C59 — `unattained` — the gate can now tell "never worked" from "got worse"
+
+`solved-value-reached` applied a 90% absolute floor, collapsing two claims that demand opposite
+responses (C57). It no longer does.
+
+**A sixth status, `"unattained"`, rendered `[NEVER]`.** Verified by the orchestrator:
+
+```
+no baseline, 0% attained        -> unattained     (visible, never a pass)
+baseline 1.0, 50% attained      -> fail           (a real regression)
+baseline 1.0, 100% attained     -> pass
+waiver attempt: baseline 0      -> InvalidAttainmentBaselineError
+baseline with blank proof       -> InvalidAttainmentBaselineError
+```
+
+### The refinement on my own steer
+
+I directed that "never attained" join `deferred`'s family. The implementer built a **sibling
+instead**, and the distinction is right: `deferred` means *"did not run this tier, runs at a named
+one"*; `unattained` means *"self-play ran, produced a real number, and nothing on record makes the
+shortfall a regression."* Reusing `deferred` would have been a **lie about when it gets measured**.
+
+Same family — applies, stays visible, never reads as a bare pass — different claim.
+
+### Why this is a calibration fix and not a waiver
+
+This was the constraint the whole redesign turned on. `attainmentBaseline` is **optional**; not
+declaring it yields `unattained` by default, so a game cannot manufacture a safe status — that is
+simply the state before any history exists. The one exploit available, declaring `rate: 0` so
+nothing can ever fall below it, is **refused at the manifest boundary** alongside negative rates,
+rates above 1, and blank proofs. Provenance is required (C25), matching `ciGateBudget`'s comments.
+
+`ok` stays `true` for `unattained` alone — nothing regressed, so CI is not blocked — but the header
+never prints a bare `OK`, naming `solved-value-reached` in a provisional note, the posture C27 built.
+
+### Fadeout: byte-identical, and structurally so
+
+Real engine, `runCiSuite` at seed `c57-verify`, same seed against fixed and stashed-pre-fix code:
+**`diff` produced no output.** Not merely lucky — the `attainment.reached === true` branch is
+untouched character-for-character, with new branches added only below it. Fadeout now declares
+`attainmentBaseline: { rate: 1.0 }`, inert today, load-bearing the day attainment ever drops.
+
+### The verification worth copying
+
+The implementer **stashed the fix and re-ran the suite: exactly 11 tests went red — all and only
+those encoding the new distinction. Nothing else moved.** That is materially stronger than "the
+tests pass": it demonstrates the tests are testing *this change*, which is the property C41 and C48
+kept finding absent.
+
+### A reporting note, recorded because it misled me
+
+Mid-task I inspected the worktree and found `GateStatus` unchanged with no baseline field, and
+concluded the design had not landed. It had — the diff was **`git stash`ed for an A/B baseline
+capture**. My observation was accurate; my inference was wrong. The implementer named this as a gap
+in its own reporting discipline rather than letting it pass, which is the right call: *"mid-experiment,
+stashed, will restore"* costs one sentence and prevents the orchestrator from reasoning off a
+half-visible tree.
+
+### What this means for Bid-Tac-Toe
+
+Its `solved-value-reached` becomes **`[NEVER]`** rather than `[FAIL]` — its bots have never reached
+the proven draw, there is no baseline to regress from, and the gate now says so in those terms. Every
+balance gate passes on real numbers. **The red gate was, in part, a miscalibration.**
+
+That is not a decision to ship. `unattained` is still visible, still not a pass, and still says our
+Ruthless bot plays this game poorly. But the question in front of the user is now the honest one —
+*ship a provably fair game whose bot is mediocre?* — rather than *waive a failing gate?*
