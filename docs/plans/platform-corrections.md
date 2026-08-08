@@ -3681,3 +3681,55 @@ load-bearing rather than theoretical.
 D0 unblocks D1 and nothing further. The engine, the search-soundness protocol (§7), the budget
 sweep, and the gate table all remain — and the C55/C57 residue still means **no gate number from
 this game may be read as a game verdict until budget-monotonicity is shown non-declining.**
+
+---
+
+## C62 — Duel Draft's engine lands. Two findings worth more than the engine.
+
+### `lsof` is not sufficient to check a port block
+
+The brief's suggested block **56321–56329 was already bound** — by an unrelated project's live
+containers (`supabase_kong_stampmate-qa`, `supabase_db_stampmate-qa`), **found with `docker ps`, not
+`lsof`.** The team claimed 56421–56429 instead and recorded both the reservation and the reason.
+
+`CLAUDE.md` §5 says to verify a block with `lsof -nP -iTCP:544xx -sTCP:LISTEN`. **That check can
+miss Docker-published ports**, which is precisely the collision the rule exists to prevent — and
+this host runs 37–63 containers from other projects. **The verification step should be `lsof` *and*
+`docker ps`**, and the team applied the right instinct without being told: work around another
+project's containers, never stop them.
+
+### C48's mirror-probe ruling was never implemented
+
+I ruled at C48 that a mirror probe should report **`n/a` with a reason rather than `WARN`** where
+mirroring is provably not value-preserving. The team went to implement it here, checked
+Bid-Tac-Toe's `probes.ts`, and **found C48's placeholder still unfixed** — no working
+`n/a`-not-`WARN` mechanism exists anywhere in the repo.
+
+So rather than fake it, it exported **no `mirrorMove`** plus a documented constant naming the reason
+(mirroring is incoherent under simultaneity — there is no prior move within a round to mirror).
+
+**That is a ruling I made and never routed.** It is now two games deep as an unfixed placeholder,
+and it is exactly the C15/C22 shape: *a decision recorded in prose that nothing in the code
+enforces.* Routing it is owed.
+
+### The detail most likely to have been got backwards
+
+`decode` **accepts** a board with completed lines for both players — the reachable double-win draw
+terminal. That is the same shape as Tilt's ruling and the **exact opposite** of Nine Grids', where a
+dual-winner board is structurally impossible and must be rejected. Both are correct for their games
+and an implementer transcribing from the wrong sibling gets it backwards.
+
+The team verified it **against Bid-Tac-Toe's actual code** rather than against the plan's assertion
+about that code — the distinction C31 exists for.
+
+### D1 itself
+
+55/55 tests across five files, typecheck / lint / engine-purity clean, scoped to the package.
+**Six planted violations, all fired**: the double-win draw branch, destroyed-cells-as-own-marks, the
+decode equal-counts check, a dropped anti-diagonal window (caught by a module-load pencil-check that
+crashed the whole file — the loudest possible failure), seat-order in effects, and a desynced
+tie-break that broke the self-play collision test.
+
+The game is **unregistered** and `/play/duel-draft` is not routable, as D1 requires. D0's scripted
+policies survive as a permanent probes file, joined by the collider — they become the search's
+yardstick at §7.2, which is why they were never throwaway.
