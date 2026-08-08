@@ -161,6 +161,37 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@20.19.43)(jsdom@25.0.1(supports-color@7.2.0))(supports-color@7.2.0)
 
+  games/duel-draft:
+    dependencies:
+      '@twist-arcade/bots':
+        specifier: workspace:*
+        version: link:../../packages/bots
+      '@twist-arcade/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
+      '@twist-arcade/game-spec':
+        specifier: workspace:*
+        version: link:../../packages/game-spec
+      '@twist-arcade/harness':
+        specifier: workspace:*
+        version: link:../../packages/harness
+      '@twist-arcade/shell':
+        specifier: workspace:*
+        version: link:../../packages/shell
+    devDependencies:
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.18
+      react:
+        specifier: ^19.0.0
+        version: 19.2.8
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@20.19.43)(jsdom@25.0.1(supports-color@7.2.0))(supports-color@7.2.0)
+
   games/fadeout:
     dependencies:
       '@twist-arcade/engine':
