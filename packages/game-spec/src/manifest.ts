@@ -39,6 +39,30 @@ export interface SolvedValueClaim {
    *  TYPE only so `{ value: "unknown" }` never has to carry a meaningless empty string — the
    *  RUNTIME check is what actually enforces "required for every non-unknown value". */
   readonly proof?: string;
+
+  /** Optional, previously-MEASURED self-play attainment rate for this proven value, WITH
+   *  provenance — the same posture `proof` and `ciGateBudget`'s own `reason` fields already
+   *  take: a number is evidence about the conditions it was measured under (platform-
+   *  corrections.md C25), so a bare rate with no pointer is not accepted (the harness refuses,
+   *  same seam as `MissingSolvedValueProofError`).
+   *
+   *  This is what lets `solved-value-reached` (platform-corrections.md C57) tell apart two
+   *  claims a single absolute floor collapsed into the same FAIL: "this game's bots USED TO
+   *  reach the value and no longer do" (a real regression — needs a baseline to regress FROM)
+   *  vs. "this game's bots have NEVER reached it" (a statement about search adequacy for this
+   *  tree, not a regression). Declare this once self-play has genuinely reached the value at a
+   *  healthy rate (Fadeout: `{ rate: 1.0, proof: "…C23 sweep, 100% at every tested budget" }`);
+   *  a future drop below it is then reported as a loud, real `"fail"` naming the baseline. Omit
+   *  it (the default) for a game that has never established one — falling short of
+   *  `SOLVED_VALUE_SELF_PLAY_FLOOR` then reports the harness's distinct `"unattained"` status
+   *  instead of `"fail"`: visible, never a silent pass, but not a claim of regression either.
+   *
+   *  `rate` MUST be `> 0` and `<= 1` — the harness refuses loudly
+   *  (`InvalidAttainmentBaselineError`) rather than let a declared `0` baseline make every
+   *  future measurement look "at or above baseline" and silence the regression check forever.
+   *  That refusal is the whole point: a game earns the regression-detecting behavior only by
+   *  recording a real, positive, cited number, never by asserting one to duck the gate. */
+  readonly attainmentBaseline?: { readonly rate: number; readonly proof: string };
 }
 
 export interface GameManifest {

@@ -235,3 +235,81 @@ describe("formatCiSuiteTable() / formatSoloGateTable() — C27: '[DEFER]' is a D
     expect(output).not.toContain("provisional");
   });
 });
+
+// ---------------------------------------------------------------------------------------
+// platform-corrections.md C57: "[NEVER]" is a DIFFERENT label from "[FAIL]", "[PASS]", "[N/A ]",
+// and "[DEFER]" — the whole point is that a reader must be able to tell "measured, genuinely
+// never reached, no baseline to regress from" apart from an ordinary fail or a bare pass at a
+// glance, on the RENDERED table, not merely in the status enum.
+// ---------------------------------------------------------------------------------------
+
+const UNATTAINED_DETAIL =
+  'self-play has never reached the proven "draw" (0.0% observed, floor 90%) — no manifest.solvedValue.attainmentBaseline declared, so there is no history to regress from; this describes search adequacy for this tree, not a regression (platform-corrections.md C57)';
+
+describe("formatCiSuiteTable() — C57: '[NEVER]' is visually distinct from '[FAIL]', '[PASS]', '[N/A ]', and '[DEFER]'", () => {
+  const mixedGatesWithUnattained: readonly GateResult[] = [
+    { gate: "solved-value-reached", status: "unattained", detail: UNATTAINED_DETAIL },
+    { gate: "first-player-win-rate", status: "pass", detail: "43.3% (band [35%, 65%])" },
+    { gate: "strong-vs-random", status: "fail", detail: "85.0% (min 90.0%)" },
+    { gate: "mean-plies", status: "n/a", detail: "manifest has no \"standard\" tier" },
+    { gate: "draw-rate", status: "deferred", detail: DEFER_DETAIL },
+  ];
+
+  it("five distinct labels for five distinct statuses on the SAME report, pairwise distinguishable as rendered text", () => {
+    const output = formatCiSuiteTable(fakeSuiteReport(mixedGatesWithUnattained));
+    const lines = output.split("\n");
+    const neverLine = lines.find((l) => l.includes("solved-value-reached"))!;
+    const passLine = lines.find((l) => l.includes("first-player-win-rate"))!;
+    const failLine = lines.find((l) => l.includes("strong-vs-random"))!;
+    const naLine = lines.find((l) => l.includes("mean-plies"))!;
+    const deferLine = lines.find((l) => l.includes("draw-rate"))!;
+    expect(neverLine).toContain("[NEVER]");
+    expect(passLine).toContain("[PASS]");
+    expect(failLine).toContain("[FAIL]");
+    expect(naLine).toContain("[N/A ]");
+    expect(deferLine).toContain("[DEFER]");
+    // Every rendered line distinct from every other — the exact C2/C57 requirement restated at
+    // the formatter layer: two conditions requiring different responses must not print the same
+    // word, and here that means not even the same LINE.
+    expect(new Set([neverLine, passLine, failLine, naLine, deferLine]).size).toBe(5);
+    expect(neverLine).not.toContain("[FAIL]");
+    expect(neverLine).not.toContain("[PASS]");
+  });
+
+  it("header: 'OK (provisional — ...)' when ok=true and an unattained row is present, naming solved-value-reached — visibly distinguishable from a bare 'OK'", () => {
+    const output = formatCiSuiteTable(
+      fakeSuiteReport([
+        { gate: "solved-value-reached", status: "unattained", detail: UNATTAINED_DETAIL },
+        { gate: "first-player-win-rate", status: "pass", detail: "43.3% (band [35%, 65%])" },
+      ])
+    );
+    expect(output).toContain("OK (provisional");
+    expect(output).toContain("solved-value-reached");
+    const fullyMeasured = formatCiSuiteTable(fakeSuiteReport([{ gate: "strong-vs-random", status: "pass", detail: "95.0%" }]));
+    expect(fullyMeasured).toMatch(/— OK$/m);
+  });
+
+  it("a report with BOTH a deferred row and an unattained row names both in the header, never silently dropping one", () => {
+    const output = formatCiSuiteTable(
+      fakeSuiteReport([
+        { gate: "solved-value-reached", status: "unattained", detail: UNATTAINED_DETAIL },
+        { gate: "strong-vs-random", status: "deferred", detail: DEFER_DETAIL },
+      ])
+    );
+    const header = output.split("\n")[0];
+    expect(header).toContain("provisional");
+    expect(header).toMatch(/deferred/i);
+    expect(header).toMatch(/never attained|solved-value-reached/i);
+  });
+
+  it("a FAILED report with an unattained row still says FAILED, never 'provisional' (an unattained row does not make a real fail elsewhere disappear)", () => {
+    const output = formatCiSuiteTable(
+      fakeSuiteReport([
+        { gate: "solved-value-reached", status: "unattained", detail: UNATTAINED_DETAIL },
+        { gate: "strong-vs-random", status: "fail", detail: "85.0% (min 90.0%)" },
+      ])
+    );
+    expect(output).toContain("— FAILED");
+    expect(output).not.toContain("provisional");
+  });
+});

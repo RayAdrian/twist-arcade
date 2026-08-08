@@ -62,12 +62,18 @@ export function formatMatchupTable(report: MatchupReport): string {
 // that a human reading this table can tell "doesn't apply" (N/A), "measured, healthy" (PASS),
 // and "applies, runs at nightly, not measured here" (DEFER) apart at a glance, never conflating
 // the second and third the way C2/C23 exist to prevent for the first and second.
+// "NEVER" (platform-corrections.md C57) gets the same "as visually distinct as everything
+// else" treatment as "DEFER" got under C27: a reader must be able to tell "measured, genuinely
+// never reached, no baseline to regress from" (NEVER) apart from "measured, healthy" (PASS),
+// "measured, regressed from a declared baseline" (FAIL), and "doesn't apply" (N/A ) at a glance
+// — the exact collapse C57 fixes was two different claims both printing "FAIL".
 const STATUS_LABEL: Record<string, string> = {
   pass: "PASS",
   warn: "WARN",
   fail: "FAIL",
   "n/a": "N/A ",
   deferred: "DEFER",
+  unattained: "NEVER",
 };
 
 /** C27: a run can be `ok` (no `"fail"` row) while still containing `"deferred"` rows — a
@@ -76,15 +82,27 @@ const STATUS_LABEL: Record<string, string> = {
  *  argument): `ok` stays `true` so CI is not blocked by a gate that is working exactly as
  *  designed, but the rendered header must say so explicitly — "OK" alone, unqualified, would
  *  read identically to a nightly run that measured everything, and a reader has no way to tell
- *  a provisional pass from a real one without opening every row. */
-function verdictLabel(ok: boolean, hasDeferred: boolean): string {
+ *  a provisional pass from a real one without opening every row.
+ *
+ *  C57 extends the same reasoning to `"unattained"` rows: a report can ALSO be `ok` while
+ *  `solved-value-reached` genuinely never reached a proven value with no baseline to regress
+ *  from — not a failure (nothing regressed), but still not the claim a bare "OK" makes either.
+ *  `hasUnattained` defaults to `false` so every existing call site (and `formatSoloGateTable`,
+ *  whose lane has no `"unattained"` status at all) keeps its exact prior header text. Both
+ *  qualifiers can be present on the same report at once — the header lists whichever apply,
+ *  never silently drops one for the other. */
+function verdictLabel(ok: boolean, hasDeferred: boolean, hasUnattained = false): string {
   if (!ok) return "FAILED";
-  return hasDeferred ? "OK (provisional — deferred rows not yet measured at this tier)" : "OK";
+  const notes: string[] = [];
+  if (hasDeferred) notes.push("deferred rows not yet measured at this tier");
+  if (hasUnattained) notes.push("a solvedValue row was measured and never attained, with no baseline to regress from — see solved-value-reached");
+  return notes.length === 0 ? "OK" : `OK (provisional — ${notes.join("; ")})`;
 }
 
 export function formatCiSuiteTable(report: CiSuiteReport): string {
   const hasDeferred = report.gates.some((g) => g.status === "deferred");
-  const lines = [`CI suite (${report.suite}) for "${report.gameId}" — ${verdictLabel(report.ok, hasDeferred)}`];
+  const hasUnattained = report.gates.some((g) => g.status === "unattained");
+  const lines = [`CI suite (${report.suite}) for "${report.gameId}" — ${verdictLabel(report.ok, hasDeferred, hasUnattained)}`];
   for (const gate of report.gates) {
     const label = STATUS_LABEL[gate.status] ?? gate.status;
     // Keyed on PRESENCE (`!== undefined`), not truthiness — an empty-string justification must

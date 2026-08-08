@@ -36,7 +36,18 @@ import { agentWinRate } from "./metrics";
  *  expensive (see `GameManifest.ciGateBudget.deferGatesToNightly`). Order vs Chaos, Tilt, and
  *  Bid-Tac-Toe (docs/plans/) each name this exact status as a load-bearing dependency for their
  *  own balance-gate reporting at PR tier. */
-export type GateStatus = "pass" | "fail" | "warn" | "n/a" | "deferred";
+/** `"unattained"` (platform-corrections.md C57) is a SIXTH status, in `"deferred"`'s family
+ *  rather than `"n/a"`'s or `"fail"`'s: the gate applies, self-play genuinely ran, and the
+ *  measured number is real — but there is no declared `attainmentBaseline` to call this a
+ *  regression FROM, so it is neither a pass nor an actionable-right-now fail. It reports for
+ *  exactly one gate, `"solved-value-reached"`, exactly when a proven `solvedValue` was NOT
+ *  attained and the manifest never established a baseline (see `solvedValue.attainmentBaseline`'s
+ *  own doc in `@twist-arcade/game-spec`). Never confusable with `"pass"` (a different word,
+ *  distinct at the report layer — see `report.ts`'s `STATUS_LABEL`) and never something a game
+ *  can manufacture to silence the gate (there is no declaration that produces it — it is what
+ *  happens in the ABSENCE of one; the one declaration that WOULD be an abuse vector, a baseline
+ *  of `0`, is refused outright by `InvalidAttainmentBaselineError`). */
+export type GateStatus = "pass" | "fail" | "warn" | "n/a" | "deferred" | "unattained";
 
 export interface GateResult {
   readonly gate: string;
@@ -172,6 +183,31 @@ export class MissingSolvedValueProofError extends Error {
   }
 }
 
+/** Thrown by `evaluateCiGates` when a manifest's `solvedValue.attainmentBaseline` is declared
+ *  but invalid — `rate` not in `(0, 1]`, or a blank `proof` (platform-corrections.md C57). Same
+ *  posture, same seam as `MissingSolvedValueProofError` and `EmptyExceptionJustificationError`:
+ *  refused at the manifest boundary, before any gate runs on the strength of the claim.
+ *
+ *  The `rate <= 0` case is the load-bearing one: a declared `0` baseline would make EVERY future
+ *  measurement read as "at or above baseline" (nothing is ever below zero), which would silence
+ *  `solved-value-reached`'s regression check forever — exactly the waiver-by-declaration this
+ *  status exists to prevent (C57's explicit requirement: "a game must not be able to declare a
+ *  0% baseline and thereby silence the gate forever"). A game earns the regression-detecting
+ *  `"fail"` behavior only by recording a real, positive, cited attainment rate — never by
+ *  asserting a number chosen to duck the gate. */
+export class InvalidAttainmentBaselineError extends Error {
+  constructor(reason: string) {
+    super(
+      `evaluateCiGates: manifest.solvedValue.attainmentBaseline is invalid — ${reason} ` +
+        "(platform-corrections.md C57). A declared baseline must be a real, previously-measured " +
+        "rate in (0, 1] with a non-empty proof pointer naming where it was measured — a 0 rate " +
+        "would make every future measurement look like it never fell below baseline, silencing " +
+        "the regression check permanently, which is exactly what this refusal exists to prevent."
+    );
+    this.name = "InvalidAttainmentBaselineError";
+  }
+}
+
 /** Info `evaluateCiGates` needs to decide whether a CI-suite rollout override has changed the
  *  very quantity `ruthless-vs-standard` compares (platform-corrections.md C26). `active` is
  *  true only when suite "ci" actually substituted `ciGateBudget.twoPlayerCiRollouts` in place
@@ -263,6 +299,24 @@ export function evaluateCiGates(
   // gate runs on the strength of it.
   if (solvedValue && solvedValue.value !== "unknown" && (!solvedValue.proof || solvedValue.proof.trim() === "")) {
     throw new MissingSolvedValueProofError(solvedValue.value);
+  }
+
+  // C57: same posture, same seam — a declared attainmentBaseline is validated before any gate
+  // runs on the strength of it. `rate <= 0` is the abuse vector this refusal exists to close
+  // (see InvalidAttainmentBaselineError's own doc); `rate > 1` and a blank proof are rejected
+  // for the same "a number is evidence about how it was measured" reason (C25) that gates every
+  // other declared claim in this module.
+  const baseline = solvedValue?.attainmentBaseline;
+  if (baseline) {
+    if (baseline.rate <= 0) {
+      throw new InvalidAttainmentBaselineError(`rate ${baseline.rate} is not greater than 0`);
+    }
+    if (baseline.rate > 1) {
+      throw new InvalidAttainmentBaselineError(`rate ${baseline.rate} exceeds 1 (rates are fractions, not percentages)`);
+    }
+    if (baseline.proof.trim() === "") {
+      throw new InvalidAttainmentBaselineError("proof is empty — a baseline must say where it was measured (C25)");
+    }
   }
 
   // C27's abuse guard: nightly is the ONLY tier allowed to report these six rows as anything
@@ -466,9 +520,40 @@ export function evaluateCiGates(
       results.push({ gate: "solved-value-reached", status: "n/a", detail: "no proven manifest.solvedValue — nothing to confirm" });
     } else if (deferral?.active) {
       results.push(deferredGate("solved-value-reached", deferral.reason));
-    } else {
+    } else if (attainment.reached) {
       const detail = `self-play reached the proven "${solvedValue!.value}" ${(attainment.achieved * 100).toFixed(1)}% of the time (floor ${(SOLVED_VALUE_SELF_PLAY_FLOOR * 100).toFixed(0)}%, proof: ${solvedValue!.proof})`;
-      results.push(applyException("solved-value-reached", attainment.reached ? "pass" : "fail", detail, exceptions));
+      results.push(applyException("solved-value-reached", "pass", detail, exceptions));
+    } else {
+      // C57: the floor was not met. Two claims a single absolute floor collapsed into the same
+      // FAIL — "used to reach it, doesn't now" (a regression, only knowable against a declared
+      // `attainmentBaseline`) vs. "has never reached it" (a statement about search adequacy,
+      // not a regression) — get different words here, never the same one.
+      const achievedPct = (attainment.achieved * 100).toFixed(1);
+      const floorPct = (SOLVED_VALUE_SELF_PLAY_FLOOR * 100).toFixed(0);
+      if (baseline) {
+        // A real, previously-measured baseline exists (validated non-empty/positive above) —
+        // falling short of the floor with one declared IS a regression claim: something this
+        // game's bots once did, they no longer do.
+        const detail =
+          `self-play reached the proven "${solvedValue!.value}" only ${achievedPct}% of the time ` +
+          `(floor ${floorPct}%) — regressed from the declared attainmentBaseline of ` +
+          `${(baseline.rate * 100).toFixed(1)}% (${baseline.proof}): this game's bots previously ` +
+          "attained the value and no longer do (platform-corrections.md C57)";
+        results.push(applyException("solved-value-reached", "fail", detail, exceptions));
+      } else {
+        // No baseline was ever declared — there is nothing on record for this to regress FROM,
+        // so this is not a regression claim. Real, measured, visibly non-passing — never `"n/a"`
+        // (the gate DOES apply and WAS measured) and never `"fail"` (nothing regressed) — C27's
+        // `"deferred"` family exists for exactly this shape ("applies, but not measured the way
+        // a bare pass implies"); this status is that family's sibling for "applies, WAS measured,
+        // and still isn't the shape a bare pass/fail implies".
+        const detail =
+          `self-play has never reached the proven "${solvedValue!.value}" (${achievedPct}% observed, ` +
+          `floor ${floorPct}%) — no manifest.solvedValue.attainmentBaseline declared, so there is ` +
+          "no history to regress from; this describes search adequacy for this tree, not a " +
+          "regression (platform-corrections.md C57)";
+        results.push({ gate: "solved-value-reached", status: "unattained", detail });
+      }
     }
   }
 
@@ -671,6 +756,16 @@ export function worstCapHitRate(reports: readonly (Pick<MatchupReport, "metrics"
  *  tier. `report.ts`'s `formatCiSuiteTable` checks this to render that distinction. */
 export function hasDeferredGates(results: readonly GateResult[]): boolean {
   return results.some((r) => r.status === "deferred");
+}
+
+/** True iff any row is `"unattained"` (platform-corrections.md C57) — the same "provisional,
+ *  not a full green" signal `hasDeferredGates` provides, for the sibling status: a report can be
+ *  `ok` (no `"fail"`) while containing a `solved-value-reached` row that was genuinely measured
+ *  and genuinely never met, with no baseline on record to call the shortfall a regression.
+ *  `report.ts`'s `formatCiSuiteTable` checks this so the rendered header never reads as a bare,
+ *  unqualified "OK" when that is true — the same posture C27 established for `"deferred"`. */
+export function hasUnattainedGates(results: readonly GateResult[]): boolean {
+  return results.some((r) => r.status === "unattained");
 }
 
 /**
