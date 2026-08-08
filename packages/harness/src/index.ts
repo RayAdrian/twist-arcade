@@ -68,6 +68,8 @@ export {
   EmptyExceptionJustificationError,
   evaluateCiGates,
   hasDeferredGates as twoPlayerHasDeferredGates,
+  hasUnattainedGates,
+  InvalidAttainmentBaselineError,
   MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE,
   MissingCiRolloutBudgetError,
   MissingSolvedValueProofError,

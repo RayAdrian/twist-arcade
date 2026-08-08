@@ -96,6 +96,20 @@ export const fadeoutManifest: GameManifest = {
     value: "draw",
     proof:
       "docs/research/games/fadeout-solve-report.md §1.1 (remove-first/solid/threefold: draw, 128,170 states, all 9 openings drawn)",
+    // ADDED under platform-corrections.md C57 — has NO effect on today's output (self-play is
+    // at 100%, comfortably above SOLVED_VALUE_SELF_PLAY_FLOOR, so `solved-value-reached` takes
+    // the unchanged "reached" branch regardless of whether a baseline is declared). It matters
+    // for the FUTURE: without it, a real regression here (draw rate falling to, say, 70%) would
+    // render as the harness's "unattained" status ("never established a baseline") rather than
+    // the loud "fail" a genuine regression demands — collapsing exactly the two claims C57
+    // exists to keep apart, in the one game this gate was originally built to protect. The rate
+    // and proof below are the C23 sweep's own witnessed numbers, cited the same way `proof`
+    // above is.
+    attainmentBaseline: {
+      rate: 1.0,
+      proof:
+        "platform-corrections.md C23 sweep: self-play reached the proven draw at EXACTLY 100% across all six tested points (25-100 games, 3,000-10,000 rollouts, zero variance)",
+    },
   },
 
   // CI-only rollout budget (platform-corrections.md C19/C22/C23). The same witnessed sweep

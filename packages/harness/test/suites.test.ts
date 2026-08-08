@@ -16,10 +16,13 @@ import { classicTicTacToe } from "@twist-arcade/engine/testkit/fixtures/classic-
 import { DEFAULT_HARNESS_THRESHOLDS } from "@twist-arcade/game-spec";
 import type { GameManifest, SolvedValueClaim } from "@twist-arcade/game-spec";
 import {
+  assertSuiteOk,
   compareBudgets,
   EmptyExceptionJustificationError,
   evaluateCiGates,
   hasDeferredGates,
+  hasUnattainedGates,
+  InvalidAttainmentBaselineError,
   MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE,
   MissingCiRolloutBudgetError,
   MissingSolvedValueProofError,
@@ -553,6 +556,11 @@ describe("runCiSuite() — C22: an expensive shipped ruthless budget REQUIRES an
 
 const SOLVE_REPORT_PROOF = "docs/research/games/fadeout-solve-report.md §1.1 (remove-first/solid/threefold: draw, 128,170 states, all 9 openings drawn)";
 
+// platform-corrections.md C57's own declared-baseline example — the SAME witnessed sweep
+// SOLVE_REPORT_PROOF cites, worded as an attainment-rate claim rather than a game-value claim.
+const FADEOUT_BASELINE_PROOF =
+  "platform-corrections.md C23 sweep: self-play reached the proven draw at EXACTLY 100% across all six tested points (25-100 games, 3,000-10,000 rollouts, zero variance)";
+
 describe("evaluateCiGates — C23: manifest.solvedValue requires a proof pointer", () => {
   it("throws MissingSolvedValueProofError for a claimed value with NO proof, before any gate is evaluated", () => {
     expect(() =>
@@ -705,13 +713,19 @@ describe("evaluateCiGates — C23: the inverted 'solved-value-reached' gate — 
       capHitRate: 0,
       ruthlessVsStandardWinRate: 0.3,
     };
+    // C57: this IS a regression (Fadeout has a real, previously-measured baseline), so a
+    // declared `attainmentBaseline` is required to get "fail" rather than the new "unattained"
+    // status — see the dedicated C57 describe block below for the case with NO baseline.
     const gates = evaluateCiGates(regressed, DEFAULT_HARNESS_THRESHOLDS, [], "ci", {
       value: "draw",
       proof: SOLVE_REPORT_PROOF,
+      attainmentBaseline: { rate: 1.0, proof: FADEOUT_BASELINE_PROOF },
     });
     const solvedGate = gates.find((g) => g.gate === "solved-value-reached")!;
     expect(solvedGate.status).toBe("fail");
     expect(solvedGate.detail).toContain("70.0%");
+    expect(solvedGate.detail).toMatch(/regressed/i);
+    expect(solvedGate.detail).toContain("100.0%"); // the declared baseline, named
     // SUPERSEDED by C55 (platform-corrections.md): solved-value-reached FAILED here, so the
     // proof no longer buys relief — the three gates below must NOT stay n/a (that was exactly
     // the C55 defect: Bid-Tac-Toe took the relief and failed the attainment check in the same
@@ -749,13 +763,18 @@ describe("evaluateCiGates — C23: the inverted 'solved-value-reached' gate — 
       )!.status
     ).toBe("pass");
 
-    // Mismatched: claiming p1-win but P0 is actually winning — must fail, not silently pass.
+    // Mismatched: claiming p1-win but P0 is actually winning — must NOT silently pass. C57: with
+    // no attainmentBaseline declared, "unattained" (not "fail") is the correct word — there is
+    // no history establishing this claim was ever true, so a shortfall is not a regression. It
+    // remains a real, visible, non-passing status either way — never "n/a", never "pass".
     const mismatched: GateInputs = { ...p0Healthy, firstPlayerWinRate: 0.95 };
-    expect(
-      evaluateCiGates(mismatched, DEFAULT_HARNESS_THRESHOLDS, [], "ci", { value: "p1-win", proof: "p1 proof" }).find(
-        (g) => g.gate === "solved-value-reached"
-      )!.status
-    ).toBe("fail");
+    const mismatchedStatus = evaluateCiGates(mismatched, DEFAULT_HARNESS_THRESHOLDS, [], "ci", {
+      value: "p1-win",
+      proof: "p1 proof",
+    }).find((g) => g.gate === "solved-value-reached")!.status;
+    expect(mismatchedStatus).toBe("unattained");
+    expect(mismatchedStatus).not.toBe("pass");
+    expect(mismatchedStatus).not.toBe("n/a");
   });
 });
 
@@ -775,7 +794,7 @@ describe("evaluateCiGates — C23: the inverted 'solved-value-reached' gate — 
 describe("evaluateCiGates — C55: the three decisiveness gates' n/a relief is CONDITIONAL on solved-value-reached actually passing", () => {
   const BID_TAC_TOE_PROOF = "docs/plans/bid-tac-toe.md C51 (369,802/369,802 saddle points — pure draw at every bid node)";
 
-  it("PLANT (Bid-Tac-Toe's REAL C55 numbers, rollouts=10000): self-play NEVER reaches the proven draw (0.0% draw rate, floor 90%) — solved-value-reached FAILS, and the three decisiveness gates report REAL measured values instead of n/a", () => {
+  it("PLANT (Bid-Tac-Toe's REAL C55 numbers, rollouts=10000): self-play NEVER reaches the proven draw (0.0% draw rate, floor 90%) — solved-value-reached is UNATTAINED (C57: no declared baseline, so this is not a regression claim), and the three decisiveness gates still report REAL measured values instead of n/a", () => {
     const bidTacToe10k: GateInputs = {
       strongVsRandomWinRate: 0.75,
       firstPlayerWinRate: 0.333,
@@ -787,9 +806,18 @@ describe("evaluateCiGates — C55: the three decisiveness gates' n/a relief is C
     const solvedDraw: SolvedValueClaim = { value: "draw", proof: BID_TAC_TOE_PROOF };
     const gates = evaluateCiGates(bidTacToe10k, DEFAULT_HARNESS_THRESHOLDS, [], "ci", solvedDraw);
 
+    // C57 SUPERSEDES this row's own status (recorded here as UPDATED, not deleted, so the
+    // history stays legible): C55 shipped this as a hard "fail" — correct at the time, but the
+    // exact miscalibration C57 fixes, since Bid-Tac-Toe never declared a baseline to regress
+    // from. "Never attained" is a real, visible, non-passing status — just not the same claim as
+    // "regressed". Relief withholding for the three gates below is UNCHANGED by this: it turns
+    // on `attainment.reached` (still false here), never on regressed-vs-unattained.
     const solvedGate = gates.find((g) => g.gate === "solved-value-reached")!;
-    expect(solvedGate.status).toBe("fail");
+    expect(solvedGate.status).toBe("unattained");
+    expect(solvedGate.status).not.toBe("fail");
+    expect(solvedGate.status).not.toBe("pass");
     expect(solvedGate.detail).toContain("0.0%");
+    expect(solvedGate.detail).not.toMatch(/regressed/i);
 
     // Before C55: all three below read "n/a", silencing a currently-meaningful 33.3% FPA / 0.0%
     // draw-rate / 50.0% ruthless-vs-standard exactly as C55 describes. After C55: real verdicts.
@@ -873,9 +901,13 @@ describe("evaluateCiGates — C55: the three decisiveness gates' n/a relief is C
       capHitRate: 0,
       ruthlessVsStandardWinRate: 0.1,
     };
+    // C57: with a declared baseline (this fixture represents Fadeout, same as the "AT the
+    // floor" case above), falling short is a regression — "fail", not "unattained". The
+    // dedicated C57 describe block below covers the no-baseline boundary separately.
     const gates = evaluateCiGates(belowFloor, DEFAULT_HARNESS_THRESHOLDS, [], "ci", {
       value: "draw",
       proof: SOLVE_REPORT_PROOF,
+      attainmentBaseline: { rate: 1.0, proof: FADEOUT_BASELINE_PROOF },
     });
     expect(gates.find((g) => g.gate === "solved-value-reached")!.status).toBe("fail");
     expect(gates.find((g) => g.gate === "draw-rate")!.status).not.toBe("n/a");
@@ -894,7 +926,12 @@ describe("evaluateCiGates — C55: the three decisiveness gates' n/a relief is C
       value: "p0-win",
       proof: "hypothetical p0-win proof",
     });
-    expect(gates.find((g) => g.gate === "solved-value-reached")!.status).toBe("fail");
+    // C57: no attainmentBaseline was declared here, so a shortfall is not knowable as a
+    // regression — "unattained", not "fail" (see the dedicated C57 describe block below for the
+    // full regressed-vs-unattained split; this test's own point, that relief is lost either way
+    // for a DECISIVE value too, is unaffected — attainment.reached, which governs relief, does
+    // not depend on regression vs. unattained).
+    expect(gates.find((g) => g.gate === "solved-value-reached")!.status).toBe("unattained");
     const fpwr = gates.find((g) => g.gate === "first-player-win-rate")!;
     expect(fpwr.status).toBe("pass"); // 50% happens to land inside [35%,65%] — a REAL pass, not a relieved n/a
     expect(fpwr.status).not.toBe("n/a");
@@ -958,6 +995,194 @@ describe("evaluateCiGates — C55: deferral interacts correctly — self-play ne
     const gate = gates.find((g) => g.gate === "ruthless-vs-standard")!;
     expect(gate.status).toBe("n/a");
     expect(gate.detail).toContain("standard");
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// platform-corrections.md C57: `solved-value-reached`'s 90% absolute floor collapsed two claims
+// that demand OPPOSITE responses into the same "fail": "used to reach the value, doesn't now"
+// (a real regression — Fadeout's own protection, built by C23) vs. "has never reached it" (a
+// statement about search adequacy, not a regression — Bid-Tac-Toe's day-one reality). Every test
+// below plants a violation on one side of that split and confirms the OTHER side's code path is
+// what would have made it fail silently wrong — i.e. each plant is checked against what the
+// PRE-C57 single-floor logic would have said, not just against what the new logic says.
+// ---------------------------------------------------------------------------------------
+
+describe("evaluateCiGates — C57: 'unattained' vs 'fail' — two claims that must not print the same word", () => {
+  const REGRESSION_BASELINE_PROOF = "hypothetical-game solve report §2 — self-play measured 100% attainment across every tested budget";
+
+  it("REGRESSION PLANT: a declared attainmentBaseline + a real shortfall FAILS loudly, naming the baseline — even while every OTHER balance number looks perfectly healthy", () => {
+    // Deliberately healthy on every axis a reviewer might otherwise use as a proxy for
+    // 'something is wrong' — strong-vs-random comfortably passes, FPA sits mid-band, draw-rate
+    // and ruthless-vs-standard both clear their own thresholds. The ONLY signal that a real
+    // regression occurred is solved-value-reached itself, which is the entire point of C23's
+    // inversion and exactly what a plant must prove still works after C57 adds a second status
+    // next to it.
+    const regressedButOtherwiseHealthy: GateInputs = {
+      strongVsRandomWinRate: 0.95,
+      firstPlayerWinRate: 0.5,
+      drawRate: 0.5, // < the declared 100% baseline, and below the 90% floor — a real shortfall
+      meanPlies: 20,
+      capHitRate: 0,
+      ruthlessVsStandardWinRate: 0.7,
+    };
+    const gates = evaluateCiGates(regressedButOtherwiseHealthy, DEFAULT_HARNESS_THRESHOLDS, [], "ci", {
+      value: "draw",
+      proof: "hypothetical-game solve report §1 — proven draw",
+      attainmentBaseline: { rate: 1.0, proof: REGRESSION_BASELINE_PROOF },
+    });
+
+    const solvedGate = gates.find((g) => g.gate === "solved-value-reached")!;
+    expect(solvedGate.status).toBe("fail");
+    expect(solvedGate.detail).toContain("50.0%"); // what was actually measured
+    expect(solvedGate.detail).toContain("100.0%"); // the declared baseline, named
+    expect(solvedGate.detail).toMatch(/regressed/i);
+    expect(solvedGate.detail).not.toMatch(/never/i); // must not carry the "unattained" wording too
+
+    // The overall suite must actually be blocked by this — a regression that only shows up as a
+    // real word in a report nobody's tooling acts on is not a fix. `report.ok`'s own formula
+    // (every row !== "fail") must resolve to false here.
+    expect(gates.every((g) => g.status !== "fail")).toBe(false);
+    expect(() => assertSuiteOk({ gameId: "regression-fixture", suite: "ci", ok: false, gates, matchups: null })).toThrow(
+      SuiteFailedError
+    );
+
+    // The three decisiveness gates are unaffected by regressed-vs-unattained (relief withholding
+    // is governed by attainment.reached alone) — confirmed real, not silenced as n/a.
+    for (const name of ["first-player-win-rate", "draw-rate", "ruthless-vs-standard"]) {
+      const gate = gates.find((g) => g.gate === name)!;
+      expect(gate.status, `gate ${name}`).not.toBe("n/a");
+    }
+  });
+
+  it("NEVER-ATTAINED PLANT (Bid-Tac-Toe's real post-C58 numbers): no declared baseline + a real shortfall renders 'unattained' — visibly non-passing, but the suite is NOT blocked, because nothing regressed", () => {
+    // C57/C58's own recorded post-marginal-aggregation-fix numbers: strong-vs-random clears 90%,
+    // FPA and draw-rate both land inside their own healthy bands as PLAYED, ruthless-vs-standard
+    // clears its floor too — "every balance gate passes on real numbers" (the exact situation
+    // the correction's brief describes) — except self-play still never reaches the proven draw.
+    const bidTacToePostFix: GateInputs = {
+      strongVsRandomWinRate: 0.917,
+      firstPlayerWinRate: 0.433,
+      drawRate: 0.0,
+      meanPlies: 7.7,
+      capHitRate: 0,
+      ruthlessVsStandardWinRate: 0.65,
+    };
+    const gates = evaluateCiGates(bidTacToePostFix, DEFAULT_HARNESS_THRESHOLDS, [], "ci", {
+      value: "draw",
+      proof: "docs/plans/bid-tac-toe.md C51 (369,802/369,802 saddle points — pure draw at every bid node)",
+      // deliberately NO attainmentBaseline — this game has never established one
+    });
+
+    const solvedGate = gates.find((g) => g.gate === "solved-value-reached")!;
+    expect(solvedGate.status).toBe("unattained");
+    expect(solvedGate.status).not.toBe("fail"); // the exact pre-C57 word this plant must NOT print
+    expect(solvedGate.status).not.toBe("pass"); // constraint 2: must never read as a pass either
+    expect(solvedGate.detail).toContain("0.0%");
+    expect(solvedGate.detail).toMatch(/never/i);
+    expect(solvedGate.detail).not.toMatch(/regressed/i); // must not borrow the regression's wording
+
+    // Every OTHER gate genuinely passes on its own real threshold — so the suite as a whole is
+    // NOT blocked. This is the concrete case the plant must prove: a game whose bots have never
+    // attained a proof, but whose every other measured number is healthy, ships — while the one
+    // gate that isn't a clean pass stays visible, in its own distinct word.
+    expect(gates.every((g) => g.status !== "fail")).toBe(true);
+    for (const name of ["first-player-win-rate", "draw-rate", "ruthless-vs-standard"]) {
+      const gate = gates.find((g) => g.gate === name)!;
+      expect(gate.status, `gate ${name}`).toBe("pass");
+    }
+
+    // hasUnattainedGates is what a report-layer caller uses to keep this from reading as a bare
+    // "OK" (see report.test.ts's own C57 assertions on the rendered header).
+    expect(hasUnattainedGates(gates)).toBe(true);
+    expect(hasDeferredGates(gates)).toBe(false); // distinct from deferred — self-play DID run
+  });
+
+  it("REFUSAL: a declared attainmentBaseline.rate of exactly 0 is refused — the exact silencing attempt C57 requires be blocked, never a silent pass and never even a silent 'unattained'", () => {
+    expect(() =>
+      evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [], "ci", {
+        value: "draw",
+        proof: "some proof",
+        attainmentBaseline: { rate: 0, proof: "an attempted 0% baseline" },
+      })
+    ).toThrow(InvalidAttainmentBaselineError);
+  });
+
+  it("REFUSAL: a negative rate is refused too (not just exactly 0)", () => {
+    expect(() =>
+      evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [], "ci", {
+        value: "draw",
+        proof: "some proof",
+        attainmentBaseline: { rate: -0.1, proof: "nonsensical negative baseline" },
+      })
+    ).toThrow(InvalidAttainmentBaselineError);
+  });
+
+  it("REFUSAL: a rate above 1 (a percentage mistaken for a fraction, e.g. 100 instead of 1.0) is refused", () => {
+    expect(() =>
+      evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [], "ci", {
+        value: "draw",
+        proof: "some proof",
+        attainmentBaseline: { rate: 100, proof: "100 meant as a percentage, not a fraction" },
+      })
+    ).toThrow(InvalidAttainmentBaselineError);
+  });
+
+  it("REFUSAL: a blank baseline proof is refused, same posture as MissingSolvedValueProofError — a baseline is a claim too and needs its own provenance (C25)", () => {
+    expect(() =>
+      evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [], "ci", {
+        value: "draw",
+        proof: "some proof",
+        attainmentBaseline: { rate: 1.0, proof: "   " },
+      })
+    ).toThrow(InvalidAttainmentBaselineError);
+  });
+
+  it("a valid, tiny positive baseline (0.01) is accepted — the refusal targets EXACTLY zero-and-below, not 'inconveniently low'", () => {
+    const gates = evaluateCiGates({ ...HEALTHY, drawRate: 0.0 }, DEFAULT_HARNESS_THRESHOLDS, [], "ci", {
+      value: "draw",
+      proof: "some proof",
+      attainmentBaseline: { rate: 0.01, proof: "a genuinely, honestly, almost-never-attained baseline" },
+    });
+    // Below its own tiny baseline still fails (0.0% < 1.0%) — a low baseline is not a waiver,
+    // it is just a low bar a real regression can still fall under.
+    expect(gates.find((g) => g.gate === "solved-value-reached")!.status).toBe("fail");
+  });
+
+  it("a rate of exactly 1.0 (the boundary the refusal must NOT catch) is accepted — Fadeout's own real declared value", () => {
+    expect(() =>
+      evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [], "ci", {
+        value: "draw",
+        proof: "some proof",
+        attainmentBaseline: { rate: 1.0, proof: "boundary check" },
+      })
+    ).not.toThrow();
+  });
+
+  it("GUARD-COULD-HAVE-FAILED (C41): the never-attained plant's own inputs, run WITHOUT the C57 distinction (i.e. asserting the pre-C57 behaviour), demonstrate what a vacuous plant would have looked like — confirms the two plants above are checking a real branch, not a test that would pass under either implementation", () => {
+    const bidTacToePostFix: GateInputs = {
+      strongVsRandomWinRate: 0.917,
+      firstPlayerWinRate: 0.433,
+      drawRate: 0.0,
+      meanPlies: 7.7,
+      capHitRate: 0,
+      ruthlessVsStandardWinRate: 0.65,
+    };
+    const noBaseline = evaluateCiGates(bidTacToePostFix, DEFAULT_HARNESS_THRESHOLDS, [], "ci", {
+      value: "draw",
+      proof: "no-baseline proof",
+    }).find((g) => g.gate === "solved-value-reached")!.status;
+    const withBaseline = evaluateCiGates(bidTacToePostFix, DEFAULT_HARNESS_THRESHOLDS, [], "ci", {
+      value: "draw",
+      proof: "with-baseline proof",
+      attainmentBaseline: { rate: 1.0, proof: "same numbers, but now with a declared baseline" },
+    }).find((g) => g.gate === "solved-value-reached")!.status;
+    // Identical GateInputs, identical achieved rate — the ONLY thing that changed is whether a
+    // baseline was declared, and that alone must flip the word between "unattained" and "fail".
+    // If a future edit made these two identical, this is the assertion that would catch it.
+    expect(noBaseline).toBe("unattained");
+    expect(withBaseline).toBe("fail");
+    expect(noBaseline).not.toBe(withBaseline);
   });
 });
 
