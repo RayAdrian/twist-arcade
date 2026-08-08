@@ -768,6 +768,54 @@ export function hasUnattainedGates(results: readonly GateResult[]): boolean {
   return results.some((r) => r.status === "unattained");
 }
 
+// ---------------------------------------------------------------------------------------
+// Mirror-probe declaration (platform-corrections.md C48, routed at C62). NOT one of the six
+// harness-COMPUTED self-play rows this module's header doc scopes `evaluateCiGates` to — a
+// manifest-only declaration with no self-play behind it is a different kind of claim (same
+// reasoning as C23's `n/a` for "no standard tier": a structural fact, not a measurement) — so
+// this lives as its own small, separately-testable function rather than folded into
+// `evaluateCiGates` itself. `runCiSuite` appends its result onto `CiSuiteReport.gates` (below)
+// ONLY when non-null, so a manifest that never declares `mirrorProbe` produces a `gates` array
+// with the exact same six rows this module has always produced — byte-identical, by
+// construction, because the append is conditional on the manifest, not on anything this
+// function computes.
+// ---------------------------------------------------------------------------------------
+
+/** Thrown when a manifest declares `mirrorProbe: { applicable: false, ... }` but `reason` is
+ *  empty or whitespace-only. Same posture, same seam as `EmptyExceptionJustificationError` and
+ *  `MissingSolvedValueProofError`: a declaration that silences a probe must be visible and
+ *  reviewable (platform-corrections.md C48: "a WARN invites someone to tune away a number that
+ *  never meant anything" — the identical hazard applies to a *silent* n/a), refused here, at the
+ *  manifest boundary, before any report is built on the strength of the claim. */
+export class EmptyMirrorProbeReasonError extends Error {
+  constructor(gameId: string) {
+    super(
+      `evaluateMirrorProbeGate: manifest "${gameId}" declares mirrorProbe.applicable === false ` +
+        'but "reason" is empty (or whitespace-only) — platform-corrections.md C48 requires a ' +
+        "stated, reviewable reason for taking a probe out of the report, not a bare opt-out."
+    );
+    this.name = "EmptyMirrorProbeReasonError";
+  }
+}
+
+/**
+ * The C48/C62 mechanism: a game may declare, via `manifest.mirrorProbe`, that the mirror-bot
+ * degeneracy probe (roadmap §6's design gate, "mirror bot <40% as P2") does not apply to it —
+ * "where mirroring is provably not value-preserving, the probe cannot measure its claim" (C48).
+ * Returns the declared `n/a` row, citing the reason verbatim, when declared; `null` when the
+ * manifest does not declare (the default) — a game that never touches `mirrorProbe` gets no row
+ * and no behavior change at all, at any call site. Refuses (`EmptyMirrorProbeReasonError`) a
+ * declared-but-blank reason rather than silently accepting it.
+ */
+export function evaluateMirrorProbeGate(manifest: Pick<GameManifest, "id" | "mirrorProbe">): GateResult | null {
+  const decl = manifest.mirrorProbe;
+  if (decl === undefined) return null;
+  if (decl.reason.trim().length === 0) {
+    throw new EmptyMirrorProbeReasonError(manifest.id);
+  }
+  return { gate: "mirror-probe", status: "n/a", detail: `not applicable: ${decl.reason}` };
+}
+
 /**
  * Runs the real self-play this gate table needs (strong-vs-random, strong self-play, and
  * ruthless-vs-standard when the manifest has a "standard" tier) and evaluates every gate
@@ -822,7 +870,12 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
       capHitRate: Number.NaN,
       ruthlessVsStandardWinRate: standardTier ? Number.NaN : null,
     };
-    const gates = evaluateCiGates(inputs, thresholds, exceptions, suite, manifest.solvedValue, undefined, deferral);
+    const baseGates = evaluateCiGates(inputs, thresholds, exceptions, suite, manifest.solvedValue, undefined, deferral);
+    // C48/C62: mirror-probe is a manifest-only declaration, orthogonal to deferral (it costs no
+    // self-play either way) — appended here too so a deferred-tier report is not the one place
+    // a declared game's n/a row silently goes missing.
+    const mirrorGate = evaluateMirrorProbeGate(manifest);
+    const gates = mirrorGate ? [...baseGates, mirrorGate] : baseGates;
     return {
       gameId: manifest.id,
       suite,
@@ -914,7 +967,13 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
     standardN: standardTier && standardTier.budget.kind === "rollouts" ? standardTier.budget.n : null,
   };
 
-  const gates = evaluateCiGates(inputs, thresholds, exceptions, suite, manifest.solvedValue, ruthlessBudgets);
+  const baseGates = evaluateCiGates(inputs, thresholds, exceptions, suite, manifest.solvedValue, ruthlessBudgets);
+  // C48/C62: see the deferred branch above for why this is appended here rather than folded
+  // into evaluateCiGates itself, and why it is conditional on the manifest (never on suite,
+  // budget, or anything else computed in this function) — a manifest that never sets
+  // `mirrorProbe` gets `mirrorGate === null` and `gates === baseGates`, unchanged.
+  const mirrorGate = evaluateMirrorProbeGate(manifest);
+  const gates = mirrorGate ? [...baseGates, mirrorGate] : baseGates;
 
   return {
     gameId: manifest.id,

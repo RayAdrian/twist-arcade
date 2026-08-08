@@ -29,13 +29,14 @@
 // WARN invites someone to tune away a number that never meant anything." The correct report
 // for this game's mirror probe is `n/a`, with this reason — not the roster's default WARN-on-
 // absence behavior. That distinction lives in the harness's gate-reporting layer
-// (packages/harness/src/suites.ts), not in a per-game probes file, and implementing it there
-// is future (D2/D3-adjacent, harness-owned) work, exactly the position Bid-Tac-Toe's own
-// probes.ts left it in after C48 (flagged "Implement at B3", not yet landed at this writing).
-// No `mirrorMove` is exported from this file on purpose: exporting the scaffold's vacuous
-// "always play the first legal move" placeholder would risk it being wired into
-// `mirrorAgent()` later and silently read as a real (and meaningless) win-rate number instead
-// of the `n/a` this game's structure actually calls for.
+// (packages/harness/src/suites.ts's `evaluateMirrorProbeGate`, routed at C62) — this file
+// supplies only the reason string; `manifest.ts` declares `mirrorProbe: { applicable: false,
+// reason: MIRROR_PROBE_NOT_APPLICABLE_REASON }`, which is what makes `runCiSuite`'s real report
+// carry a `mirror-probe: n/a` row citing this text, rather than the absence a reader could not
+// distinguish from "nobody thought about it". No `mirrorMove` is exported from this file on
+// purpose: exporting the scaffold's vacuous "always play the first legal move" placeholder
+// would risk it being wired into `mirrorAgent()` later and silently read as a real (and
+// meaningless) win-rate number instead of the `n/a` this game's structure actually calls for.
 export const MIRROR_PROBE_NOT_APPLICABLE_REASON =
   "no prior move WITHIN a round exists to mirror — every non-terminal state is a single joint " +
   "pick (plan §1.1), so a mirror strategy would need to see the opponent's THIS-round pick " +

@@ -19,7 +19,9 @@ import {
   assertSuiteOk,
   compareBudgets,
   EmptyExceptionJustificationError,
+  EmptyMirrorProbeReasonError,
   evaluateCiGates,
+  evaluateMirrorProbeGate,
   hasDeferredGates,
   hasUnattainedGates,
   InvalidAttainmentBaselineError,
@@ -1600,5 +1602,193 @@ describe("runCiSuite — C27: real wiring, no self-play at all when deferral is 
     expect(() => runCiSuite(classicTicTacToe, manifest, { seed: "suites-test:c27:no-ruthless-tier", games: 10 })).toThrow(
       /no "ruthless" difficulty tier/
     );
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// platform-corrections.md C48 (ruled), routed at C62 — a game may declare, via
+// `manifest.mirrorProbe`, that the mirror-bot degeneracy probe (roadmap §6's design gate,
+// "mirror bot <40% as P2") does not apply to it: "where mirroring is provably not
+// value-preserving, the probe cannot measure its claim... a WARN invites someone to tune away
+// a number that never meant anything." The gate must report `n/a`, citing the reason — and a
+// game that never declares must see NO change at all, at any call site.
+// ---------------------------------------------------------------------------------------
+
+describe("evaluateMirrorProbeGate() — pure evaluator (C48/C62)", () => {
+  it("returns null when the manifest does not declare mirrorProbe at all (the default)", () => {
+    expect(evaluateMirrorProbeGate({ id: "some-game" })).toBeNull();
+  });
+
+  it("returns an n/a GateResult citing the reason verbatim when declared", () => {
+    const result = evaluateMirrorProbeGate({
+      id: "duel-draft",
+      mirrorProbe: { applicable: false, reason: "no prior move within a round exists to mirror" },
+    });
+    expect(result).not.toBeNull();
+    expect(result!.gate).toBe("mirror-probe");
+    expect(result!.status).toBe("n/a");
+    expect(result!.detail).toContain("no prior move within a round exists to mirror");
+  });
+
+  it("REFUSES a declared-but-empty reason (EmptyMirrorProbeReasonError), never silently accepting a bare opt-out", () => {
+    expect(() =>
+      evaluateMirrorProbeGate({ id: "some-game", mirrorProbe: { applicable: false, reason: "" } })
+    ).toThrow(EmptyMirrorProbeReasonError);
+  });
+
+  it("REFUSES a whitespace-only reason the same way (not merely an empty-string check)", () => {
+    expect(() =>
+      evaluateMirrorProbeGate({ id: "some-game", mirrorProbe: { applicable: false, reason: "   \n\t " } })
+    ).toThrow(EmptyMirrorProbeReasonError);
+  });
+
+  it("PLANTED VIOLATION: if the empty-reason guard is removed, the refusal test above stops throwing — proving the guard, not the test, is what fires", () => {
+    // Mutation-test the guard itself (C41: "a guard that passes because the situation could not
+    // distinguish honesty from cheating"): a version of evaluateMirrorProbeGate that skips the
+    // trim().length === 0 check would return a GateResult instead of throwing. Reproduced here
+    // directly (not by editing suites.ts) so this test file is its own evidence that the assertion
+    // above is load-bearing, not vacuous.
+    function unguarded(manifest: { id: string; mirrorProbe?: { applicable: false; reason: string } }) {
+      const decl = manifest.mirrorProbe;
+      if (decl === undefined) return null;
+      // (guard intentionally omitted here)
+      return { gate: "mirror-probe", status: "n/a" as const, detail: `not applicable: ${decl.reason}` };
+    }
+    // With the guard removed, a blank reason no longer throws — it silently produces a row.
+    expect(() => unguarded({ id: "some-game", mirrorProbe: { applicable: false, reason: "" } })).not.toThrow();
+    // The REAL function still throws for the identical input — confirming the guard in suites.ts
+    // is what makes the "REFUSES a declared-but-empty reason" test above fail if ever removed.
+    expect(() =>
+      evaluateMirrorProbeGate({ id: "some-game", mirrorProbe: { applicable: false, reason: "" } })
+    ).toThrow(EmptyMirrorProbeReasonError);
+  });
+});
+
+describe("runCiSuite() — C48/C62: mirror-probe declaration wired into the real report", () => {
+  const baseManifest: GameManifest = {
+    id: "mirror-probe-fixture",
+    title: "Mirror Probe Fixture",
+    classic: "Tic-Tac-Toe",
+    ruleSentence: "suites.test.ts C48/C62 fixture.",
+    tags: [],
+    estMinutes: 1,
+    modes: { bot: true, hotseat: false, asyncLink: false },
+    players: { min: 2, max: 2 },
+    difficultyTiers: [
+      { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 200 }, minReplyMs: 0 },
+    ],
+  };
+
+  it("a manifest that does NOT declare mirrorProbe gets the exact same six gate rows as before this mechanism existed — no 'mirror-probe' row appears", () => {
+    const report = runCiSuite(classicTicTacToe, baseManifest, { seed: "suites-test:mirror:undeclared", games: 20 });
+    expect(report.gates.find((g) => g.gate === "mirror-probe")).toBeUndefined();
+    expect(report.gates.map((g) => g.gate).sort()).toEqual(
+      [
+        "strong-vs-random",
+        "first-player-win-rate",
+        "draw-rate",
+        "mean-plies",
+        "ruthless-vs-standard",
+        "solved-value-reached",
+      ].sort()
+    );
+  });
+
+  it("a manifest that DECLARES mirrorProbe gets a seventh 'mirror-probe' row, status n/a, citing the reason — every other row unchanged", () => {
+    const declaringManifest: GameManifest = {
+      ...baseManifest,
+      id: "mirror-probe-fixture-declaring",
+      mirrorProbe: { applicable: false, reason: "bids and the star have no reflective analogue" },
+    };
+    const report = runCiSuite(classicTicTacToe, declaringManifest, { seed: "suites-test:mirror:declared", games: 20 });
+    const mirrorRow = report.gates.find((g) => g.gate === "mirror-probe");
+    expect(mirrorRow).toBeDefined();
+    expect(mirrorRow!.status).toBe("n/a");
+    expect(mirrorRow!.detail).toBe("not applicable: bids and the star have no reflective analogue");
+    expect(report.gates.length).toBe(7); // the six existing rows, plus this one
+  });
+
+  it("declaring mirrorProbe changes NOTHING about the other six gates or the overall verdict — under the IDENTICAL seed, it only adds one n/a row (n/a is never a failure, so it can never independently flip report.ok)", () => {
+    const seed = "suites-test:mirror:parity";
+    const undeclaredReport = runCiSuite(classicTicTacToe, baseManifest, { seed, games: 20 });
+    const declaringManifest: GameManifest = {
+      ...baseManifest,
+      id: "mirror-probe-fixture-parity",
+      mirrorProbe: { applicable: false, reason: "provably not value-preserving for this game" },
+    };
+    const declaredReport = runCiSuite(classicTicTacToe, declaringManifest, { seed, games: 20 });
+
+    // Same seed, same tiers, same engine — the six pre-existing gates must be byte-identical
+    // (manifest.id and mirrorProbe feed nothing into runMatchup's own seeding), regardless of
+    // whether THIS run happens to pass or fail every one of them for unrelated reasons.
+    const declaredNonMirrorGates = declaredReport.gates.filter((g) => g.gate !== "mirror-probe");
+    expect(declaredNonMirrorGates).toEqual(undeclaredReport.gates);
+
+    // The verdict tracks the SAME six gates either way — declaring mirrorProbe can only ADD an
+    // n/a row (never "fail"), so it never independently changes report.ok in either direction.
+    expect(declaredReport.ok).toBe(undeclaredReport.ok);
+  });
+
+  it("the mirror-probe row appears even under an active C27 deferral (it costs no self-play, so it is never itself deferred)", () => {
+    const deferredDeclaringManifest: GameManifest = {
+      ...baseManifest,
+      id: "mirror-probe-fixture-deferred",
+      difficultyTiers: [
+        { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 10_000 }, minReplyMs: 0 },
+      ],
+      ciGateBudget: { deferGatesToNightly: { reason: "unaffordable at ci tier — suites.test.ts fixture" } },
+      mirrorProbe: { applicable: false, reason: "no prior move within a round to mirror" },
+    };
+    const report = runCiSuite(classicTicTacToe, deferredDeclaringManifest, {
+      seed: "suites-test:mirror:deferred",
+      games: 20,
+    });
+    expect(report.matchups).toBeNull(); // deferral really is active
+    const mirrorRow = report.gates.find((g) => g.gate === "mirror-probe");
+    expect(mirrorRow?.status).toBe("n/a");
+    expect(mirrorRow?.detail).toBe("not applicable: no prior move within a round to mirror");
+  });
+
+  it("an UNDECLARED manifest under the SAME active C27 deferral still gets no mirror-probe row — isolation holds in the deferred branch too, not only the normal one", () => {
+    const deferredUndeclaredManifest: GameManifest = {
+      ...baseManifest,
+      id: "mirror-probe-fixture-deferred-undeclared",
+      difficultyTiers: [
+        { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 10_000 }, minReplyMs: 0 },
+      ],
+      ciGateBudget: { deferGatesToNightly: { reason: "unaffordable at ci tier — suites.test.ts fixture" } },
+      // deliberately NO mirrorProbe here
+    };
+    const report = runCiSuite(classicTicTacToe, deferredUndeclaredManifest, {
+      seed: "suites-test:mirror:deferred-undeclared",
+      games: 20,
+    });
+    expect(report.matchups).toBeNull(); // deferral really is active
+    expect(report.gates.find((g) => g.gate === "mirror-probe")).toBeUndefined();
+    expect(report.gates.length).toBe(6);
+  });
+
+  it("renders visibly distinct from PASS in formatCiSuiteTable (C2: a skipped gate and a passed gate must never look the same)", () => {
+    const declaringManifest: GameManifest = {
+      ...baseManifest,
+      id: "mirror-probe-fixture-render",
+      mirrorProbe: { applicable: false, reason: "board is spatially symmetric but bids/star are not" },
+    };
+    const report = runCiSuite(classicTicTacToe, declaringManifest, { seed: "suites-test:mirror:render", games: 20 });
+    const table = formatCiSuiteTable(report);
+    expect(table).toContain("[N/A ] mirror-probe: not applicable: board is spatially symmetric but bids/star are not");
+    expect(table).not.toContain("[PASS] mirror-probe");
+    expect(table).not.toContain("[WARN] mirror-probe");
+  });
+
+  it("PLANTED VIOLATION (isolation direction): if runCiSuite unconditionally appended a mirror-probe row regardless of the manifest, an undeclared game's gates array would grow — proving the conditional append (not luck) is what keeps undeclared games byte-identical", () => {
+    const before = runCiSuite(classicTicTacToe, baseManifest, { seed: "suites-test:mirror:isolation", games: 20 });
+    // Simulate the violation locally: an unconditional append (the bug this test guards against
+    // would look like) always adds a row, even with mirrorGate === null upstream.
+    const unconditionallyAppended = [...before.gates, { gate: "mirror-probe", status: "n/a" as const, detail: "not applicable: (bug) always appended" }];
+    expect(unconditionallyAppended.length).toBe(before.gates.length + 1);
+    // The REAL runCiSuite output for this same undeclared manifest does NOT do this:
+    expect(before.gates.length).toBe(6);
+    expect(before.gates.find((g) => g.gate === "mirror-probe")).toBeUndefined();
   });
 });
