@@ -3578,3 +3578,45 @@ balance gate passes on real numbers. **The red gate was, in part, a miscalibrati
 That is not a decision to ship. `unattained` is still visible, still not a pass, and still says our
 Ruthless bot plays this game poorly. But the question in front of the user is now the honest one —
 *ship a provably fair game whose bot is mediocre?* — rather than *waive a failing gate?*
+
+---
+
+## C60 — Duel Draft is planned. Its kill-test runs before its engine exists.
+
+Rulings are in `docs/plans/duel-draft.md` §15. Three things in the plan are worth extracting.
+
+**The kill-test costs nothing to lose.** The rules fit in ~15 lines of logic, so D0 is a standalone
+~50–80-line script that measures the outcome structure with **no engine, no platform, no search** —
+the Order vs Chaos OV0 pattern, which produced the cheapest kill in this build's history. Two-tail
+rule, pre-registered: **<5% decisive under every scripted attacker** (win unreachable) **or a pure
+defender forcing ≥95% draws** (defense is free — Wrap's shape reached by a different route). If it
+fires, there is no engine to throw away. That is what "hedge" should mean.
+
+**A falsified balance hypothesis here means a bug, not a design finding.** Duel Draft has *zero*
+structural seat asymmetry — no first mover, no star, no seat mentioned in the rules — so the
+expected seat-0 win rate is exactly 50% by relabeling invariance. **H1 failing on two seeds is
+therefore diagnostic of a seat-indexed defect in the engine or the joint-move machinery — precisely
+where C56 lived — and goes to the bug lane, never to tuning.** No other game in this catalogue can
+make that inference, and it converts a balance gate into a correctness probe for free.
+
+**It found a failure mode none of the previous plans could have.** On a seat-symmetric position, two
+identical *deterministic* policies compute the same pick and **collide with certainty** — round one
+of self-play could degenerate into ritual mutual destruction. The plan pre-registers a collision-rate
+probe with a flag at ≥50%, and names the remedy as platform work (stochastic selection at
+simultaneous roots) rather than a per-game hack. Bid-Tac-Toe's plan named deterministic play of a
+mixed-optimum game as a risk and its solve then mooted it by proving the optimum pure; **nothing moots
+it here**, because this game's equilibria are expected to be mixed.
+
+### Why it proceeds despite an open platform defect
+
+C57/C58 left `strong-vs-random` still declining with budget on Bid-Tac-Toe. Rather than block, the
+plan inherits a **search-soundness protocol** (§7) with a binding halt: a declining
+budget-monotonicity curve stops gating and converts the finding into platform work, **with no game
+verdict issued.**
+
+The argument for proceeding is the plan's own and it is good: **Duel Draft is a second, smaller
+simultaneous tree, and therefore the best available diagnostic instrument for the residue.** A 3×3
+miniature is exactly solvable here — the shipped 4×4 is not (≥10⁸ states, and mixed equilibria need
+an LP per node) — so there is an exact reference available to discriminate *"the game is degenerate"*
+from *"the search is broken."* That is the instrument Bid-Tac-Toe's solve turned out to be, and the
+trigger and one-day cap are pre-registered **so the decision is not made under result-pressure.**
