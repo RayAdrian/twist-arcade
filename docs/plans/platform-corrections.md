@@ -3620,3 +3620,64 @@ miniature is exactly solvable here — the shipped 4×4 is not (≥10⁸ states,
 an LP per node) — so there is an exact reference available to discriminate *"the game is degenerate"*
 from *"the search is broken."* That is the instrument Bid-Tac-Toe's solve turned out to be, and the
 trigger and one-day cap are pre-registered **so the decision is not made under result-pressure.**
+
+---
+
+## C61 — Duel Draft clears D0. The kill-test cost 0.51 seconds.
+
+### The numbers
+
+```
+Rung A  random vs random, n=2,000 × 2 seeds
+        decisive 31.8% / 34.9% · mean rounds ~8.4 · mean collisions/game ~1.68
+
+Rung B  mixed-greedy vs random            79–82% decisive
+        mixed-greedy vs defensive-cover   64–68% decisive
+        defensive-cover draw-force        tops out at 36%
+```
+
+**Neither tail fired.** Tail 1 needs every attacker below **5%** decisive; the deciding attacker is
+at 64–82%. Tail 2 needs a defender forcing **≥95%** draws; the best is 36%. **The `winLength: 3`
+lever was never spent** and remains available.
+
+H2's sketch prior — ≥20% decisive under scripted attackers — is cleared by a wide margin (64–90%
+across pairings). The measurement did not contradict the sketch, which is worth stating precisely
+because I told the team the measurement would win if it did.
+
+### The property the whole design was for
+
+**The full run — self-test plus both rungs, both seeds, 9,000+ simulated games — completes in 0.51
+seconds**, with zero import from `@twist-arcade/engine`, the harness, or the bots.
+
+That is what "the kill-test costs nothing to lose" means in practice. Order vs Chaos's equivalent
+took a morning and killed a game before an engine existed; this one took half a second and cleared
+one. Either outcome is cheap, which is the only reason a pre-registered kill rule is honest — a rule
+you cannot afford to run is not a rule.
+
+### The degenerate pairing, reported rather than smoothed away
+
+`greedy-threat vs defensive-cover`, and both of those policies in self-play, read **exactly 0.0%
+decisive, 16.0 mean rounds, 16.00 mean collisions** — *every round is a collision, in every game, on
+both seeds.*
+
+Root cause, correctly diagnosed rather than patched: defensive-cover's own spec is *"cover the
+opponent's most advanced live line, else play greedily"*, and on a board where **no mark is ever
+placed** there is nothing to cover — so it is computationally identical to greedy-threat, both seats
+pick the same argmax every round, and the board destroys itself to exhaustion.
+
+**This is the plan's §7.3 prediction arriving early, in a pairing it did not anticipate.** The plan
+warned that two identical deterministic policies collide with certainty on symmetric positions and
+pre-registered a probe for it in self-play; it showed up in a *cross*-policy pairing because the two
+policies degenerate to the same function. The team reported it, explained it, and noted it does not
+move the verdict — both kill tails key off `mixed-greedy`, which exists precisely because of this
+effect.
+
+An agent that "fixed" those zeros into plausible numbers would have destroyed the clearest early
+evidence that this game's deterministic-collision hazard is real, and that §7.3's probe is
+load-bearing rather than theoretical.
+
+### Standing
+
+D0 unblocks D1 and nothing further. The engine, the search-soundness protocol (§7), the budget
+sweep, and the gate table all remain — and the C55/C57 residue still means **no gate number from
+this game may be read as a game verdict until budget-monotonicity is shown non-declining.**
