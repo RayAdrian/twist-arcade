@@ -38,6 +38,22 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 | duel-draft (D1: engine + probes file for Duel Draft — no turns, simultaneous picks with collision-destroy, `docs/plans/duel-draft.md`) | `../claude-project-duel-draft` | `feature/duel-draft` | `twistarcade_duelraft` | 56421–56429 (RELEASED) | never started (no DB) — engine-only work, no game code touched Postgres | **CLOSED 2026-08-12** — Duel Draft KILLED at D2 (platform-corrections.md C66: forced draw under competent play; self-play draws 99% at both sanctioned winLength values, scripted yardstick 0.0% at every seed/budget). Worktree removed, branch deleted, no containers ever created. Engine stays on `main` unregistered as the second `simultaneous: true` exerciser; evidence at docs/research/games/duel-draft-d2-report.md. Historical note: the brief's suggested block 56321–56329 was already held by an unrelated project (`stampmate-qa`, confirmed via `docker ps`), so 56421–56429 (team 21) was claimed instead, verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` (all 9 ports silent) |
 | mirrorna (C48/C62: route the never-implemented mirror-probe `n/a`-with-reason ruling — a manifest declaration mechanism plus the harness gate that reports it, wired into Duel Draft and (blocked — see status) Bid-Tac-Toe, `docs/plans/platform-corrections.md` C48/C62) | `../claude-project-mirrorna` | `feature/mirror-na` | `twistarcade_mirrorna` | 56521–56529 (RELEASED) | never started (no DB) — harness/gate-table work only, no game code touched Postgres | **CLOSED 2026-08-12** — merged to `main` at 5f17793 after two Fable review passes, all eight findings applied, none waived. Byte-identical gate output re-verified after each commit. Worktree removed, branch deleted, no containers ever created. Historical note: verified free with BOTH `lsof -nP -iTCP:<port> -sTCP:LISTEN` (all 9 ports silent) AND `docker ps` (no container publishes any port in range; C62's own lesson — `lsof` alone missed the 56321 collision) before claiming |
 
+
+> **2026-08-12 — mass teardown (platform-corrections.md C67).** Fourteen teams were found leaked:
+> branches merged, worktrees never removed, port blocks still marked CLAIMED. CLAUDE.md §6 calls
+> teardown "not optional and not deferred"; it had been deferred fourteen times. All fourteen are now
+> closed, every merged branch deleted, and **every port block below is RELEASED** — no team on this
+> host holds a block. No Supabase stack was ever started by any of them, so there were no containers
+> or volumes to remove; verified with `docker ps -a`, not assumed.
+>
+> Teardown now begins with an audit for uncommitted or untracked non-scratch work, never with a
+> removal. That audit is what caught `games/bid-tac-toe/` — a complete game plus its solve report —
+> existing only as untracked files, rescued to `0ef6c88`. See C67.
+>
+> Remaining: `main`, and `../claude-project-bid-tac-toe` (rescued work, fate is a pending user
+> decision). Stale unmerged branches kept deliberately, never to be merged: `feature/shell` (39,090
+> lines behind main), `feature/order-vs-chaos`, `feature/wrap`.
+
 ## Port blocks
 
 | Block | Team | Status |
@@ -53,15 +69,15 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 | 55121–55129 (team 8) | ninegrids | CLAIMED |
 | 55221–55229 (team 9) | phase2schema | **RELEASED** — team closed 2026-08-07 |
 | 55321–55329 (team 10) | deferstatus | CLAIMED |
-| 55421–55429 (team 11) | ninegridsui | CLAIMED — verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
-| 55521–55529 (team 12) | ordervschaos | CLAIMED — verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
-| 55621–55629 (team 13) | chunkbudget | CLAIMED — verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
-| 55721–55729 (team 14) | tilt | CLAIMED — verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
-| 55821–55829 (team 15) | bidtactoe | CLAIMED — verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
-| 55921–55929 (team 16) | chunkfix | CLAIMED — verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
-| 56021–56029 (team 17) | solvedrelief | CLAIMED — verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
-| 56121–56129 (team 18) | mctssim | CLAIMED — verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
-| 56221–56229 (team 19) | attainbase | CLAIMED — verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
+| 55421–55429 (team 11) | ninegridsui | RELEASED 2026-08-12 (C67) — was: verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
+| 55521–55529 (team 12) | ordervschaos | RELEASED 2026-08-12 (C67) — was: verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
+| 55621–55629 (team 13) | chunkbudget | RELEASED 2026-08-12 (C67) — was: verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
+| 55721–55729 (team 14) | tilt | RELEASED 2026-08-12 (C67) — was: verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
+| 55821–55829 (team 15) | bidtactoe | RELEASED 2026-08-12 (C67) — was: verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
+| 55921–55929 (team 16) | chunkfix | RELEASED 2026-08-12 (C67) — was: verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
+| 56021–56029 (team 17) | solvedrelief | RELEASED 2026-08-12 (C67) — was: verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
+| 56121–56129 (team 18) | mctssim | RELEASED 2026-08-12 (C67) — was: verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
+| 56221–56229 (team 19) | attainbase | RELEASED 2026-08-12 (C67) — was: verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
 | 56321–56329 (team 20) | — | **NOT AVAILABLE** — externally occupied by an unrelated project's Docker containers (`supabase_kong_stampmate-qa`, `supabase_db_stampmate-qa`), confirmed via `docker ps` on 2026-08-08. Never claimed by a team here; skip when allocating the next block. |
 | 56421–56429 (team 21) | — | **FREE** — released 2026-08-12 when duel-draft closed (game killed, C66). Never bound: the team ran no Supabase stack. |
 | 56521–56529 (team 22) | — | **FREE** — released 2026-08-12 when mirrorna closed (merged at 5f17793). Never bound: the team ran no Supabase stack. Historical note: claimed after verifying with `lsof` AND `docker ps` (63 unrelated containers running on this host; none publish a port in this range) before claiming, per C62's "lsof alone is not sufficient" finding |

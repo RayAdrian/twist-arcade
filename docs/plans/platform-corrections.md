@@ -4012,3 +4012,63 @@ raises its stakes: if Bid-Tac-Toe is also not shipped, the catalogue loses both 
 Phase 1 is a game short, and `simultaneous: true` ships as a platform feature with no live game
 exercising it — while still carrying two unresolved search corrections. Surfaced to the user, not
 decided here.
+
+## C67 — An entire game existed only as untracked files, and I nearly deleted it.
+
+Closing out Duel Draft, I audited the worktree register and found **fourteen leaked teams**: branches
+long since merged, worktrees never removed, port blocks still marked CLAIMED. CLAUDE.md §6 calls
+teardown "not optional and not deferred." It had been deferred fourteen times, by me.
+
+That is the boring finding. Here is the other one.
+
+### `games/bid-tac-toe/` was in no branch, on no remote, in no commit
+
+A **complete game** — engine, backward-induction solver, an independent brute-force oracle,
+heuristic, probes, a UI board, eight test files, 424 KB — plus `bid-tac-toe-solve-report.md` and
+`bid-tac-toe-b3-report.md`, existed **only as untracked files in one worktree directory**. The plan
+(`docs/plans/bid-tac-toe.md`) was committed. The implementation of it never was.
+`feature/bid-tac-toe` had only ever carried a docs registration.
+
+**The harness cites that solve report by name, in its own gate output**, as the proof backing
+solved-value relief:
+
+> `[N/A] draw-rate: manifest.solvedValue is a proven draw (docs/research/games/bid-tac-toe-solve-report.md §1 (B=8: exact backward induction, pure at every bid node — 369,802/369,802 — cross-checked against an independent brute-force oracle at B<=3))`
+
+A gate was standing down on the authority of a document that was not in version control.
+
+**And I ran `git worktree remove --force` twice tonight**, on mirrorna and duel-draft, minutes
+earlier. A different ordering of the same evening deletes an exhaustive solve, its oracle
+cross-check, and the game it belongs to, with no copy anywhere.
+
+### This is C21 again, and it should have been caught by C21
+
+C21 found the Supabase schema living only on the remote, never in version control, and ruled it into
+`supabase/migrations/`. The identical shape recurred here and I did not recognise it, because I had
+filed C21 as *"a database thing"* rather than as what it actually was: **a load-bearing artifact
+that other artifacts cite, held in exactly one place, with no history and no copy.**
+
+The generalised rule, which C21 should have carried and now does: **if a gate, a report, or a
+document cites an artifact, that artifact belongs in version control.** The citation *is* the
+dependency declaration. A gate quoting a filename it cannot prove exists is worth no more than the
+mirror probe that was never computed (C64).
+
+### What went right, and it is the only reason this is a correction and not an obituary
+
+**I audited before tearing down.** Every one of the fifteen worktrees was checked for uncommitted or
+untracked non-scratch content before a single `--force` was issued after the discovery. Fourteen came
+back clean; one did not, and it was rescued to `0ef6c88` before anything else happened. The audit
+cost one command.
+
+The near-miss is entirely attributable to ordering luck, so the habit is now explicit: **teardown
+begins with an audit for unsaved work, never with a removal.** `--force` exists to override the
+warning that would have saved this game, and that warning fired correctly on Tilt minutes later —
+where I checked, found only scratch, and confirmed against the docs that nothing cited it before
+overriding.
+
+### Ledger after the sweep
+
+Two worktrees remain (`main`, and `bid-tac-toe` holding the rescued work), no containers, no
+Supabase stacks, all port blocks released. Three stale branches survive unmerged and unremoved
+(`order-vs-chaos`, `shell`, `wrap`) — `shell` sits 39,090 lines *behind* main and must never be
+merged; they are kept rather than deleted because deleting an unmerged branch is the one destructive
+step this entry exists to argue against.
