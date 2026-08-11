@@ -4072,3 +4072,70 @@ Supabase stacks, all port blocks released. Three stale branches survive unmerged
 (`order-vs-chaos`, `shell`, `wrap`) — `shell` sits 39,090 lines *behind* main and must never be
 merged; they are kept rather than deleted because deleting an unmerged branch is the one destructive
 step this entry exists to argue against.
+
+## C68 — The remote has not seen 122 commits, and nightly has never once run.
+
+The degeneracy-probe plan listed a risk I had not thought to ask about: *"nightly completion
+unverified — the probes' fail tier is only real if nightly finishes; verification owed."* Checking it
+took one command and produced the largest finding of the session.
+
+### Three facts, verified from the GitHub Actions history
+
+1. **`origin/main` is 122 commits behind local `main`.** The remote's newest commit is `faa675d`,
+   *"docs(plan): C15."* Everything since — fifty-three corrections, five games' gate tables, the
+   platform spine, the schema, tonight's entire body of work — **exists only on this machine.**
+2. **CI's last verdict on this repository was a failure, on 2026-08-04**, eight days ago. Nothing has
+   been pushed since, so CI has not been asked to run on any of it.
+3. **Nightly has run eight times and failed eight times**, every night since 2026-08-04, each in 3–5
+   seconds. The annotation is unambiguous: *"The job was not started because recent account payments
+   have failed or your spending limit needs to be increased."* **Nightly has never completed, ever.**
+
+### The correction I have to make to my own alarm
+
+My first reading of `gh run list` was *"every CI run has failed."* That was false and I checked
+before saying it anywhere durable: **17 of 43 runs succeeded**, all of them on or before
+2026-08-03T10:18. CI worked, then broke. Overstating this would have been the same error as
+understating it — the point of the check is the true shape, not the alarming one.
+
+The 18 CI failures that followed were **real gate failures, not infrastructure**:
+
+```
+[FAIL] mean-plies: mean 44.8 plies in band, but cap-hit rate 1.00% > 0 (any cap hit fails)
+[WARN] ruthless-vs-standard: 0.0% (min 60.0%, ci)
+```
+
+That is the gate table doing its job. It has simply not been consulted since.
+
+### What this means for every "green" claim in this document
+
+It does **not** mean the work is unverified. "Green" here has always been established by running
+typecheck, lint, and the suites locally, and I have spot-checked those rather than trusting agent
+reports (CLAUDE.md §8). Tonight's merge was gated on a fixed-seed byte-identical diff I ran myself.
+That evidence stands.
+
+What it means is narrower and still serious: **there is no independent enforcement.** Every green
+determination in this project traces back to a command an agent or I ran on one laptop. The two
+mechanisms designed to check that work from outside — PR CI and the nightly sweep — have been
+inert for eight days and forever, respectively. And the nightly tier is specifically where
+`ruthless-vs-standard` becomes a hard fail and where C27's `deferGatesToNightly` sends deferred
+gates. **Every gate any game deferred "to nightly" was deferred into a job that has never run.**
+"Deferred" has meant "discarded," and nothing said so.
+
+### This is C67 at repo scale
+
+C67 was a game living in exactly one directory with no copy. This is **the entire repository living
+in exactly one working tree with no copy** — same defect, four orders of magnitude larger, and the
+one I had just written a correction about while it was true of everything around me. The rescue
+commit put Bid-Tac-Toe into git; git itself has never left this machine.
+
+### The two things only the user can do, and why I did not do them
+
+1. **GitHub Actions billing is failing.** No code change fixes this. Until it is resolved, nightly
+   cannot run and a push would produce failing runs for a reason unrelated to the code.
+2. **122 commits are unpushed.** Pushing is outward-facing and not mine to do unasked — and doing it
+   now would fire CI against a billing block, so the ordering matters: billing first, then push, then
+   read CI's verdict as the first independent check this work has ever had.
+
+Neither is a defect in the code. Both are recorded here because a plan that assumes CI enforces
+something, when CI has not run in eight days, is exactly the C64 shape — and the degeneracy-probe
+plan currently assumes precisely that.
