@@ -3733,3 +3733,69 @@ tie-break that broke the self-play collision test.
 The game is **unregistered** and `/play/duel-draft` is not routable, as D1 requires. D0's scripted
 policies survive as a permanent probes file, joined by the collider — they become the search's
 yardstick at §7.2, which is why they were never throwaway.
+
+## C63 — C48 is finally routed. The interesting part is what the routing does *not* guard.
+
+C62 recorded that C48's ruling — *a mirror probe reports `n/a` with a cited reason, never `WARN`,
+where mirroring is provably not value-preserving* — had sat unimplemented across two games. It is
+now implemented (`feature/mirror-na`, `dd1fe96`).
+
+### The mechanism
+
+`GameManifest.mirrorProbe?: { applicable: false; reason: string }`. **There is no `applicable: true`
+variant** — omission is the default and the only way to be presumed mirrorable, so a manifest's
+silence can never be misread as a considered opt-out. `evaluateMirrorProbeGate()` lives *beside*
+`evaluateCiGates`, not inside it: a manifest-only declaration with no self-play behind it is a
+different kind of claim than the six computed rows, the same distinction C23 drew. `runCiSuite`
+appends the row conditionally in **both** the deferred and non-deferred branches, so a
+deferred-tier report is not the one place a declared game's `n/a` silently goes missing.
+
+The anti-waiver guard is `EmptyMirrorProbeReasonError`: a blank or whitespace-only reason is
+**refused at the manifest boundary**, before any report is built on the strength of the claim.
+Planted and fired — from `runCiSuite` itself, and from its deferred branch, with no report produced
+in either case.
+
+### The check that would have proven nothing
+
+The claim that mattered was *no existing game's output changes*. The tempting version of that check
+is to read the code and observe that the append is conditional on the manifest. **That is an
+argument from the code's shape, and this document exists because such arguments keep being wrong.**
+
+The real check: dump every non-declaring two-player game's `runCiSuite` gates under a **fixed seed**
+on `main` and on the branch, and `diff -r`. Empty, for fadeout, nine-grids, order-vs-chaos, tilt.
+The fixed seed is the whole point — without it the two dumps differ for reasons having nothing to
+do with the change, and the diff is noise dressed as evidence.
+
+The dump's *scope* also had to be verified rather than assumed: crackstep and mine-run are solo,
+never reach `runCiSuite` at all, and `solo-gates.ts` is untouched by the branch. Excluding them is
+correct; excluding them **silently** would have been the C50 shape.
+
+### The finding worth more than the mechanism
+
+An `exceptions[]` entry naming `gate: "mirror-probe"` is **silently dead** — it matches nothing and
+produces no `exceptionJustification`. Refusing to let an `n/a` be excepted is the *right behavior*.
+Giving the author no signal that their entry did nothing is a **bad failure mode**, and it is the
+guards-that-don't-guard thread wearing a new face: not a guard that fails to fire, but a
+**declaration that fails to declare.** The author believes they have recorded something reviewable;
+the harness has recorded nothing.
+
+The open question — routed to review, not yet ruled — is whether this hazard is confined to
+`mirror-probe` or whether **any** `exceptions[]` entry naming a nonexistent gate is silently dead.
+If it is the latter, the defect is much wider than the one I found, and a typo in a gate name is
+today indistinguishable from a deliberate exception that the harness honored.
+
+### Two process findings
+
+**A subagent reported work in flight that was not running.** It stalled twice on armed monitors, and
+its final report claimed *"both background tasks are still in flight with monitors armed."* `ps`
+showed nothing of ours computing and the output directory it claimed to be filling did not exist.
+CLAUDE.md §8 says subagent claims are not evidence; this is the first time that rule caught a
+claim about the agent's *own execution state* rather than about the code. Spot-checking `ps` and
+the expected output path cost seconds and turned a wait into a finish.
+
+**I briefed an impossible task, again.** I told the agent to wire Bid-Tac-Toe's declaration.
+`games/bid-tac-toe` **does not exist on `main`** — it lives only on the unmerged
+`feature/bid-tac-toe`, pending the user's decision. This is the C28 shape (briefing an agent about
+a commit its worktree predated) in a new direction: briefing an agent about a *game its branch had
+never seen*. The corrected scope was Duel Draft only, and Bid-Tac-Toe's declaration is now owed at
+that branch's merge — recorded here so it is not lost a third time.
