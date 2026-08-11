@@ -3799,3 +3799,75 @@ the expected output path cost seconds and turned a wait into a finish.
 a commit its worktree predated) in a new direction: briefing an agent about a *game its branch had
 never seen*. The corrected scope was Duel Draft only, and Bid-Tac-Toe's declaration is now owed at
 that branch's merge — recorded here so it is not lost a third time.
+
+## C64 — I built an exemption for a guard that was never built.
+
+C63 shipped a mechanism letting a game declare that the **mirror-bot degeneracy probe** does not
+apply to it, reporting `n/a` with a cited reason instead of `WARN`. I sent it to review with a
+pointed instruction: *a mechanism whose whole job is to remove a gate row deserves the harshest
+reading — what stops a future game from declaring it simply because a real mirror bot would score
+badly?*
+
+The answer came back: **nothing stops them, and nothing needs to, because there is no mirror probe.**
+
+`docs/plans/phase-0-platform-spine.md` §6 states that the harness warns when the probe is absent and
+that **CI requires it for games tagged `symmetric`**. Neither exists. Verified independently, not
+taken on the reviewer's word: the only `mirrorAgent()` call site in the entire repository is
+`scripts/research/tilt-t4-gates.ts`, a hand-written research script. `scripts/ci-gates.ts` contains
+exactly one occurrence of the string "mirror" and it is the English word *mirrors* in a comment
+about `safeMove`. Four games ship a real `mirrorMove`; **no automated anything has ever run one.**
+
+### Why this is the end of the thread, not another link in it
+
+This document's spine is guards that don't guard. The species so far: a guard that goes red while
+everything is right (C23); a measurement and a shipped artifact never checked against each other
+(C54); a guard that breaks at scale but fails loudly (C50); relief granted on an unchecked condition
+(C55); a plant that applies perfectly and proves nothing (C41); a declaration that fails to declare
+(C63). C64 is the limit point: **a guard that does not exist, discovered because I built it an
+exemption mechanism and then asked whether the exemption was honest.**
+
+The exemption is honest. It is honest the way a lock on a doorway with no door is honest.
+
+### The question I asked, and the one I should have asked
+
+I asked *is this mechanism a waiver in disguise?* That is a good question and it got a real answer —
+the row cannot flip `report.ok`, every consumer handles `n/a` correctly, and the reason string is
+true of Duel Draft's actual engine (`active()` returns `{ mode: "simultaneous" }` unconditionally,
+so "every non-terminal state is a single joint pick" is a fact of the code, per C31).
+
+The question I did not ask was **does the thing being waived exist?** Three corrections — C48 ruling
+how to report it, C62 finding the ruling unrouted, C63 routing it — are all about the *reporting* of
+a measurement that has never once been taken. The whole chain reasoned carefully about the shape of
+a number nobody computes.
+
+The general rule, and it is cheap: **before hardening how a check reports, run the check.** One grep
+for its call sites would have caught this at C48 and saved three corrections' worth of care spent on
+a phantom.
+
+### Rulings
+
+All six review findings applied, none waived, all in the same branch rather than deferred — because
+deferring is precisely how C48 rotted across two games, and that is the defect this branch exists to
+repair.
+
+1. **Unknown `exceptions[]` gate names are silently dead — repo-wide, not mirror-specific.** This
+   answers C63's routed question. `applyException` matches by string against six literal names; any
+   other name records a justification the machinery never honors. It is **fail-closed** — a dead
+   exception leaves its target gate failing loudly, so no suite can wrongly pass — which makes it an
+   honesty defect, not a gating defect. Fixed here with an up-front `UnknownExceptionGateError`,
+   special-cased for `mirror-probe` to point the author at `manifest.mirrorProbe`.
+2. **The `symmetric`-tag interaction is pinned by an executable test, not a sentence.** A
+   symmetric-boarded game may still declare the probe inapplicable — Bid-Tac-Toe is exactly that
+   case — so the declaration overrides the tag. Refusal would have been wrong. Prose is what got us
+   here; the pin has to run.
+3. **The runtime now matches the type.** `evaluateMirrorProbeGate` keyed on the field's *presence*
+   and never read `applicable`, so a manifest arriving through a cast or a future non-TS path with
+   `applicable: true` would still have produced an `n/a` row asserting the opposite. Phase 2 puts
+   manifests next to a database; closed now rather than when it costs something.
+4. **Instructions to the harness are not reasons.** The declared reason string ended with "Report as
+   n/a with this reason, never a WARN" — process prose printing verbatim into every report row.
+   Moved to a comment.
+5. The type doc's pointer to Bid-Tac-Toe's `probes.ts` is honest about that game being unmerged.
+6. **The false claim in `phase-0-platform-spine.md` §6 is corrected**, and the real enforcement is
+   recorded as outstanding rather than deleted. Building it is a genuine platform feature touching
+   four games' existing `mirrorMove`s — scheduled deliberately, not folded into a cleanup.
