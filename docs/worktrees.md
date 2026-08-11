@@ -54,6 +54,8 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 > decision). Stale unmerged branches kept deliberately, never to be merged: `feature/shell` (39,090
 > lines behind main), `feature/order-vs-chaos`, `feature/wrap`.
 
+| probes (C64: wire the two-player degeneracy probe suite — mirror, stall, rush — into CI; all three are implemented and roster-resolvable but none is computed for any game, `docs/plans/platform-corrections.md` C64) | `../claude-project-probes` | `feature/degeneracy-probes` | `twistarcade_probes` | 56621–56629 | not started (no DB) — harness/CI wiring only, no game code touches Postgres | ACTIVE — verified free with BOTH `lsof -nP -iTCP:<port> -sTCP:LISTEN` (all silent) AND `docker ps` (no container publishes a 566xx port), per C62 |
+
 ## Port blocks
 
 | Block | Team | Status |
@@ -94,3 +96,4 @@ own, so the drift was mine. Reconciled against `git worktree list`, and the chec
 it is worth repeating whenever a team closes: **the registry is not the source of truth about
 what is running — the filesystem is.** A row that says CLOSED next to a directory that still
 exists is exactly the leak §6 exists to prevent.
+| 56621–56629 (team 23) | probes | CLAIMED 2026-08-12 — verified free with `lsof` AND `docker ps` before claiming (C62's lesson) |
