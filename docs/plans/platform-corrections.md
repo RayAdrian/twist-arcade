@@ -3817,6 +3817,28 @@ taken on the reviewer's word: the only `mirrorAgent()` call site in the entire r
 exactly one occurrence of the string "mirror" and it is the English word *mirrors* in a comment
 about `safeMove`. Four games ship a real `mirrorMove`; **no automated anything has ever run one.**
 
+### It is not the mirror probe. It is the whole two-player probe suite.
+
+Having found one, I went looking for the others, and the finding is considerably worse than the
+review's. §6 names **three** generic two-player degeneracy probes: mirror, **stall**, and **rush**.
+All three exist as real, tested code (`packages/bots/src/probes/stall.ts`, `probes/rush.ts`,
+`roster.ts`'s named-agent resolver). None is wired into CI. The complete set of call sites outside
+the packages themselves is **three hand-written Tilt research scripts**
+(`scripts/research/tilt-t4-gates.ts`, `tilt-kill-sweep.ts`, `tilt-doubleline-moverwins-check.ts`).
+`scripts/ci-gates.ts`'s only probe references are to the **solo** `safeMove` hook.
+
+That last detail is the sharp one. **The solo degeneracy probes are genuinely enforced** — Always-Safe
+runs against the real Mine Run engine and has fired real findings (the C6 close-out;
+`alwaysSafeVsStrongRatio` throwing `ZeroScoringYardstickError` on a planted violation). The
+two-player probes, described in the same plan section, in the same language, with the same claimed
+CI requirement, run nowhere.
+
+So this is not an oversight about one probe. It is **an entire validation model that exists as code
+and prose but was never connected**, sitting beside its sibling model that was. Every game shipped so
+far — five live — passed a two-player gate table that silently omitted all three degeneracy probes,
+and nothing anywhere said so. C2's rule is that a skipped check is never folded into a passing score;
+here the checks were not skipped, they were never called, which no status value can express.
+
 ### Why this is the end of the thread, not another link in it
 
 This document's spine is guards that don't guard. The species so far: a guard that goes red while
