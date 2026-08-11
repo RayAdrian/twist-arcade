@@ -59,16 +59,16 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 | Block | Team | Status |
 |---|---|---|
 | 54321–54329 (default) | — | RESERVED — do not use for teams |
-| 54421–54429 (team 1) | platform | CLAIMED |
-| 54521–54529 (team 2) | shell | CLAIMED |
-| 54621–54629 (team 3) | fadeout | CLAIMED |
-| 54721–54729 (team 4) | daily | CLAIMED |
-| 54821–54829 (team 5) | crackstep | CLAIMED |
-| 54921–54929 (team 6) | minerun | CLAIMED |
-| 55021–55029 (team 7) | harness-solo | CLAIMED |
-| 55121–55129 (team 8) | ninegrids | CLAIMED |
+| 54421–54429 (team 1) | platform | RELEASED 2026-08-12 (C67) — team closed, worktree removed, branch deleted; no Supabase stack was ever started |
+| 54521–54529 (team 2) | shell | RELEASED 2026-08-12 (C67) — team closed, worktree removed, branch deleted; no Supabase stack was ever started |
+| 54621–54629 (team 3) | fadeout | RELEASED 2026-08-12 (C67) — team closed, worktree removed, branch deleted; no Supabase stack was ever started |
+| 54721–54729 (team 4) | daily | RELEASED 2026-08-12 (C67) — team closed, worktree removed, branch deleted; no Supabase stack was ever started |
+| 54821–54829 (team 5) | crackstep | RELEASED 2026-08-12 (C67) — team closed, worktree removed, branch deleted; no Supabase stack was ever started |
+| 54921–54929 (team 6) | minerun | RELEASED 2026-08-12 (C67) — team closed, worktree removed, branch deleted; no Supabase stack was ever started |
+| 55021–55029 (team 7) | harness-solo | RELEASED 2026-08-12 (C67) — team closed, worktree removed, branch deleted; no Supabase stack was ever started |
+| 55121–55129 (team 8) | ninegrids | RELEASED 2026-08-12 (C67) — team closed, worktree removed, branch deleted; no Supabase stack was ever started |
 | 55221–55229 (team 9) | phase2schema | **RELEASED** — team closed 2026-08-07 |
-| 55321–55329 (team 10) | deferstatus | CLAIMED |
+| 55321–55329 (team 10) | deferstatus | RELEASED 2026-08-12 (C67) — team closed, worktree removed, branch deleted; no Supabase stack was ever started |
 | 55421–55429 (team 11) | ninegridsui | RELEASED 2026-08-12 (C67) — was: verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
 | 55521–55529 (team 12) | ordervschaos | RELEASED 2026-08-12 (C67) — was: verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
 | 55621–55629 (team 13) | chunkbudget | RELEASED 2026-08-12 (C67) — was: verified free with `lsof -nP -iTCP:<port> -sTCP:LISTEN` before claiming (all 9 ports silent) |
