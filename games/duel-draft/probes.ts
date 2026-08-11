@@ -37,11 +37,18 @@
 // purpose: exporting the scaffold's vacuous "always play the first legal move" placeholder
 // would risk it being wired into `mirrorAgent()` later and silently read as a real (and
 // meaningless) win-rate number instead of the `n/a` this game's structure actually calls for.
+//
+// The constant below carries ONLY the reason — "report as n/a, never a WARN
+// (platform-corrections.md C48's ruling shape)" is an instruction TO THE HARNESS
+// (`evaluateMirrorProbeGate`), not part of the reason itself, and it used to be baked into the
+// string's last sentence, printing verbatim in every CI report row (`not applicable: ${reason}`
+// has no separate channel for it). A CI reviewer triaging a report should read a reason a probe
+// does not apply, not an instruction meant for the code that already obeys it. Stage-6 review
+// finding — moved here, where a game author writing the declaration reads it.
 export const MIRROR_PROBE_NOT_APPLICABLE_REASON =
   "no prior move WITHIN a round exists to mirror — every non-terminal state is a single joint " +
   "pick (plan §1.1), so a mirror strategy would need to see the opponent's THIS-round pick " +
-  "before responding, which simultaneity rules out by construction. Report as n/a with this " +
-  "reason, never a WARN (platform-corrections.md C48's ruling shape).";
+  "before responding, which simultaneity rules out by construction.";
 
 import type { PlayerId, Rng } from "@twist-arcade/engine";
 import type { Policy, SearchStats } from "@twist-arcade/bots";

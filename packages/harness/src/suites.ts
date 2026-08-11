@@ -153,6 +153,52 @@ export class EmptyExceptionJustificationError extends Error {
   }
 }
 
+/** The six gate names that actually route through `applyException` below — derived from that
+ *  function's own call sites, not maintained separately by hand (platform-corrections.md C63).
+ *  An `exceptions[]` entry naming any OTHER gate is silently dead: it never matches inside
+ *  `applyException` (which does a `find((e) => e.gate === gate)` per gate block), so it never
+ *  downgrades anything, anywhere — indistinguishable, at the report layer, from a typo nobody
+ *  caught. `UnknownExceptionGateError` refuses that up front, same seam as
+ *  `EmptyExceptionJustificationError`. */
+export const KNOWN_EXCEPTIONABLE_GATES: ReadonlySet<string> = new Set([
+  "strong-vs-random",
+  "first-player-win-rate",
+  "draw-rate",
+  "mean-plies",
+  "ruthless-vs-standard",
+  "solved-value-reached",
+]);
+
+/** Thrown by `evaluateCiGates` when a manifest exception names a gate that is not one of
+ *  `KNOWN_EXCEPTIONABLE_GATES` (platform-corrections.md C63). Same posture, same seam as
+ *  `EmptyExceptionJustificationError`: an exception that can never downgrade anything is not a
+ *  quirky no-op, it is an honesty defect — deferring this refusal (as a "later" cleanup) is
+ *  exactly how C48's mirror-probe reasoning rotted unimplemented across two games before it was
+ *  finally routed at C62/C63, so it is refused here, now, at the manifest boundary.
+ *
+ *  Special-cased for `"mirror-probe"`: it is a real, plausible-sounding gate name (unlike a
+ *  typo), but it is not exceptionable — `evaluateMirrorProbeGate` never reports "fail" (only
+ *  "n/a"), so there is nothing for `applyException` to ever downgrade. A game trying to excuse a
+ *  mirror-probe result is pointed at `manifest.mirrorProbe` instead — that trap is more likely to
+ *  be walked into now that "mirror-probe" is a real row a reviewer sees in every report. */
+export class UnknownExceptionGateError extends Error {
+  constructor(gate: string) {
+    const guidance =
+      gate === "mirror-probe"
+        ? '"mirror-probe" is not a gate exceptions[] can target — it never reports "fail" (only ' +
+          '"n/a"), so there is nothing for an exception to downgrade. Declare manifest.mirrorProbe ' +
+          "instead (platform-corrections.md C48/C62) if this game's mirror probe does not apply."
+        : `known exceptionable gates are: ${[...KNOWN_EXCEPTIONABLE_GATES].join(", ")}.`;
+    super(
+      `evaluateCiGates: manifest exception names gate "${gate}", which does not route through ` +
+        "applyException (platform-corrections.md C63) — an exception naming a gate that does not " +
+        "exist is silently dead, never downgrading anything, indistinguishable from a typo nobody " +
+        `caught. ${guidance}`
+    );
+    this.name = "UnknownExceptionGateError";
+  }
+}
+
 /** Applies a manifest exception (if any) to a raw "fail" verdict: downgrades to "warn" with the
  *  justification attached. A raw "pass"/"warn"/"n/a" is returned unchanged — an exception only
  *  ever SOFTENS a fail, it can never manufacture one, and it is applied per gate name (an
@@ -292,6 +338,11 @@ export function evaluateCiGates(
   for (const exception of exceptions) {
     if (exception.justification.trim() === "") {
       throw new EmptyExceptionJustificationError(exception.gate);
+    }
+    // C63: refused up front, same loop — a dead exception (naming a gate applyException never
+    // sees) must never reach the report layer any more than a blank justification may.
+    if (!KNOWN_EXCEPTIONABLE_GATES.has(exception.gate)) {
+      throw new UnknownExceptionGateError(exception.gate);
     }
   }
 
@@ -798,6 +849,29 @@ export class EmptyMirrorProbeReasonError extends Error {
   }
 }
 
+/** Thrown by `evaluateMirrorProbeGate` when a declared `mirrorProbe.applicable` is present but is
+ *  not the literal `false` the type requires (`GameManifest.mirrorProbe`'s own type is `{
+ *  readonly applicable: false; readonly reason: string }` — there is no `applicable: true`
+ *  variant to set). The TYPE already promises this can't happen from ordinary TypeScript code;
+ *  this closes the gap between that promise and the RUNTIME, for a manifest that reaches this
+ *  function through a cast, or a future non-TS path (Phase 2 puts manifests near a database).
+ *  Without this check, `evaluateMirrorProbeGate` keyed on presence alone — a smuggled `applicable:
+ *  true` would still produce an n/a row whose detail asserts the opposite of what was declared. */
+export class InvalidMirrorProbeDeclarationError extends Error {
+  constructor(gameId: string, applicable: unknown) {
+    super(
+      `evaluateMirrorProbeGate: manifest "${gameId}" declares mirrorProbe.applicable as ` +
+        `${JSON.stringify(applicable)}, not the literal false the type requires — the ONLY ` +
+        'declaration this field supports is opting a probe OUT (there is no "applicable: true" ' +
+        "variant; omit mirrorProbe entirely for that). This manifest reached the gate through a " +
+        "cast or a non-TS path that bypassed the type — refused here so the runtime matches what " +
+        "the type already promises, rather than reporting an n/a row asserting the opposite of " +
+        "what was declared."
+    );
+    this.name = "InvalidMirrorProbeDeclarationError";
+  }
+}
+
 /**
  * The C48/C62 mechanism: a game may declare, via `manifest.mirrorProbe`, that the mirror-bot
  * degeneracy probe (roadmap §6's design gate, "mirror bot <40% as P2") does not apply to it —
@@ -810,6 +884,12 @@ export class EmptyMirrorProbeReasonError extends Error {
 export function evaluateMirrorProbeGate(manifest: Pick<GameManifest, "id" | "mirrorProbe">): GateResult | null {
   const decl = manifest.mirrorProbe;
   if (decl === undefined) return null;
+  // Runtime must match the type (see InvalidMirrorProbeDeclarationError's own doc) — checked
+  // BEFORE the reason check below, so a smuggled `applicable: true` (or any non-`false` value)
+  // is refused on its own terms, never masked by (or dependent on) the blank-reason guard.
+  if (decl.applicable !== false) {
+    throw new InvalidMirrorProbeDeclarationError(manifest.id, decl.applicable);
+  }
   if (decl.reason.trim().length === 0) {
     throw new EmptyMirrorProbeReasonError(manifest.id);
   }

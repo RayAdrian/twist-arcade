@@ -72,6 +72,8 @@ export {
   hasDeferredGates as twoPlayerHasDeferredGates,
   hasUnattainedGates,
   InvalidAttainmentBaselineError,
+  InvalidMirrorProbeDeclarationError,
+  KNOWN_EXCEPTIONABLE_GATES,
   MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE,
   MissingCiRolloutBudgetError,
   MissingSolvedValueProofError,
@@ -80,6 +82,7 @@ export {
   SuiteFailedError,
   TierBudgetCollapseError,
   TwoPlayerDeferredGateAtNightlyError,
+  UnknownExceptionGateError,
   worstCapHitRate,
 } from "./suites";
 

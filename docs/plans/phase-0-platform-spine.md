@@ -631,8 +631,23 @@ the shell team wraps it in their `useGame` hook.
 - *Two-player:* **stall** (maximize estimated remaining plies via shallow rollouts), **rush**
   (1-ply greedy: win now, else block, else best heuristic, else random) — generic, in this
   package. **Mirror is per-game** (point symmetry is board geometry the interface deliberately
-  doesn't expose): optional export `games/<id>/probes.ts → mirrorMove(state, lastOpponentMove)`;
-  harness warns when absent, CI **requires** it for games tagged `symmetric`.
+  doesn't expose): optional export `games/<id>/probes.ts → mirrorMove(state, lastOpponentMove)`,
+  wrapped into a runnable agent by `packages/harness/src/roster.ts`'s `mirrorAgent()`.
+  **CORRECTED (platform-corrections.md C63): this paragraph previously claimed "harness warns
+  when absent, CI requires it for games tagged `symmetric`" — that was never true and no such
+  mechanism was ever built. As of this branch, `mirrorAgent()` has exactly one real call site in
+  the repo, `scripts/research/tilt-t4-gates.ts` (a hand-written research script), and
+  `scripts/ci-gates.ts` never mentions mirroring at all — the mirror probe is not computed in CI
+  for any game, tagged `symmetric` or not.** What DOES exist (C48, routed at C62/C63):
+  `manifest.mirrorProbe: { applicable: false, reason }` lets a game declare that mirroring is
+  provably not value-preserving for it, and `packages/harness/src/suites.ts`'s
+  `evaluateMirrorProbeGate` turns that declaration into a `mirror-probe: n/a` row in the CI
+  report — but this is a report row for a game's OWN opt-out, not a probe actually running, and a
+  game that never declares gets no row and no enforcement either way. Wiring a REAL
+  `symmetric`-tagged mirror-probe gate into CI (warn/fail on a measured mirror-bot win rate,
+  the way `stall`/`rush` are wired) remains outstanding work, affecting the four games that
+  export a real `mirrorMove` today (Fadeout, Nine Grids, Order vs Chaos, Tilt) — scheduled
+  separately, not built as part of the C48/C62/C63 declaration mechanism.
 - *Solo (solo-games-lens §3.6):* **Greedy-Only** (1-ply on `heuristic` — generic, here) and
   **Suicide** (shortest path to a terminal — generic, here; harness runs it only for games
   tagged `misere`). **Grind** is a harness-side *analysis*, not a policy (it searches for a

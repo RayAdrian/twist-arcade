@@ -39,6 +39,18 @@ describe("mirror probe: deliberately n/a, not exported", () => {
     expect(MIRROR_PROBE_NOT_APPLICABLE_REASON.length).toBeGreaterThan(0);
     expect(MIRROR_PROBE_NOT_APPLICABLE_REASON).toMatch(/simultaneity|joint pick/);
   });
+
+  // stage-6 review finding (was 🔵-2), ruled: the reason string's last sentence — "Report as n/a
+  // with this reason, never a WARN (platform-corrections.md C48's ruling shape)" — is an
+  // INSTRUCTION TO THE HARNESS, not a reason this game is exempt, and it printed verbatim in
+  // every CI report row (`evaluateMirrorProbeGate`'s detail is `not applicable: ${reason}`,
+  // no separate channel for it). It belongs in the adjacent comment, which a game author reads
+  // while writing the declaration — not in the string a CI reviewer reads while triaging a
+  // report.
+  it("does NOT embed an instruction to the harness in the reason text — that belongs in the adjacent comment, not in the string that prints verbatim in every CI report row", () => {
+    expect(MIRROR_PROBE_NOT_APPLICABLE_REASON).not.toMatch(/report as n\/a/i);
+    expect(MIRROR_PROBE_NOT_APPLICABLE_REASON).not.toMatch(/never a warn/i);
+  });
 });
 
 // ---------------------------------------------------------------------------------------

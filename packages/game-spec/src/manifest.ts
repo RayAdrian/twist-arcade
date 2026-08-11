@@ -159,9 +159,12 @@ export interface GameManifest {
    *  posture `exceptions[].justification` and `solvedValue.proof` already take at this exact
    *  seam: a declaration that silences a probe must be visible and reviewable, never a
    *  waiver a game can reach for just because a real mirror strategy would score badly.
-   *  Bid-Tac-Toe (spatially symmetric board, but bids/the star have no reflective analogue)
-   *  and Duel Draft (no prior move WITHIN a round to mirror under simultaneity) are the two
-   *  known users — see each game's own `probes.ts` module doc for the reasoning in full. */
+   *  Duel Draft (no prior move WITHIN a round to mirror under simultaneity) is the one known
+   *  user reachable from this branch today — see `games/duel-draft/probes.ts`'s own module doc
+   *  for the reasoning in full. Bid-Tac-Toe is expected to be a second user (spatially symmetric
+   *  board, but bids/the star have no reflective analogue) once that game's branch merges — it
+   *  does not exist on any branch reachable from here yet, so there is no `probes.ts` of its own
+   *  to point at until then. */
   mirrorProbe?: { readonly applicable: false; readonly reason: string };
 
   /** Present iff players.max === 1. Drives which harness model and gate table apply. */

@@ -25,6 +25,8 @@ import {
   hasDeferredGates,
   hasUnattainedGates,
   InvalidAttainmentBaselineError,
+  InvalidMirrorProbeDeclarationError,
+  KNOWN_EXCEPTIONABLE_GATES,
   MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE,
   MissingCiRolloutBudgetError,
   MissingSolvedValueProofError,
@@ -33,6 +35,7 @@ import {
   SuiteFailedError,
   TierBudgetCollapseError,
   TwoPlayerDeferredGateAtNightlyError,
+  UnknownExceptionGateError,
   worstCapHitRate,
   type CiSuiteReport,
   type GateInputs,
@@ -176,6 +179,74 @@ describe("evaluateCiGates() — manifest exceptions (plan §7.5)", () => {
     expect(() =>
       evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [{ gate: "draw-rate", justification: "" }], "ci")
     ).toThrow(EmptyExceptionJustificationError);
+  });
+});
+
+// stage-6 review finding (was 🟡-1), ruled: an exceptions[] entry naming a gate that does not
+// exist is silently dead, repo-wide — fail-closed (nothing downgrades), so it is an honesty
+// defect rather than a gating defect, but it is exactly the shape of thing platform-
+// corrections.md C48 already warned about going unnoticed for two games. Refused up front, same
+// seam as EmptyExceptionJustificationError.
+describe("evaluateCiGates() — UnknownExceptionGateError: an exception naming a gate that does not exist must not be silently dead (C48/C63)", () => {
+  it("KNOWN_EXCEPTIONABLE_GATES is exactly the six gate names that route through applyException — derived from the call sites, not hand-copied", () => {
+    // If a future gate block starts (or stops) calling applyException, this assertion is the
+    // thing that goes red — not a comment nobody re-reads.
+    expect([...KNOWN_EXCEPTIONABLE_GATES].sort()).toEqual(
+      [
+        "strong-vs-random",
+        "first-player-win-rate",
+        "draw-rate",
+        "mean-plies",
+        "ruthless-vs-standard",
+        "solved-value-reached",
+      ].sort()
+    );
+  });
+
+  it("throws UnknownExceptionGateError for a gate name that is not one of the six exceptionable gates", () => {
+    expect(() =>
+      evaluateCiGates(
+        HEALTHY,
+        DEFAULT_HARNESS_THRESHOLDS,
+        [{ gate: "strong-vs-radnom", justification: "typo'd gate name — must not be silently dead" }],
+        "ci"
+      )
+    ).toThrow(UnknownExceptionGateError);
+  });
+
+  it("throws even when the named (nonexistent) gate would never have failed anyway — validated up front, not lazily on use", () => {
+    expect(() =>
+      evaluateCiGates(
+        HEALTHY,
+        DEFAULT_HARNESS_THRESHOLDS,
+        [{ gate: "solved-value", justification: "close to a real name but not it" }],
+        "ci"
+      )
+    ).toThrow(UnknownExceptionGateError);
+  });
+
+  it("special-cases \"mirror-probe\" with a message pointing at manifest.mirrorProbe instead — the trap a game author is now most likely to walk into, since it is a real, plausible gate name that simply is not exceptionable", () => {
+    let thrown: unknown;
+    try {
+      evaluateCiGates(
+        HEALTHY,
+        DEFAULT_HARNESS_THRESHOLDS,
+        [{ gate: "mirror-probe", justification: "trying to excuse a mirror-probe fail" }],
+        "ci"
+      );
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(UnknownExceptionGateError);
+    expect((thrown as Error).message).toMatch(/mirrorProbe/);
+  });
+
+  it("does NOT throw for any of the six real exceptionable gate names", () => {
+    for (const gate of KNOWN_EXCEPTIONABLE_GATES) {
+      expect(() =>
+        evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [{ gate, justification: "real gate, real reason" }], "ci")
+      ).not.toThrow();
+    }
   });
 });
 
@@ -1662,6 +1733,76 @@ describe("evaluateMirrorProbeGate() — pure evaluator (C48/C62)", () => {
     expect(() =>
       evaluateMirrorProbeGate({ id: "some-game", mirrorProbe: { applicable: false, reason: "" } })
     ).toThrow(EmptyMirrorProbeReasonError);
+  });
+
+  // stage-6 review finding (was 🟡-2), ruled: a "symmetric"-tagged game may ALSO declare
+  // mirrorProbe: { applicable: false } — Bid-Tac-Toe is exactly that case (symmetric BOARD, but
+  // bids and the star have no reflective analogue). A hard refusal keyed on the "symmetric" tag
+  // would be WRONG here: the declaration overrides the tag's own probe expectation, it does not
+  // conflict with it. Pinned as an executable assertion rather than left as a sentence in a
+  // review — evaluateMirrorProbeGate's own parameter type (`Pick<GameManifest, "id" |
+  // "mirrorProbe">`) already structurally cannot see `tags` at all, which is what makes "the
+  // declaration overrides the tag" true by construction; this test is what breaks if a future
+  // change ever widens the signature to inspect tags and adds a hard refusal there.
+  it("a manifest tagged \"symmetric\" that ALSO declares mirrorProbe: { applicable: false } still returns the n/a row — the declaration overrides the tag's own probe expectation, never a hard refusal", () => {
+    const bidTacToeShapedManifest: GameManifest = {
+      id: "bid-tac-toe-fixture",
+      title: "Bid-Tac-Toe Fixture",
+      classic: "Tic-Tac-Toe",
+      ruleSentence: "suites.test.ts C63 tag-interaction fixture.",
+      tags: ["symmetric"],
+      estMinutes: 3,
+      modes: { bot: true, hotseat: true, asyncLink: true },
+      players: { min: 2, max: 2 },
+      difficultyTiers: [
+        { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 200 }, minReplyMs: 0 },
+      ],
+      mirrorProbe: { applicable: false, reason: "board is spatially symmetric but bids and the star have no reflective analogue" },
+    };
+    const result = evaluateMirrorProbeGate(bidTacToeShapedManifest);
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("n/a");
+    expect(result!.detail).toBe("not applicable: board is spatially symmetric but bids and the star have no reflective analogue");
+  });
+
+  // stage-6 review finding (was 🔵-1), ruled: evaluateMirrorProbeGate never actually reads
+  // `decl.applicable` — it keys on PRESENCE of `mirrorProbe` alone, so a manifest that reaches
+  // this function through a cast (or a future non-TS path, e.g. JSON loaded from a database once
+  // Phase 2 lands) with `applicable: true` would still yield an n/a row asserting the exact
+  // opposite of what was declared. The TYPE (`{ readonly applicable: false; ... }`) already
+  // promises this can't happen — this closes the gap between that promise and the runtime.
+  it("THROWS InvalidMirrorProbeDeclarationError if mirrorProbe.applicable is not the literal false the type requires (a cast or non-TS path bypassing the type)", () => {
+    const smuggledTrue = {
+      id: "some-game",
+      mirrorProbe: { applicable: true, reason: "should never reach a gate row" },
+    } as unknown as Pick<GameManifest, "id" | "mirrorProbe">;
+    expect(() => evaluateMirrorProbeGate(smuggledTrue)).toThrow(InvalidMirrorProbeDeclarationError);
+  });
+
+  it("also throws for a non-boolean applicable value (defense in depth against a raw, un-typed JSON declaration)", () => {
+    const smuggledJunk = {
+      id: "some-game",
+      mirrorProbe: { applicable: "false", reason: "the string \"false\", not the literal" },
+    } as unknown as Pick<GameManifest, "id" | "mirrorProbe">;
+    expect(() => evaluateMirrorProbeGate(smuggledJunk)).toThrow(InvalidMirrorProbeDeclarationError);
+  });
+
+  it("the applicable check fires (not EmptyMirrorProbeReasonError) even when reason is ALSO blank — proving the two guards are independent, not one masking the other", () => {
+    const smuggledTrueBlankReason = {
+      id: "some-game",
+      mirrorProbe: { applicable: true, reason: "" },
+    } as unknown as Pick<GameManifest, "id" | "mirrorProbe">;
+    let thrown: unknown;
+    try {
+      evaluateMirrorProbeGate(smuggledTrueBlankReason);
+    } catch (e) {
+      thrown = e;
+    }
+    // Specifically NOT EmptyMirrorProbeReasonError — if the applicable check were missing (or
+    // ordered after the reason check), this input would throw that instead, and this assertion
+    // is what would catch that silently-wrong ordering.
+    expect(thrown).toBeInstanceOf(InvalidMirrorProbeDeclarationError);
+    expect(thrown).not.toBeInstanceOf(EmptyMirrorProbeReasonError);
   });
 });
 
