@@ -34,6 +34,7 @@ import {
   TierBudgetCollapseError,
   TwoPlayerDeferredGateAtNightlyError,
   worstCapHitRate,
+  type CiSuiteReport,
   type GateInputs,
 } from "../src/suites";
 import type { MatchupReport } from "../src/runner";
@@ -1790,5 +1791,38 @@ describe("runCiSuite() — C48/C62: mirror-probe declaration wired into the real
     // The REAL runCiSuite output for this same undeclared manifest does NOT do this:
     expect(before.gates.length).toBe(6);
     expect(before.gates.find((g) => g.gate === "mirror-probe")).toBeUndefined();
+  });
+
+  it("REFUSES a declared-but-blank reason from INSIDE runCiSuite itself — a game cannot get a report built on a blank opt-out, not just a bare call to evaluateMirrorProbeGate", () => {
+    const blankReasonManifest: GameManifest = {
+      ...baseManifest,
+      id: "mirror-probe-fixture-blank-via-runcisuite",
+      mirrorProbe: { applicable: false, reason: "   " },
+    };
+    let report: CiSuiteReport | undefined;
+    let thrown: unknown;
+    try {
+      report = runCiSuite(classicTicTacToe, blankReasonManifest, { seed: "suites-test:mirror:blank-runcisuite", games: 20 });
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(EmptyMirrorProbeReasonError);
+    // No report was ever produced — the blank declaration never gets far enough to render.
+    expect(report).toBeUndefined();
+  });
+
+  it("REFUSES a declared-but-blank reason from runCiSuite's DEFERRED branch too (C27 deferral does not bypass the C48 refusal)", () => {
+    const blankReasonDeferredManifest: GameManifest = {
+      ...baseManifest,
+      id: "mirror-probe-fixture-blank-deferred",
+      difficultyTiers: [
+        { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 10_000 }, minReplyMs: 0 },
+      ],
+      ciGateBudget: { deferGatesToNightly: { reason: "unaffordable at ci tier — suites.test.ts fixture" } },
+      mirrorProbe: { applicable: false, reason: "\n\t " },
+    };
+    expect(() =>
+      runCiSuite(classicTicTacToe, blankReasonDeferredManifest, { seed: "suites-test:mirror:blank-deferred", games: 20 })
+    ).toThrow(EmptyMirrorProbeReasonError);
   });
 });
