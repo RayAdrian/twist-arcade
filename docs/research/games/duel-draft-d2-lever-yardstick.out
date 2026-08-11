@@ -1,0 +1,33 @@
+Duel Draft D2-lever — §7.2 scripted yardstick re-measurement, WIN_LENGTH=3
+Re-deriving the strongest scripted policy by measurement, not assuming defensive-cover.
+
+Round robin: seed="duel-draft-d2-lever-rr-seedA", 100 games/pairing
+  greedy-threat vs defensive-cover: greedy-threat=0.0% defensive-cover=0.0% draws=100.0%
+  greedy-threat vs mixed-greedy: greedy-threat=34.0% mixed-greedy=0.0% draws=66.0%
+  defensive-cover vs mixed-greedy: defensive-cover=56.0% mixed-greedy=0.0% draws=44.0%
+Standings (points = win 1 / draw 0.5 / loss 0, summed):
+  defensive-cover    128.0 / 200 (64.0%)
+  greedy-threat      117.0 / 200 (58.5%)
+  mixed-greedy       55.0 / 200 (27.5%)
+
+Round robin: seed="duel-draft-d2-lever-rr-seedB", 100 games/pairing
+  greedy-threat vs defensive-cover: greedy-threat=0.0% defensive-cover=0.0% draws=100.0%
+  greedy-threat vs mixed-greedy: greedy-threat=42.0% mixed-greedy=0.0% draws=58.0%
+  defensive-cover vs mixed-greedy: defensive-cover=64.0% mixed-greedy=0.0% draws=36.0%
+Standings (points = win 1 / draw 0.5 / loss 0, summed):
+  defensive-cover    132.0 / 200 (66.0%)
+  greedy-threat      121.0 / 200 (60.5%)
+  mixed-greedy       47.0 / 200 (23.5%)
+
+Strongest by seed: duel-draft-d2-lever-rr-seedA=defensive-cover, duel-draft-d2-lever-rr-seedB=defensive-cover
+  => seeds AGREE on the strongest policy.
+
+=== Yardstick gate for strongest="defensive-cover" ===
+Yardstick: mcts1k vs defensive-cover, seed="duel-draft-d2-lever-yardstick-seedA:defensive-cover", 100 games
+  [MISSES] mcts1k vs defensive-cover: 0.0% win rate (SE ~0.0 pts, n=100) — gate: >=55%
+  drawRate=94.0% meanPlies=7.8 capHitRate=0.00%
+
+Yardstick: mcts1k vs defensive-cover, seed="duel-draft-d2-lever-yardstick-seedB:defensive-cover", 100 games
+  [MISSES] mcts1k vs defensive-cover: 0.0% win rate (SE ~0.0 pts, n=100) — gate: >=55%
+  drawRate=92.0% meanPlies=7.5 capHitRate=0.00%
+

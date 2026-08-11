@@ -1,0 +1,20 @@
+Duel Draft — discriminating experiment 3: is defensive-cover strong, or just drawish?
+
+--- defensive-cover vs random, seed="duel-draft-d2-75-vs-random", games=100 ---
+defensive-cover vs random, n=100:
+  defensive-cover wins:  56 (56.0%, SE ~5.0 pts)
+  draws:               44 (44.0%, SE ~5.0 pts)
+  random wins:   0 (0.0%, SE ~0.0 pts)
+  meanPlies=7.8 capHitRate=0.00%
+
+--- defensive-cover vs itself, seed="duel-draft-d2-75-vs-self", games=100 ---
+defensive-cover-A vs defensive-cover-B, n=100:
+  defensive-cover-A wins:   0 (0.0%, SE ~0.0 pts)
+  draws:                100 (100.0%, SE ~0.0 pts)
+  defensive-cover-B wins:   0 (0.0%, SE ~0.0 pts)
+  meanPlies=16.0 capHitRate=0.00%
+
+Round-1 self-collision rate (plan §7.3 probe, flag >=50%): 100/100 = 100.0%
+
+=== Reading ===
+defensive-cover vs random tells us whether the policy is COMPETENT (beats random handily) or just passively drawish (fails to beat even random). defensive-cover vs itself tells us whether its own draws (including the D2 §7.2 100%-draw result vs greedy-threat/mcts1k) are explained by ritual self-collision on the symmetric opening (a collider signature) or by something else.

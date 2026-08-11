@@ -1,0 +1,167 @@
+Duel Draft D2-lever — MCTS self-play re-measurement at WIN_LENGTH=3 (SIZE=4)
+GAMES per cell = 100, mirrorSeats=false, 4 cells (2 budgets x 2 seeds)
+
+[timing] mcts1k/seedA took 12.8s
+[timing] mcts1k/seedB took 13.0s
+[timing] mcts10k/seedA took 131.3s
+[timing] mcts10k/seedB took 117.2s
+
+==========================================================================================
+
+### mcts1k vs mcts1k — seedA (seed="duel-draft-selfplay-mcts1k-seedA-wl3"), n=100
+
+W/D/L (seat-indexed, both seats run the identical policy/budget):
+  seat0 wins:   3 (3.0%, SE ~1.7 pts)
+  seat1 wins:   4 (4.0%, SE ~2.0 pts)
+  draws:       93 (93.0%, SE ~2.6 pts)
+
+Plies (=rounds): mean=4.65  variance=4.028  sd=2.007  min=3  max=13
+
+ROUND-1 COLLISION RATE (plan §7.3's actual gate, flag >= 50%): 22.0% (22/100)
+
+Per-round collision rate (round 1 = first row):
+round | games reaching this round | coincidence rate
+  round  1: n=100  coincidence= 22.0%
+  round  2: n=100  coincidence= 44.0%
+  round  3: n=100  coincidence= 46.0%
+  round  4: n= 62  coincidence= 14.5%
+  round  5: n= 51  coincidence= 11.8%
+  round  6: n= 16  coincidence= 56.3%
+  round  7: n= 13  coincidence= 38.5%
+  round  8: n=  7  coincidence= 42.9%
+  round  9: n=  4  coincidence= 50.0%
+  round 10: n=  4  coincidence= 50.0%
+  round 11: n=  4  coincidence= 50.0%
+  round 12: n=  3  coincidence= 33.3%
+  round 13: n=  1  coincidence=100.0%
+
+Strategic vs forced-endgame breakdown (plan §1.4: emptiesBefore===1 rounds are MANDATORY collisions, not a search signal):
+  strategic rounds (emptiesBefore > 1): 150/463 coincided = 32.4%
+  forced rounds    (emptiesBefore === 1): 2/2 coincided = 100.0% (expect exactly 100% by construction)
+  pooled (strategic + forced, ALL rounds): 152/465 coincided = 32.7%
+
+------------------------------------------------------------------------------------------
+
+### mcts1k vs mcts1k — seedB (seed="duel-draft-selfplay-mcts1k-seedB-wl3"), n=100
+
+W/D/L (seat-indexed, both seats run the identical policy/budget):
+  seat0 wins:   4 (4.0%, SE ~2.0 pts)
+  seat1 wins:   4 (4.0%, SE ~2.0 pts)
+  draws:       92 (92.0%, SE ~2.7 pts)
+
+Plies (=rounds): mean=4.52  variance=2.330  sd=1.526  min=3  max=11
+
+ROUND-1 COLLISION RATE (plan §7.3's actual gate, flag >= 50%): 17.0% (17/100)
+
+Per-round collision rate (round 1 = first row):
+round | games reaching this round | coincidence rate
+  round  1: n=100  coincidence= 17.0%
+  round  2: n=100  coincidence= 48.0%
+  round  3: n=100  coincidence= 51.0%
+  round  4: n= 66  coincidence= 12.1%
+  round  5: n= 53  coincidence=  5.7%
+  round  6: n= 12  coincidence= 58.3%
+  round  7: n= 11  coincidence= 36.4%
+  round  8: n=  7  coincidence=  0.0%
+  round  9: n=  1  coincidence=  0.0%
+  round 10: n=  1  coincidence=  0.0%
+  round 11: n=  1  coincidence=100.0%
+
+Strategic vs forced-endgame breakdown (plan §1.4: emptiesBefore===1 rounds are MANDATORY collisions, not a search signal):
+  strategic rounds (emptiesBefore > 1): 138/451 coincided = 30.6%
+  forced rounds    (emptiesBefore === 1): 1/1 coincided = 100.0% (expect exactly 100% by construction)
+  pooled (strategic + forced, ALL rounds): 139/452 coincided = 30.8%
+
+------------------------------------------------------------------------------------------
+
+### mcts10k vs mcts10k — seedA (seed="duel-draft-selfplay-mcts10k-seedA-wl3"), n=100
+
+W/D/L (seat-indexed, both seats run the identical policy/budget):
+  seat0 wins:   0 (0.0%, SE ~0.0 pts)
+  seat1 wins:   1 (1.0%, SE ~1.0 pts)
+  draws:       99 (99.0%, SE ~1.0 pts)
+
+Plies (=rounds): mean=4.46  variance=2.328  sd=1.526  min=3  max=13
+
+ROUND-1 COLLISION RATE (plan §7.3's actual gate, flag >= 50%): 38.0% (38/100)
+
+Per-round collision rate (round 1 = first row):
+round | games reaching this round | coincidence rate
+  round  1: n=100  coincidence= 38.0%
+  round  2: n=100  coincidence= 36.0%
+  round  3: n=100  coincidence= 52.0%
+  round  4: n= 62  coincidence=  3.2%
+  round  5: n= 61  coincidence= 14.8%
+  round  6: n= 11  coincidence= 18.2%
+  round  7: n=  2  coincidence=100.0%
+  round  8: n=  2  coincidence=  0.0%
+  round  9: n=  2  coincidence=  0.0%
+  round 10: n=  2  coincidence=  0.0%
+  round 11: n=  2  coincidence= 50.0%
+  round 12: n=  1  coincidence=100.0%
+  round 13: n=  1  coincidence=100.0%
+
+Strategic vs forced-endgame breakdown (plan §1.4: emptiesBefore===1 rounds are MANDATORY collisions, not a search signal):
+  strategic rounds (emptiesBefore > 1): 143/445 coincided = 32.1%
+  forced rounds    (emptiesBefore === 1): 1/1 coincided = 100.0% (expect exactly 100% by construction)
+  pooled (strategic + forced, ALL rounds): 144/446 coincided = 32.3%
+
+------------------------------------------------------------------------------------------
+
+### mcts10k vs mcts10k — seedB (seed="duel-draft-selfplay-mcts10k-seedB-wl3"), n=100
+
+W/D/L (seat-indexed, both seats run the identical policy/budget):
+  seat0 wins:   1 (1.0%, SE ~1.0 pts)
+  seat1 wins:   0 (0.0%, SE ~0.0 pts)
+  draws:       99 (99.0%, SE ~1.0 pts)
+
+Plies (=rounds): mean=4.13  variance=1.133  sd=1.064  min=3  max=6
+
+ROUND-1 COLLISION RATE (plan §7.3's actual gate, flag >= 50%): 34.0% (34/100)
+
+Per-round collision rate (round 1 = first row):
+round | games reaching this round | coincidence rate
+  round  1: n=100  coincidence= 34.0%
+  round  2: n=100  coincidence= 32.0%
+  round  3: n=100  coincidence= 43.0%
+  round  4: n= 54  coincidence=  0.0%
+  round  5: n= 54  coincidence=  7.4%
+  round  6: n=  5  coincidence=  0.0%
+
+Strategic vs forced-endgame breakdown (plan §1.4: emptiesBefore===1 rounds are MANDATORY collisions, not a search signal):
+  strategic rounds (emptiesBefore > 1): 113/413 coincided = 27.4%
+  forced rounds    (emptiesBefore === 1): 0/0 coincided = n/a% (expect exactly 100% by construction)
+  pooled (strategic + forced, ALL rounds): 113/413 coincided = 27.4%
+
+------------------------------------------------------------------------------------------
+
+=== Measurement 1: strong self-play draw rate (gate: <60%) ===
+  mcts10k/seedA: draws=99/100 = 99.0% (gate <60%: MISSES)
+  mcts10k/seedB: draws=99/100 = 99.0% (gate <60%: MISSES)
+  [context, not the gate subject] mcts1k/seedA: draws=93/100 = 93.0%
+  [context, not the gate subject] mcts1k/seedB: draws=92/100 = 92.0%
+
+=== Measurement 2: first-player advantage (H1) — seat0WinRate over ALL n games ===
+plan §10 row 5 band [40,60]; CI gate band [35,65]. Ruthless/mcts10k used as the
+'validated budget' proxy — no D3 budget sweep has run yet at this WIN_LENGTH.
+  mcts10k/seedA: seat0WinRate=0/100=0.0% (SE ~0.0 pts) — [40,60]: OUT; [35,65]: OUT
+  mcts10k/seedB: seat0WinRate=1/100=1.0% (SE ~1.0 pts) — [40,60]: OUT; [35,65]: OUT
+
+=== Summary table: round-1 collision rate vs the 50% flag ===
+budget  | seed  | round-1 collision rate | flag (>=50%)
+  mcts1k | seedA |   22.0%                | clear (<50%)
+  mcts1k | seedB |   17.0%                | clear (<50%)
+  mcts10k| seedA |   38.0%                | clear (<50%)
+  mcts10k| seedB |   34.0%                | clear (<50%)
+
+=== Seed agreement check (per budget) ===
+  mcts1k: round-1 collision rate seedA=22.0% seedB=17.0% (diff 5.0 pts) | mean plies seedA=4.65 seedB=4.52
+    => seeds agree (diff 5.0 pts <= 20-pt threshold).
+  mcts10k: round-1 collision rate seedA=38.0% seedB=34.0% (diff 4.0 pts) | mean plies seedA=4.46 seedB=4.13
+    => seeds agree (diff 4.0 pts <= 20-pt threshold).
+
+=== Ritual-destruction signature check (mean plies ~16.0 with near-zero variance) ===
+  mcts1k/seedA: mean=4.65 variance=4.028 => not the ritual-destruction signature
+  mcts1k/seedB: mean=4.52 variance=2.330 => not the ritual-destruction signature
+  mcts10k/seedA: mean=4.46 variance=2.328 => not the ritual-destruction signature
+  mcts10k/seedB: mean=4.13 variance=1.133 => not the ritual-destruction signature

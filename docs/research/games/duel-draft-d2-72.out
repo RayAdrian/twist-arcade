@@ -1,0 +1,18 @@
+Duel Draft D2 §7.2 — scripted yardstick (only reached because §7.1 cleared: no C55 decline signature)
+
+Round robin: seed="duel-draft-d2-72-round-robin", 100 games/pairing
+  greedy-threat vs defensive-cover: greedy-threat=0.0% defensive-cover=0.0% draws=100.0%
+  greedy-threat vs mixed-greedy: greedy-threat=48.0% mixed-greedy=28.0% draws=24.0%
+  defensive-cover vs mixed-greedy: defensive-cover=64.0% mixed-greedy=0.0% draws=36.0%
+
+Round-robin standings (points = win 1 / draw 0.5 / loss 0, summed):
+  defensive-cover    132.0 / 200 (66.0%)
+  greedy-threat      110.0 / 200 (55.0%)
+  mixed-greedy       58.0 / 200 (29.0%)
+
+Strongest scripted policy by round-robin measurement: defensive-cover
+
+Yardstick: mcts1k vs defensive-cover, seed="duel-draft-d2-72-yardstick", 100 games
+
+[FAIL] mcts1k vs defensive-cover: 0.0% win rate (SE ~0.0 pts, n=100) — gate: >=55%
+  drawRate=100.0% meanPlies=9.7 capHitRate=0.00%

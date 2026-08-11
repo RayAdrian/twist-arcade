@@ -1,0 +1,26 @@
+Duel Draft — discriminating experiment 1: pick-coincidence rate, mcts1k vs defensive-cover
+seed="duel-draft-d2-73-coincidence", games=100 (mirrorSeats default true)
+
+mcts1k vs defensive-cover: W=0 D=100 L=0 / n=100 (mcts1k win rate 0.0%)
+drawRate=100.0% meanPlies=9.6 capHitRate=0.00%
+
+=== Pick-coincidence rate by round index (round 1 = first row) ===
+round | games reaching this round | coincidence rate (both seats pick same cell)
+  round  1: n=100  coincidence=  8.0%  (SE ~2.7 pts)
+  round  2: n=100  coincidence= 11.0%  (SE ~3.1 pts)
+  round  3: n=100  coincidence= 39.0%  (SE ~4.9 pts)
+  round  4: n=100  coincidence= 32.0%  (SE ~4.7 pts)
+  round  5: n=100  coincidence= 44.0%  (SE ~5.0 pts)
+  round  6: n=100  coincidence= 30.0%  (SE ~4.6 pts)
+  round  7: n=100  coincidence= 23.0%  (SE ~4.2 pts)
+  round  8: n=100  coincidence= 25.0%  (SE ~4.3 pts)
+  round  9: n= 97  coincidence= 55.7%  (SE ~5.0 pts)
+  round 10: n= 48  coincidence= 75.0%  (SE ~6.3 pts)
+  round 11: n= 10  coincidence= 90.0%  (SE ~9.5 pts)
+  round 12: n=  1  coincidence=100.0%  (SE ~0.0 pts)
+
+Overall (pooled across all rounds/games): 312/956 rounds coincided = 32.6%
+
+=== Reading ===
+High coincidence (especially concentrated at round 1, where both seats face the identical symmetric empty board) => collision-by-destruction is producing the draws => defensive-cover is a collider in this matchup, not a genuine positional defender.
+Low/scattered coincidence => the draws are NOT explained by shared picks => the competing hypothesis (collider) is disconfirmed for this matchup and the original diagnosis (defensive-cover out-defends mcts1k for real) stands, or the evidence is ambiguous.

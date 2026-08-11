@@ -1,0 +1,16 @@
+Duel Draft D2 §7.1 — budget-monotonicity diagnostic
+seed="duel-draft-d2-71-monotonicity", games=30/budget, candidates=[1000, 2000, 5000, 10000]
+Watching for the C55 signature: strong-vs-random DECLINING as budget rises.
+
+rollouts=  1000  strong-vs-random win rate = 76.7%  (SE ~7.7 pts, n=30)  drawRate=23.3%  meanPlies=6.1  capHitRate=0.00%
+rollouts=  2000  strong-vs-random win rate = 80.0%  (SE ~7.3 pts, n=30)  drawRate=20.0%  meanPlies=5.6  capHitRate=0.00%
+rollouts=  5000  strong-vs-random win rate = 83.3%  (SE ~6.8 pts, n=30)  drawRate=16.7%  meanPlies=5.4  capHitRate=0.00%
+rollouts= 10000  strong-vs-random win rate = 86.7%  (SE ~6.2 pts, n=30)  drawRate=13.3%  meanPlies=5.0  capHitRate=0.00%
+
+=== Pairwise deltas (rate[i+1] - rate[i], in points) ===
+  1000 -> 2000: +3.3 pts (combined SE ~10.6 pts) => flat/rose
+  2000 -> 5000: +3.3 pts (combined SE ~10.0 pts) => flat/rose
+  5000 -> 10000: +3.3 pts (combined SE ~9.2 pts) => flat/rose
+
+=== VERDICT ===
+No pairwise decline exceeds its combined SE band — no C55 signature on this seed/n. Non-declining trend; §7.2 may proceed.

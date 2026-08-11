@@ -1,0 +1,9 @@
+Duel Draft D2-lever — strong-vs-random @ 10,000 rollouts, WIN_LENGTH=3
+n=100 per seed, 2 independent seeds, mirrorSeats=true (default; agents differ)
+
+seed="duel-draft-d2-lever-strong-vs-random-seedA": mcts10k win rate = 99.0% (SE ~1.0 pts, n=100)  drawRate=1.0%  meanPlies=3.2  capHitRate=0.00%
+  vs CI gate (>=90%): CLEARS   vs kill line (>=80%): CLEARS
+seed="duel-draft-d2-lever-strong-vs-random-seedB": mcts10k win rate = 97.0% (SE ~1.7 pts, n=100)  drawRate=3.0%  meanPlies=3.2  capHitRate=0.00%
+  vs CI gate (>=90%): CLEARS   vs kill line (>=80%): CLEARS
+
+Seed spread: 2.0 pts (seedA=99.0%, seedB=97.0%)

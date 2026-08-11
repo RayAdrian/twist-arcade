@@ -1,0 +1,11 @@
+Duel Draft — discriminating experiment 2: budget escalation, mcts10k vs defensive-cover
+seed="duel-draft-d2-74-budget-escalation", games=100 (mirrorSeats default true)
+
+mcts10k vs defensive-cover, n=100:
+  mcts10k wins:          0 (0.0%, SE ~0.0 pts)
+  draws:               100 (100.0%, SE ~0.0 pts)
+  defensive-cover wins:   0 (0.0%, SE ~0.0 pts)
+  drawRate (harness)=100.0% meanPlies=9.6 capHitRate=0.00%
+
+=== Reading ===
+Still ~100% draws at 10x the yardstick budget. NOT a thin-budget problem — a budget sweep would not rescue this. Consistent with either a genuine strong defense OR a collider effect that a 10x budget increase does nothing to break (a collider defeats an opponent's SEARCH QUALITY, not its search BUDGET, if the collider is winning by predicting the deterministic greedy fallback rather than by outsearching).
