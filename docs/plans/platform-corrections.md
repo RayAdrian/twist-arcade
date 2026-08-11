@@ -3947,3 +3947,68 @@ Two things caught both instances here, and both are cheap:
    call sites" is testable. Nobody tested it. Prose describing how code is kept correct is exactly
    the category this document exists to distrust, and it does not become trustworthy by sitting
    inside the code it describes.
+
+## C66 — Duel Draft is killed. The plan called it in advance, in writing, before the numbers.
+
+Duel Draft is a **forced draw under competent play**, and no sanctioned lever changes that. It is
+the third kill in the catalogue, after Wrap (C20) and Order vs Chaos (C44).
+
+### The evidence, both configurations, two seeds each, n=100 per cell
+
+| measurement | `winLength: 4` | `winLength: 3` | gate |
+|---|---|---|---|
+| strong self-play draw rate | 94–99% | **99.0%, 99.0%** | <60% — **misses** |
+| scripted yardstick (MCTS-1k vs best) | 0.0% | **0.0%, 0.0%** | ≥55% — **misses** |
+| first-player advantage | 0.0% | **0.0%, 1.0%** | [40,60] — **out** |
+| strong-vs-random @ 10k | 86.7% | **99.0%, 97.0%** | ≥90% — clears |
+| §7.3 round-1 collision | 10–17% | 17–38% | <50% — clears |
+
+**The lever fixed the one thing that was not the problem.** Games got shorter (mean plies 7.1–8.9 →
+4.1–4.6), the search got much stronger against random, the bots kept mixing — and self-play still
+drew 99 times in 100.
+
+§10 row 7 (*draw rate >60% at strong self-play → `winLength: 3` if unspent; else kill*) and row 2
+(*defensive-cover forces ≥95% draws vs best attacker → same single lever, then kill*) both fire. The
+single sanctioned lever is spent. The verdict is kill.
+
+### What made this decision cheap instead of agonising
+
+Every threshold, the single permitted remedy, and the kill itself were **written down before any
+number existed**. When the numbers arrived they did not need to be argued about — they needed to be
+looked up. That is the whole return on pre-registration, and it is the second time this project has
+collected it (Tilt's kill-sweep was the first).
+
+The temptation, felt and declined: propose a second lever. Board size 5, a different scoring rule,
+anything. **Proposing a new lever after seeing the result is the definition of the result-pressure
+that pre-registration exists to prevent.** If the mechanic deserves another life it earns one through
+a fresh plan with fresh thresholds, not through an amendment written by someone who already knows
+which way the amendment needs to come out.
+
+### What was NOT wasted, and why the engine stays
+
+The kill is of Duel Draft **as a shippable game**, not of its code. The engine remains in-tree,
+unregistered, exactly as Order vs Chaos's does:
+
+- It is the catalogue's **second `simultaneous: true` exerciser**, and C57/C58's unresolved search
+  residue on Bid-Tac-Toe needs a second one. Tonight it already earned that keep: it is what let
+  §7.3's collision gate run for the first time ever, and that gate **cleared** — real information
+  about the search that Bid-Tac-Toe alone could not have produced.
+- D0's scripted policies and the collider survive as a permanent probes file.
+  `defensive-cover`-vs-itself — 0W/100D/0L at **exactly 16.0 mean plies with zero variance**, 100%
+  round-1 collision, the whole board destroyed with no mark ever placed — is the cleanest
+  ritual-destruction fixture anyone is going to write by hand.
+- D0's kill-test cost 0.51 seconds (C61) and D1's engine cost a day. The plan front-loaded the cheap
+  disconfirmation deliberately; what it could not have caught early is that the drawishness needed a
+  *working search* to become visible at all. A kill-test cannot see a defect that only competent play
+  exposes.
+
+### The consequence, which §10 assigns to me and not to the gate table
+
+> *"A kill releases the slate hedge, leaving Phase 1 one game short if Bid-Tac-Toe is unshipped, and
+> leaving `simultaneous: true` with Bid-Tac-Toe as its only exerciser."*
+
+Both halves now bind. **Bid-Tac-Toe's fate is a user decision that has been pending**, and this kill
+raises its stakes: if Bid-Tac-Toe is also not shipped, the catalogue loses both simultaneous games,
+Phase 1 is a game short, and `simultaneous: true` ships as a platform feature with no live game
+exercising it — while still carrying two unresolved search corrections. Surfaced to the user, not
+decided here.
