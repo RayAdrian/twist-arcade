@@ -180,6 +180,17 @@ describe("evaluateCiGates() — manifest exceptions (plan §7.5)", () => {
       evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [{ gate: "draw-rate", justification: "" }], "ci")
     ).toThrow(EmptyExceptionJustificationError);
   });
+
+  // stage-6 review finding (second pass, C64): when an exception is BOTH blank AND names a gate
+  // that does not exist, identity is checked before content. An author who mistypes a gate name
+  // AND leaves the justification blank should learn the gate name is wrong first — fixing the
+  // justification only to re-run and discover the gate name was wrong too is the less useful
+  // order. Neither error can silence the other; this only pins which one fires first.
+  it("an exception that is BOTH blank AND names an unknown gate throws UnknownExceptionGateError, not EmptyExceptionJustificationError — identity checked before content", () => {
+    expect(() =>
+      evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [{ gate: "typo", justification: "  " }], "ci")
+    ).toThrow(UnknownExceptionGateError);
+  });
 });
 
 // stage-6 review finding (was 🟡-1), ruled: an exceptions[] entry naming a gate that does not
@@ -188,9 +199,21 @@ describe("evaluateCiGates() — manifest exceptions (plan §7.5)", () => {
 // corrections.md C48 already warned about going unnoticed for two games. Refused up front, same
 // seam as EmptyExceptionJustificationError.
 describe("evaluateCiGates() — UnknownExceptionGateError: an exception naming a gate that does not exist must not be silently dead (C48/C63)", () => {
-  it("KNOWN_EXCEPTIONABLE_GATES is exactly the six gate names that route through applyException — derived from the call sites, not hand-copied", () => {
-    // If a future gate block starts (or stops) calling applyException, this assertion is the
-    // thing that goes red — not a comment nobody re-reads.
+  // stage-6 review finding (second pass, C64): this used to be described as "the thing that goes
+  // red" if the coupling between KNOWN_EXCEPTIONABLE_GATES and applyException's call sites ever
+  // broke — but it compared KNOWN_EXCEPTIONABLE_GATES against a SECOND hand-typed literal of the
+  // same six names, right here. Add a seventh applyException call site and forget to touch this
+  // list, and both literals still match — this test stays green while the coupling it claimed to
+  // enforce is gone. The REAL enforcement now lives in suites.ts: applyException's `gate`
+  // parameter is typed `ExceptionableGate`, derived via `(typeof EXCEPTIONABLE_GATES)[number]`
+  // from the same array KNOWN_EXCEPTIONABLE_GATES is built from — so a call site naming a gate
+  // outside that array fails `pnpm typecheck` at that line, before any test runs. That is a
+  // compile-time fact, not something a vitest assertion can exercise; verified manually per C64
+  // by temporarily adding such a call site and confirming `pnpm typecheck` reports it (see the
+  // C64 commit message for the pasted error). This assertion is downgraded to what it actually
+  // is: a readable pin of the current six names, useful for catching an accidental edit to
+  // EXCEPTIONABLE_GATES itself, not a substitute for the type-level guarantee.
+  it("KNOWN_EXCEPTIONABLE_GATES currently names these six gates (a readable pin, not the enforcement — see applyException's ExceptionableGate parameter type in suites.ts for that)", () => {
     expect([...KNOWN_EXCEPTIONABLE_GATES].sort()).toEqual(
       [
         "strong-vs-random",

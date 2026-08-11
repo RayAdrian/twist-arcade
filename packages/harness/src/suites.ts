@@ -153,21 +153,37 @@ export class EmptyExceptionJustificationError extends Error {
   }
 }
 
-/** The six gate names that actually route through `applyException` below — derived from that
- *  function's own call sites, not maintained separately by hand (platform-corrections.md C63).
- *  An `exceptions[]` entry naming any OTHER gate is silently dead: it never matches inside
- *  `applyException` (which does a `find((e) => e.gate === gate)` per gate block), so it never
- *  downgrades anything, anywhere — indistinguishable, at the report layer, from a typo nobody
- *  caught. `UnknownExceptionGateError` refuses that up front, same seam as
- *  `EmptyExceptionJustificationError`. */
-export const KNOWN_EXCEPTIONABLE_GATES: ReadonlySet<string> = new Set([
+/** The six gate names that actually route through `applyException` below. This is the SINGLE
+ *  place they are typed (platform-corrections.md C64): `applyException`'s own `gate` parameter
+ *  is typed as `ExceptionableGate`, the union derived FROM this array via `(typeof
+ *  EXCEPTIONABLE_GATES)[number]` — so a future gate block that calls `applyException` with a
+ *  literal not in this list fails TYPECHECK, at that call site, before the code ever runs. That
+ *  is what makes the coupling real instead of aspirational: previously `KNOWN_EXCEPTIONABLE_GATES`
+ *  was a second hand-typed literal, checked only against a THIRD hand-typed literal in
+ *  suites.test.ts — two places to keep in sync by memory, wearing a comment that claimed
+ *  otherwise. Now there is exactly one array, and the compiler is what enforces every
+ *  `applyException` call site against it. `KNOWN_EXCEPTIONABLE_GATES` (a `ReadonlySet`, kept for
+ *  the runtime membership check below and for `UnknownExceptionGateError`'s message) is derived
+ *  from the same array, never re-typed. An `exceptions[]` entry naming a gate outside this set is
+ *  silently dead at runtime regardless: it never matches inside `applyException` (which does a
+ *  `find((e) => e.gate === gate)` per gate block), so it never downgrades anything, anywhere —
+ *  indistinguishable, at the report layer, from a typo nobody caught. `UnknownExceptionGateError`
+ *  refuses that up front, same seam as `EmptyExceptionJustificationError`. */
+const EXCEPTIONABLE_GATES = [
   "strong-vs-random",
   "first-player-win-rate",
   "draw-rate",
   "mean-plies",
   "ruthless-vs-standard",
   "solved-value-reached",
-]);
+] as const;
+
+/** The type-level twin of `EXCEPTIONABLE_GATES` — every literal `applyException`'s `gate`
+ *  parameter accepts. See that array's own doc for why this is what turns "derived from the call
+ *  sites" from a comment into an enforced fact. */
+export type ExceptionableGate = (typeof EXCEPTIONABLE_GATES)[number];
+
+export const KNOWN_EXCEPTIONABLE_GATES: ReadonlySet<string> = new Set(EXCEPTIONABLE_GATES);
 
 /** Thrown by `evaluateCiGates` when a manifest exception names a gate that is not one of
  *  `KNOWN_EXCEPTIONABLE_GATES` (platform-corrections.md C63). Same posture, same seam as
@@ -203,7 +219,12 @@ export class UnknownExceptionGateError extends Error {
  *  justification attached. A raw "pass"/"warn"/"n/a" is returned unchanged — an exception only
  *  ever SOFTENS a fail, it can never manufacture one, and it is applied per gate name (an
  *  exception for gate X must never touch gate Y). */
-function applyException(gate: string, raw: GateStatus, detail: string, exceptions: readonly ManifestException[]): GateResult {
+function applyException(
+  gate: ExceptionableGate,
+  raw: GateStatus,
+  detail: string,
+  exceptions: readonly ManifestException[]
+): GateResult {
   if (raw !== "fail") return { gate, status: raw, detail };
   const exception = exceptions.find((e) => e.gate === gate);
   if (!exception) return { gate, status: "fail", detail };
@@ -332,17 +353,24 @@ export function evaluateCiGates(
   ruthlessBudgets?: RuthlessVsStandardBudgets,
   deferral?: CiGateDeferral
 ): GateResult[] {
-  // Validated up front, before any gate runs — an exception with a blank justification is
-  // rejected regardless of whether it ends up matching a failing gate (see
+  // Validated up front, before any gate runs — an exception with a blank justification or an
+  // unknown gate name is rejected regardless of whether it ends up matching a failing gate (see
   // EmptyExceptionJustificationError's own doc for why this must never reach the report layer).
+  //
+  // C64: identity (does this gate exist) is checked BEFORE content (is the justification blank)
+  // — the more useful first error when an exception is broken in both ways at once. An author
+  // who mistypes a gate name AND leaves the justification blank should learn the gate name is
+  // wrong first; fixing the justification, re-running, and only then discovering the gate name
+  // was wrong too is a worse loop than the reverse. Neither check can ever silence the other —
+  // this is purely an ordering choice, not a change in what gets refused.
   for (const exception of exceptions) {
-    if (exception.justification.trim() === "") {
-      throw new EmptyExceptionJustificationError(exception.gate);
-    }
-    // C63: refused up front, same loop — a dead exception (naming a gate applyException never
-    // sees) must never reach the report layer any more than a blank justification may.
+    // C63: a dead exception (naming a gate applyException never sees) must never reach the
+    // report layer any more than a blank justification may.
     if (!KNOWN_EXCEPTIONABLE_GATES.has(exception.gate)) {
       throw new UnknownExceptionGateError(exception.gate);
+    }
+    if (exception.justification.trim() === "") {
+      throw new EmptyExceptionJustificationError(exception.gate);
     }
   }
 

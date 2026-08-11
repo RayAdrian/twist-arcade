@@ -633,21 +633,31 @@ the shell team wraps it in their `useGame` hook.
   package. **Mirror is per-game** (point symmetry is board geometry the interface deliberately
   doesn't expose): optional export `games/<id>/probes.ts → mirrorMove(state, lastOpponentMove)`,
   wrapped into a runnable agent by `packages/harness/src/roster.ts`'s `mirrorAgent()`.
-  **CORRECTED (platform-corrections.md C63): this paragraph previously claimed "harness warns
+  **CORRECTED (platform-corrections.md C63/C64): this paragraph previously claimed "harness warns
   when absent, CI requires it for games tagged `symmetric`" — that was never true and no such
-  mechanism was ever built. As of this branch, `mirrorAgent()` has exactly one real call site in
-  the repo, `scripts/research/tilt-t4-gates.ts` (a hand-written research script), and
-  `scripts/ci-gates.ts` never mentions mirroring at all — the mirror probe is not computed in CI
-  for any game, tagged `symmetric` or not.** What DOES exist (C48, routed at C62/C63):
+  mechanism was ever built. As of this branch, all three §6 two-player degeneracy probes — mirror,
+  stall, and rush — are implemented and resolvable via `packages/harness/src/roster.ts`'s
+  `resolveNamedAgent()`, but NONE of them is run by CI: their only call sites outside the packages
+  are three hand-written Tilt research scripts (`scripts/research/tilt-t4-gates.ts`,
+  `scripts/research/tilt-kill-sweep.ts`, `scripts/research/tilt-doubleline-moverwins-check.ts`).
+  `scripts/ci-gates.ts`'s only probe reference is the solo `safeMove` hook, and `runCiSuite`
+  (`packages/harness/src/suites.ts`) runs exactly three matchups — strong-vs-random, strong
+  self-play, ruthless-vs-standard — none of them a degeneracy-probe matchup. No probe is computed
+  in CI for any game, tagged `symmetric` or not.** What DOES exist (C48, routed at C62/C63):
   `manifest.mirrorProbe: { applicable: false, reason }` lets a game declare that mirroring is
   provably not value-preserving for it, and `packages/harness/src/suites.ts`'s
   `evaluateMirrorProbeGate` turns that declaration into a `mirror-probe: n/a` row in the CI
   report — but this is a report row for a game's OWN opt-out, not a probe actually running, and a
-  game that never declares gets no row and no enforcement either way. Wiring a REAL
-  `symmetric`-tagged mirror-probe gate into CI (warn/fail on a measured mirror-bot win rate,
-  the way `stall`/`rush` are wired) remains outstanding work, affecting the four games that
-  export a real `mirrorMove` today (Fadeout, Nine Grids, Order vs Chaos, Tilt) — scheduled
-  separately, not built as part of the C48/C62/C63 declaration mechanism.
+  game that never declares gets no row and no enforcement either way. A declared `mirrorProbe`
+  overrides a `symmetric` tag's own probe expectation rather than conflicting with it —
+  Bid-Tac-Toe is exactly this case (symmetric board, but bids and the star have no reflective
+  analogue), pinned as an executable assertion in `packages/harness/test/suites.test.ts` (the
+  "declaration overrides the tag's own probe expectation" test, stage-6 finding 🟡-2). Wiring
+  REAL, measured degeneracy-probe gates into CI (mirror, stall, AND rush alike — warn/fail on a
+  measured probe-bot win rate) remains outstanding work for all three, not mirror alone,
+  affecting at minimum the four games that export a real `mirrorMove` today (Fadeout, Nine Grids,
+  Order vs Chaos, Tilt) — scheduled separately, not built as part of the C48/C62/C63 declaration
+  mechanism.
 - *Solo (solo-games-lens §3.6):* **Greedy-Only** (1-ply on `heuristic` — generic, here) and
   **Suicide** (shortest path to a terminal — generic, here; harness runs it only for games
   tagged `misere`). **Grind** is a harness-side *analysis*, not a policy (it searches for a
