@@ -3893,3 +3893,57 @@ repair.
 6. **The false claim in `phase-0-platform-spine.md` §6 is corrected**, and the real enforcement is
    recorded as outstanding rather than deleted. Building it is a genuine platform feature touching
    four games' existing `mirrorMove`s — scheduled deliberately, not folded into a cleanup.
+
+## C65 — A correction is written in the same frame of mind that produced the defect.
+
+C64's six fixes went back for a second review pass, because they introduced new *throwing* code into
+a gate path and throwing code there can break CI for shipped games. Two findings survived, and both
+are **the defect the commit exists to repair, reappearing inside the repair.**
+
+### Instance one: the correction to a false claim contains a false claim
+
+The whole point of finding 6 was to retract `phase-0-platform-spine.md`'s untrue assertion that CI
+enforces the mirror probe. The corrected text says the real gate should be wired *"the way
+`stall`/`rush` are wired."*
+
+**Stall and rush are not wired.** That is the amendment recorded above this entry, established two
+hours earlier and verified from the call sites. A retraction of a false CI-enforcement claim asserts
+a false CI-enforcement claim, one sentence later, about the sibling probes. A future implementer
+following that instruction goes looking for wiring that does not exist — which is precisely how the
+original claim wasted three corrections' worth of care.
+
+### Instance two: the fix for two-places-to-remember created three
+
+`UnknownExceptionGateError` refuses an `exceptions[]` entry naming a gate outside an allow-list. The
+allow-list is a hand-typed literal. The test asserting it is *"derived from that function's own call
+sites, not maintained separately by hand"* compares it to **a second hand-typed literal of the same
+six names.**
+
+Run the growth scenario: add a seventh `applyException` call site, forget the Set. Both literals
+still match. The test stays green. A game author's legitimate exception now throws an error whose
+message states, falsely, that their gate does not route through `applyException`.
+
+The source comment and the test title both describe an enforcement mechanism that does not exist.
+The remedy is to make the compiler the enforcement — an `as const` array, a derived
+`ExceptionableGate` type on `applyException`'s parameter — so a seventh call site fails typecheck
+until the array is updated. **And then to plant the seventh call site and watch typecheck go red**,
+because a refactor claiming compiler enforcement, verified by reading, is the identical error one
+level up.
+
+### The pattern, and the question that catches it
+
+I have done this myself: **C25 repeated C22's own mistake in a brief that cited C22.** Three
+instances now, across two agents and me. The mechanism is not carelessness. A correction is drafted
+by whoever just built the mental model that produced the defect, using the same assumptions, in the
+same session — so it inherits the same blind spot, and the act of fixing supplies a feeling of
+resolution that suppresses re-checking.
+
+Two things caught both instances here, and both are cheap:
+
+1. **Ask the reviewer the specific question:** *did this fix create a fresh instance of the defect it
+   repairs?* Not "review the fix" — that gets a review of the fix. The narrow question found two
+   findings a general one had missed on the same file an hour earlier.
+2. **Treat a comment that claims a mechanism as a claim requiring verification.** "Derived from the
+   call sites" is testable. Nobody tested it. Prose describing how code is kept correct is exactly
+   the category this document exists to distrust, and it does not become trustworthy by sitting
+   inside the code it describes.
