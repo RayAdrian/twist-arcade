@@ -28,6 +28,12 @@ describe("@twist-arcade/harness's public barrel", () => {
     expect(typeof harness.assertSuiteOk).toBe("function");
     expect(typeof harness.worstCapHitRate).toBe("function");
     expect(typeof harness.EmptyExceptionJustificationError).toBe("function");
+    // C63: added alongside the up-front UnknownExceptionGateError refusal and the
+    // InvalidMirrorProbeDeclarationError runtime-matches-type check — both need to be reachable
+    // from the public barrel like every other suites.ts error/gate export above.
+    expect(typeof harness.UnknownExceptionGateError).toBe("function");
+    expect(harness.KNOWN_EXCEPTIONABLE_GATES instanceof Set).toBe(true);
+    expect(typeof harness.InvalidMirrorProbeDeclarationError).toBe("function");
   });
 
   it("exports the report formatters", () => {

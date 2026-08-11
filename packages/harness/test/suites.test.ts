@@ -19,10 +19,14 @@ import {
   assertSuiteOk,
   compareBudgets,
   EmptyExceptionJustificationError,
+  EmptyMirrorProbeReasonError,
   evaluateCiGates,
+  evaluateMirrorProbeGate,
   hasDeferredGates,
   hasUnattainedGates,
   InvalidAttainmentBaselineError,
+  InvalidMirrorProbeDeclarationError,
+  KNOWN_EXCEPTIONABLE_GATES,
   MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE,
   MissingCiRolloutBudgetError,
   MissingSolvedValueProofError,
@@ -31,7 +35,9 @@ import {
   SuiteFailedError,
   TierBudgetCollapseError,
   TwoPlayerDeferredGateAtNightlyError,
+  UnknownExceptionGateError,
   worstCapHitRate,
+  type CiSuiteReport,
   type GateInputs,
 } from "../src/suites";
 import type { MatchupReport } from "../src/runner";
@@ -173,6 +179,97 @@ describe("evaluateCiGates() — manifest exceptions (plan §7.5)", () => {
     expect(() =>
       evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [{ gate: "draw-rate", justification: "" }], "ci")
     ).toThrow(EmptyExceptionJustificationError);
+  });
+
+  // stage-6 review finding (second pass, C64): when an exception is BOTH blank AND names a gate
+  // that does not exist, identity is checked before content. An author who mistypes a gate name
+  // AND leaves the justification blank should learn the gate name is wrong first — fixing the
+  // justification only to re-run and discover the gate name was wrong too is the less useful
+  // order. Neither error can silence the other; this only pins which one fires first.
+  it("an exception that is BOTH blank AND names an unknown gate throws UnknownExceptionGateError, not EmptyExceptionJustificationError — identity checked before content", () => {
+    expect(() =>
+      evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [{ gate: "typo", justification: "  " }], "ci")
+    ).toThrow(UnknownExceptionGateError);
+  });
+});
+
+// stage-6 review finding (was 🟡-1), ruled: an exceptions[] entry naming a gate that does not
+// exist is silently dead, repo-wide — fail-closed (nothing downgrades), so it is an honesty
+// defect rather than a gating defect, but it is exactly the shape of thing platform-
+// corrections.md C48 already warned about going unnoticed for two games. Refused up front, same
+// seam as EmptyExceptionJustificationError.
+describe("evaluateCiGates() — UnknownExceptionGateError: an exception naming a gate that does not exist must not be silently dead (C48/C63)", () => {
+  // stage-6 review finding (second pass, C64): this used to be described as "the thing that goes
+  // red" if the coupling between KNOWN_EXCEPTIONABLE_GATES and applyException's call sites ever
+  // broke — but it compared KNOWN_EXCEPTIONABLE_GATES against a SECOND hand-typed literal of the
+  // same six names, right here. Add a seventh applyException call site and forget to touch this
+  // list, and both literals still match — this test stays green while the coupling it claimed to
+  // enforce is gone. The REAL enforcement now lives in suites.ts: applyException's `gate`
+  // parameter is typed `ExceptionableGate`, derived via `(typeof EXCEPTIONABLE_GATES)[number]`
+  // from the same array KNOWN_EXCEPTIONABLE_GATES is built from — so a call site naming a gate
+  // outside that array fails `pnpm typecheck` at that line, before any test runs. That is a
+  // compile-time fact, not something a vitest assertion can exercise; verified manually per C64
+  // by temporarily adding such a call site and confirming `pnpm typecheck` reports it (see the
+  // C64 commit message for the pasted error). This assertion is downgraded to what it actually
+  // is: a readable pin of the current six names, useful for catching an accidental edit to
+  // EXCEPTIONABLE_GATES itself, not a substitute for the type-level guarantee.
+  it("KNOWN_EXCEPTIONABLE_GATES currently names these six gates (a readable pin, not the enforcement — see applyException's ExceptionableGate parameter type in suites.ts for that)", () => {
+    expect([...KNOWN_EXCEPTIONABLE_GATES].sort()).toEqual(
+      [
+        "strong-vs-random",
+        "first-player-win-rate",
+        "draw-rate",
+        "mean-plies",
+        "ruthless-vs-standard",
+        "solved-value-reached",
+      ].sort()
+    );
+  });
+
+  it("throws UnknownExceptionGateError for a gate name that is not one of the six exceptionable gates", () => {
+    expect(() =>
+      evaluateCiGates(
+        HEALTHY,
+        DEFAULT_HARNESS_THRESHOLDS,
+        [{ gate: "strong-vs-radnom", justification: "typo'd gate name — must not be silently dead" }],
+        "ci"
+      )
+    ).toThrow(UnknownExceptionGateError);
+  });
+
+  it("throws even when the named (nonexistent) gate would never have failed anyway — validated up front, not lazily on use", () => {
+    expect(() =>
+      evaluateCiGates(
+        HEALTHY,
+        DEFAULT_HARNESS_THRESHOLDS,
+        [{ gate: "solved-value", justification: "close to a real name but not it" }],
+        "ci"
+      )
+    ).toThrow(UnknownExceptionGateError);
+  });
+
+  it("special-cases \"mirror-probe\" with a message pointing at manifest.mirrorProbe instead — the trap a game author is now most likely to walk into, since it is a real, plausible gate name that simply is not exceptionable", () => {
+    let thrown: unknown;
+    try {
+      evaluateCiGates(
+        HEALTHY,
+        DEFAULT_HARNESS_THRESHOLDS,
+        [{ gate: "mirror-probe", justification: "trying to excuse a mirror-probe fail" }],
+        "ci"
+      );
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(UnknownExceptionGateError);
+    expect((thrown as Error).message).toMatch(/mirrorProbe/);
+  });
+
+  it("does NOT throw for any of the six real exceptionable gate names", () => {
+    for (const gate of KNOWN_EXCEPTIONABLE_GATES) {
+      expect(() =>
+        evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [{ gate, justification: "real gate, real reason" }], "ci")
+      ).not.toThrow();
+    }
   });
 });
 
@@ -1600,5 +1697,296 @@ describe("runCiSuite — C27: real wiring, no self-play at all when deferral is 
     expect(() => runCiSuite(classicTicTacToe, manifest, { seed: "suites-test:c27:no-ruthless-tier", games: 10 })).toThrow(
       /no "ruthless" difficulty tier/
     );
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// platform-corrections.md C48 (ruled), routed at C62 — a game may declare, via
+// `manifest.mirrorProbe`, that the mirror-bot degeneracy probe (roadmap §6's design gate,
+// "mirror bot <40% as P2") does not apply to it: "where mirroring is provably not
+// value-preserving, the probe cannot measure its claim... a WARN invites someone to tune away
+// a number that never meant anything." The gate must report `n/a`, citing the reason — and a
+// game that never declares must see NO change at all, at any call site.
+// ---------------------------------------------------------------------------------------
+
+describe("evaluateMirrorProbeGate() — pure evaluator (C48/C62)", () => {
+  it("returns null when the manifest does not declare mirrorProbe at all (the default)", () => {
+    expect(evaluateMirrorProbeGate({ id: "some-game" })).toBeNull();
+  });
+
+  it("returns an n/a GateResult citing the reason verbatim when declared", () => {
+    const result = evaluateMirrorProbeGate({
+      id: "duel-draft",
+      mirrorProbe: { applicable: false, reason: "no prior move within a round exists to mirror" },
+    });
+    expect(result).not.toBeNull();
+    expect(result!.gate).toBe("mirror-probe");
+    expect(result!.status).toBe("n/a");
+    expect(result!.detail).toContain("no prior move within a round exists to mirror");
+  });
+
+  it("REFUSES a declared-but-empty reason (EmptyMirrorProbeReasonError), never silently accepting a bare opt-out", () => {
+    expect(() =>
+      evaluateMirrorProbeGate({ id: "some-game", mirrorProbe: { applicable: false, reason: "" } })
+    ).toThrow(EmptyMirrorProbeReasonError);
+  });
+
+  it("REFUSES a whitespace-only reason the same way (not merely an empty-string check)", () => {
+    expect(() =>
+      evaluateMirrorProbeGate({ id: "some-game", mirrorProbe: { applicable: false, reason: "   \n\t " } })
+    ).toThrow(EmptyMirrorProbeReasonError);
+  });
+
+  it("PLANTED VIOLATION: if the empty-reason guard is removed, the refusal test above stops throwing — proving the guard, not the test, is what fires", () => {
+    // Mutation-test the guard itself (C41: "a guard that passes because the situation could not
+    // distinguish honesty from cheating"): a version of evaluateMirrorProbeGate that skips the
+    // trim().length === 0 check would return a GateResult instead of throwing. Reproduced here
+    // directly (not by editing suites.ts) so this test file is its own evidence that the assertion
+    // above is load-bearing, not vacuous.
+    function unguarded(manifest: { id: string; mirrorProbe?: { applicable: false; reason: string } }) {
+      const decl = manifest.mirrorProbe;
+      if (decl === undefined) return null;
+      // (guard intentionally omitted here)
+      return { gate: "mirror-probe", status: "n/a" as const, detail: `not applicable: ${decl.reason}` };
+    }
+    // With the guard removed, a blank reason no longer throws — it silently produces a row.
+    expect(() => unguarded({ id: "some-game", mirrorProbe: { applicable: false, reason: "" } })).not.toThrow();
+    // The REAL function still throws for the identical input — confirming the guard in suites.ts
+    // is what makes the "REFUSES a declared-but-empty reason" test above fail if ever removed.
+    expect(() =>
+      evaluateMirrorProbeGate({ id: "some-game", mirrorProbe: { applicable: false, reason: "" } })
+    ).toThrow(EmptyMirrorProbeReasonError);
+  });
+
+  // stage-6 review finding (was 🟡-2), ruled: a "symmetric"-tagged game may ALSO declare
+  // mirrorProbe: { applicable: false } — Bid-Tac-Toe is exactly that case (symmetric BOARD, but
+  // bids and the star have no reflective analogue). A hard refusal keyed on the "symmetric" tag
+  // would be WRONG here: the declaration overrides the tag's own probe expectation, it does not
+  // conflict with it. Pinned as an executable assertion rather than left as a sentence in a
+  // review — evaluateMirrorProbeGate's own parameter type (`Pick<GameManifest, "id" |
+  // "mirrorProbe">`) already structurally cannot see `tags` at all, which is what makes "the
+  // declaration overrides the tag" true by construction; this test is what breaks if a future
+  // change ever widens the signature to inspect tags and adds a hard refusal there.
+  it("a manifest tagged \"symmetric\" that ALSO declares mirrorProbe: { applicable: false } still returns the n/a row — the declaration overrides the tag's own probe expectation, never a hard refusal", () => {
+    const bidTacToeShapedManifest: GameManifest = {
+      id: "bid-tac-toe-fixture",
+      title: "Bid-Tac-Toe Fixture",
+      classic: "Tic-Tac-Toe",
+      ruleSentence: "suites.test.ts C63 tag-interaction fixture.",
+      tags: ["symmetric"],
+      estMinutes: 3,
+      modes: { bot: true, hotseat: true, asyncLink: true },
+      players: { min: 2, max: 2 },
+      difficultyTiers: [
+        { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 200 }, minReplyMs: 0 },
+      ],
+      mirrorProbe: { applicable: false, reason: "board is spatially symmetric but bids and the star have no reflective analogue" },
+    };
+    const result = evaluateMirrorProbeGate(bidTacToeShapedManifest);
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("n/a");
+    expect(result!.detail).toBe("not applicable: board is spatially symmetric but bids and the star have no reflective analogue");
+  });
+
+  // stage-6 review finding (was 🔵-1), ruled: evaluateMirrorProbeGate never actually reads
+  // `decl.applicable` — it keys on PRESENCE of `mirrorProbe` alone, so a manifest that reaches
+  // this function through a cast (or a future non-TS path, e.g. JSON loaded from a database once
+  // Phase 2 lands) with `applicable: true` would still yield an n/a row asserting the exact
+  // opposite of what was declared. The TYPE (`{ readonly applicable: false; ... }`) already
+  // promises this can't happen — this closes the gap between that promise and the runtime.
+  it("THROWS InvalidMirrorProbeDeclarationError if mirrorProbe.applicable is not the literal false the type requires (a cast or non-TS path bypassing the type)", () => {
+    const smuggledTrue = {
+      id: "some-game",
+      mirrorProbe: { applicable: true, reason: "should never reach a gate row" },
+    } as unknown as Pick<GameManifest, "id" | "mirrorProbe">;
+    expect(() => evaluateMirrorProbeGate(smuggledTrue)).toThrow(InvalidMirrorProbeDeclarationError);
+  });
+
+  it("also throws for a non-boolean applicable value (defense in depth against a raw, un-typed JSON declaration)", () => {
+    const smuggledJunk = {
+      id: "some-game",
+      mirrorProbe: { applicable: "false", reason: "the string \"false\", not the literal" },
+    } as unknown as Pick<GameManifest, "id" | "mirrorProbe">;
+    expect(() => evaluateMirrorProbeGate(smuggledJunk)).toThrow(InvalidMirrorProbeDeclarationError);
+  });
+
+  it("the applicable check fires (not EmptyMirrorProbeReasonError) even when reason is ALSO blank — proving the two guards are independent, not one masking the other", () => {
+    const smuggledTrueBlankReason = {
+      id: "some-game",
+      mirrorProbe: { applicable: true, reason: "" },
+    } as unknown as Pick<GameManifest, "id" | "mirrorProbe">;
+    let thrown: unknown;
+    try {
+      evaluateMirrorProbeGate(smuggledTrueBlankReason);
+    } catch (e) {
+      thrown = e;
+    }
+    // Specifically NOT EmptyMirrorProbeReasonError — if the applicable check were missing (or
+    // ordered after the reason check), this input would throw that instead, and this assertion
+    // is what would catch that silently-wrong ordering.
+    expect(thrown).toBeInstanceOf(InvalidMirrorProbeDeclarationError);
+    expect(thrown).not.toBeInstanceOf(EmptyMirrorProbeReasonError);
+  });
+});
+
+describe("runCiSuite() — C48/C62: mirror-probe declaration wired into the real report", () => {
+  const baseManifest: GameManifest = {
+    id: "mirror-probe-fixture",
+    title: "Mirror Probe Fixture",
+    classic: "Tic-Tac-Toe",
+    ruleSentence: "suites.test.ts C48/C62 fixture.",
+    tags: [],
+    estMinutes: 1,
+    modes: { bot: true, hotseat: false, asyncLink: false },
+    players: { min: 2, max: 2 },
+    difficultyTiers: [
+      { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 200 }, minReplyMs: 0 },
+    ],
+  };
+
+  it("a manifest that does NOT declare mirrorProbe gets the exact same six gate rows as before this mechanism existed — no 'mirror-probe' row appears", () => {
+    const report = runCiSuite(classicTicTacToe, baseManifest, { seed: "suites-test:mirror:undeclared", games: 20 });
+    expect(report.gates.find((g) => g.gate === "mirror-probe")).toBeUndefined();
+    expect(report.gates.map((g) => g.gate).sort()).toEqual(
+      [
+        "strong-vs-random",
+        "first-player-win-rate",
+        "draw-rate",
+        "mean-plies",
+        "ruthless-vs-standard",
+        "solved-value-reached",
+      ].sort()
+    );
+  });
+
+  it("a manifest that DECLARES mirrorProbe gets a seventh 'mirror-probe' row, status n/a, citing the reason — every other row unchanged", () => {
+    const declaringManifest: GameManifest = {
+      ...baseManifest,
+      id: "mirror-probe-fixture-declaring",
+      mirrorProbe: { applicable: false, reason: "bids and the star have no reflective analogue" },
+    };
+    const report = runCiSuite(classicTicTacToe, declaringManifest, { seed: "suites-test:mirror:declared", games: 20 });
+    const mirrorRow = report.gates.find((g) => g.gate === "mirror-probe");
+    expect(mirrorRow).toBeDefined();
+    expect(mirrorRow!.status).toBe("n/a");
+    expect(mirrorRow!.detail).toBe("not applicable: bids and the star have no reflective analogue");
+    expect(report.gates.length).toBe(7); // the six existing rows, plus this one
+  });
+
+  it("declaring mirrorProbe changes NOTHING about the other six gates or the overall verdict — under the IDENTICAL seed, it only adds one n/a row (n/a is never a failure, so it can never independently flip report.ok)", () => {
+    const seed = "suites-test:mirror:parity";
+    const undeclaredReport = runCiSuite(classicTicTacToe, baseManifest, { seed, games: 20 });
+    const declaringManifest: GameManifest = {
+      ...baseManifest,
+      id: "mirror-probe-fixture-parity",
+      mirrorProbe: { applicable: false, reason: "provably not value-preserving for this game" },
+    };
+    const declaredReport = runCiSuite(classicTicTacToe, declaringManifest, { seed, games: 20 });
+
+    // Same seed, same tiers, same engine — the six pre-existing gates must be byte-identical
+    // (manifest.id and mirrorProbe feed nothing into runMatchup's own seeding), regardless of
+    // whether THIS run happens to pass or fail every one of them for unrelated reasons.
+    const declaredNonMirrorGates = declaredReport.gates.filter((g) => g.gate !== "mirror-probe");
+    expect(declaredNonMirrorGates).toEqual(undeclaredReport.gates);
+
+    // The verdict tracks the SAME six gates either way — declaring mirrorProbe can only ADD an
+    // n/a row (never "fail"), so it never independently changes report.ok in either direction.
+    expect(declaredReport.ok).toBe(undeclaredReport.ok);
+  });
+
+  it("the mirror-probe row appears even under an active C27 deferral (it costs no self-play, so it is never itself deferred)", () => {
+    const deferredDeclaringManifest: GameManifest = {
+      ...baseManifest,
+      id: "mirror-probe-fixture-deferred",
+      difficultyTiers: [
+        { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 10_000 }, minReplyMs: 0 },
+      ],
+      ciGateBudget: { deferGatesToNightly: { reason: "unaffordable at ci tier — suites.test.ts fixture" } },
+      mirrorProbe: { applicable: false, reason: "no prior move within a round to mirror" },
+    };
+    const report = runCiSuite(classicTicTacToe, deferredDeclaringManifest, {
+      seed: "suites-test:mirror:deferred",
+      games: 20,
+    });
+    expect(report.matchups).toBeNull(); // deferral really is active
+    const mirrorRow = report.gates.find((g) => g.gate === "mirror-probe");
+    expect(mirrorRow?.status).toBe("n/a");
+    expect(mirrorRow?.detail).toBe("not applicable: no prior move within a round to mirror");
+  });
+
+  it("an UNDECLARED manifest under the SAME active C27 deferral still gets no mirror-probe row — isolation holds in the deferred branch too, not only the normal one", () => {
+    const deferredUndeclaredManifest: GameManifest = {
+      ...baseManifest,
+      id: "mirror-probe-fixture-deferred-undeclared",
+      difficultyTiers: [
+        { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 10_000 }, minReplyMs: 0 },
+      ],
+      ciGateBudget: { deferGatesToNightly: { reason: "unaffordable at ci tier — suites.test.ts fixture" } },
+      // deliberately NO mirrorProbe here
+    };
+    const report = runCiSuite(classicTicTacToe, deferredUndeclaredManifest, {
+      seed: "suites-test:mirror:deferred-undeclared",
+      games: 20,
+    });
+    expect(report.matchups).toBeNull(); // deferral really is active
+    expect(report.gates.find((g) => g.gate === "mirror-probe")).toBeUndefined();
+    expect(report.gates.length).toBe(6);
+  });
+
+  it("renders visibly distinct from PASS in formatCiSuiteTable (C2: a skipped gate and a passed gate must never look the same)", () => {
+    const declaringManifest: GameManifest = {
+      ...baseManifest,
+      id: "mirror-probe-fixture-render",
+      mirrorProbe: { applicable: false, reason: "board is spatially symmetric but bids/star are not" },
+    };
+    const report = runCiSuite(classicTicTacToe, declaringManifest, { seed: "suites-test:mirror:render", games: 20 });
+    const table = formatCiSuiteTable(report);
+    expect(table).toContain("[N/A ] mirror-probe: not applicable: board is spatially symmetric but bids/star are not");
+    expect(table).not.toContain("[PASS] mirror-probe");
+    expect(table).not.toContain("[WARN] mirror-probe");
+  });
+
+  it("PLANTED VIOLATION (isolation direction): if runCiSuite unconditionally appended a mirror-probe row regardless of the manifest, an undeclared game's gates array would grow — proving the conditional append (not luck) is what keeps undeclared games byte-identical", () => {
+    const before = runCiSuite(classicTicTacToe, baseManifest, { seed: "suites-test:mirror:isolation", games: 20 });
+    // Simulate the violation locally: an unconditional append (the bug this test guards against
+    // would look like) always adds a row, even with mirrorGate === null upstream.
+    const unconditionallyAppended = [...before.gates, { gate: "mirror-probe", status: "n/a" as const, detail: "not applicable: (bug) always appended" }];
+    expect(unconditionallyAppended.length).toBe(before.gates.length + 1);
+    // The REAL runCiSuite output for this same undeclared manifest does NOT do this:
+    expect(before.gates.length).toBe(6);
+    expect(before.gates.find((g) => g.gate === "mirror-probe")).toBeUndefined();
+  });
+
+  it("REFUSES a declared-but-blank reason from INSIDE runCiSuite itself — a game cannot get a report built on a blank opt-out, not just a bare call to evaluateMirrorProbeGate", () => {
+    const blankReasonManifest: GameManifest = {
+      ...baseManifest,
+      id: "mirror-probe-fixture-blank-via-runcisuite",
+      mirrorProbe: { applicable: false, reason: "   " },
+    };
+    let report: CiSuiteReport | undefined;
+    let thrown: unknown;
+    try {
+      report = runCiSuite(classicTicTacToe, blankReasonManifest, { seed: "suites-test:mirror:blank-runcisuite", games: 20 });
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(EmptyMirrorProbeReasonError);
+    // No report was ever produced — the blank declaration never gets far enough to render.
+    expect(report).toBeUndefined();
+  });
+
+  it("REFUSES a declared-but-blank reason from runCiSuite's DEFERRED branch too (C27 deferral does not bypass the C48 refusal)", () => {
+    const blankReasonDeferredManifest: GameManifest = {
+      ...baseManifest,
+      id: "mirror-probe-fixture-blank-deferred",
+      difficultyTiers: [
+        { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 10_000 }, minReplyMs: 0 },
+      ],
+      ciGateBudget: { deferGatesToNightly: { reason: "unaffordable at ci tier — suites.test.ts fixture" } },
+      mirrorProbe: { applicable: false, reason: "\n\t " },
+    };
+    expect(() =>
+      runCiSuite(classicTicTacToe, blankReasonDeferredManifest, { seed: "suites-test:mirror:blank-deferred", games: 20 })
+    ).toThrow(EmptyMirrorProbeReasonError);
   });
 });

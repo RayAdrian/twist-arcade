@@ -46,9 +46,11 @@ CLAUDE.md §2 loop's stage-2 (Develop) TDD anchor list for this game.
       — CI proves not-broken, design decides good).
 - [ ] Tune the three difficulty tiers in `manifest.ts` against the design-gate's tier-ordering
       expectation (ruthless >= standard >= casual).
-- [ ] If your board is point-symmetric, implement the real `mirrorMove` in `probes.ts` and add
-      the `"symmetric"` tag to `manifest.ts` — CI hard-requires the probe for that tag. If it
-      is NOT symmetric, delete `probes.ts` and skip this.
+- [x] Mirror probe: neither `mirrorMove` nor the `"symmetric"` tag applies — every
+      non-terminal state is a single joint pick with no prior move WITHIN a round to mirror
+      (probes.ts's module doc). Declared via `manifest.ts`'s `mirrorProbe: { applicable: false,
+      reason: ... }` (platform-corrections.md C48, routed at C62) so the harness reports this
+      as `n/a` citing the reason, not a silent skip or a WARN.
 - [ ] `ui/Board.tsx` + the grayscale-screenshot test (every state change must read from a
       static, colorless render — motion may only restate it, per C5).
 - [ ] `index.ts`'s `announce()` strings — real per-event sentence fragments (ux-lens §9).

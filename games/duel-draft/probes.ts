@@ -29,18 +29,26 @@
 // WARN invites someone to tune away a number that never meant anything." The correct report
 // for this game's mirror probe is `n/a`, with this reason — not the roster's default WARN-on-
 // absence behavior. That distinction lives in the harness's gate-reporting layer
-// (packages/harness/src/suites.ts), not in a per-game probes file, and implementing it there
-// is future (D2/D3-adjacent, harness-owned) work, exactly the position Bid-Tac-Toe's own
-// probes.ts left it in after C48 (flagged "Implement at B3", not yet landed at this writing).
-// No `mirrorMove` is exported from this file on purpose: exporting the scaffold's vacuous
-// "always play the first legal move" placeholder would risk it being wired into
-// `mirrorAgent()` later and silently read as a real (and meaningless) win-rate number instead
-// of the `n/a` this game's structure actually calls for.
+// (packages/harness/src/suites.ts's `evaluateMirrorProbeGate`, routed at C62) — this file
+// supplies only the reason string; `manifest.ts` declares `mirrorProbe: { applicable: false,
+// reason: MIRROR_PROBE_NOT_APPLICABLE_REASON }`, which is what makes `runCiSuite`'s real report
+// carry a `mirror-probe: n/a` row citing this text, rather than the absence a reader could not
+// distinguish from "nobody thought about it". No `mirrorMove` is exported from this file on
+// purpose: exporting the scaffold's vacuous "always play the first legal move" placeholder
+// would risk it being wired into `mirrorAgent()` later and silently read as a real (and
+// meaningless) win-rate number instead of the `n/a` this game's structure actually calls for.
+//
+// The constant below carries ONLY the reason — "report as n/a, never a WARN
+// (platform-corrections.md C48's ruling shape)" is an instruction TO THE HARNESS
+// (`evaluateMirrorProbeGate`), not part of the reason itself, and it used to be baked into the
+// string's last sentence, printing verbatim in every CI report row (`not applicable: ${reason}`
+// has no separate channel for it). A CI reviewer triaging a report should read a reason a probe
+// does not apply, not an instruction meant for the code that already obeys it. Stage-6 review
+// finding — moved here, where a game author writing the declaration reads it.
 export const MIRROR_PROBE_NOT_APPLICABLE_REASON =
   "no prior move WITHIN a round exists to mirror — every non-terminal state is a single joint " +
   "pick (plan §1.1), so a mirror strategy would need to see the opponent's THIS-round pick " +
-  "before responding, which simultaneity rules out by construction. Report as n/a with this " +
-  "reason, never a WARN (platform-corrections.md C48's ruling shape).";
+  "before responding, which simultaneity rules out by construction.";
 
 import type { PlayerId, Rng } from "@twist-arcade/engine";
 import type { Policy, SearchStats } from "@twist-arcade/bots";

@@ -29,6 +29,7 @@
 
 import type { GameManifest } from "@twist-arcade/game-spec";
 import { assertRuleSentenceLength } from "@twist-arcade/game-spec";
+import { MIRROR_PROBE_NOT_APPLICABLE_REASON } from "./probes";
 
 // Plan header, 77 characters, quoted verbatim.
 export const RULE_SENTENCE = "Pick cells at the same time — pick the same one and it's destroyed for good.";
@@ -42,6 +43,13 @@ export const manifest: GameManifest = {
   estMinutes: 3,
   modes: { bot: true, hotseat: true, asyncLink: true },
   players: { min: 2, max: 2 },
+
+  // platform-corrections.md C48 (ruled), routed at C62: probes.ts's own module doc explains WHY
+  // no mirrorMove is exported (mirroring is structurally incoherent under simultaneity, not
+  // merely weak); this is the declaration that turns that reasoning into the harness's real
+  // n/a-with-reason report instead of a silent absence. Same reason string probes.ts's own
+  // comment already cited by name — declared once, in the constant, not duplicated.
+  mirrorProbe: { applicable: false, reason: MIRROR_PROBE_NOT_APPLICABLE_REASON },
 
   // Bot tiers (plan §9): all three budgets are `rollouts` (deterministic) — a `deadlineMs`
   // budget here would make the daily-mode pinned bot non-comparable across devices. Starting

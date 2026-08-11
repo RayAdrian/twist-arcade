@@ -153,11 +153,78 @@ export class EmptyExceptionJustificationError extends Error {
   }
 }
 
+/** The six gate names that actually route through `applyException` below. This is the SINGLE
+ *  place they are typed (platform-corrections.md C64): `applyException`'s own `gate` parameter
+ *  is typed as `ExceptionableGate`, the union derived FROM this array via `(typeof
+ *  EXCEPTIONABLE_GATES)[number]` — so a future gate block that calls `applyException` with a
+ *  literal not in this list fails TYPECHECK, at that call site, before the code ever runs. That
+ *  is what makes the coupling real instead of aspirational: previously `KNOWN_EXCEPTIONABLE_GATES`
+ *  was a second hand-typed literal, checked only against a THIRD hand-typed literal in
+ *  suites.test.ts — two places to keep in sync by memory, wearing a comment that claimed
+ *  otherwise. Now there is exactly one array, and the compiler is what enforces every
+ *  `applyException` call site against it. `KNOWN_EXCEPTIONABLE_GATES` (a `ReadonlySet`, kept for
+ *  the runtime membership check below and for `UnknownExceptionGateError`'s message) is derived
+ *  from the same array, never re-typed. An `exceptions[]` entry naming a gate outside this set is
+ *  silently dead at runtime regardless: it never matches inside `applyException` (which does a
+ *  `find((e) => e.gate === gate)` per gate block), so it never downgrades anything, anywhere —
+ *  indistinguishable, at the report layer, from a typo nobody caught. `UnknownExceptionGateError`
+ *  refuses that up front, same seam as `EmptyExceptionJustificationError`. */
+const EXCEPTIONABLE_GATES = [
+  "strong-vs-random",
+  "first-player-win-rate",
+  "draw-rate",
+  "mean-plies",
+  "ruthless-vs-standard",
+  "solved-value-reached",
+] as const;
+
+/** The type-level twin of `EXCEPTIONABLE_GATES` — every literal `applyException`'s `gate`
+ *  parameter accepts. See that array's own doc for why this is what turns "derived from the call
+ *  sites" from a comment into an enforced fact. */
+export type ExceptionableGate = (typeof EXCEPTIONABLE_GATES)[number];
+
+export const KNOWN_EXCEPTIONABLE_GATES: ReadonlySet<string> = new Set(EXCEPTIONABLE_GATES);
+
+/** Thrown by `evaluateCiGates` when a manifest exception names a gate that is not one of
+ *  `KNOWN_EXCEPTIONABLE_GATES` (platform-corrections.md C63). Same posture, same seam as
+ *  `EmptyExceptionJustificationError`: an exception that can never downgrade anything is not a
+ *  quirky no-op, it is an honesty defect — deferring this refusal (as a "later" cleanup) is
+ *  exactly how C48's mirror-probe reasoning rotted unimplemented across two games before it was
+ *  finally routed at C62/C63, so it is refused here, now, at the manifest boundary.
+ *
+ *  Special-cased for `"mirror-probe"`: it is a real, plausible-sounding gate name (unlike a
+ *  typo), but it is not exceptionable — `evaluateMirrorProbeGate` never reports "fail" (only
+ *  "n/a"), so there is nothing for `applyException` to ever downgrade. A game trying to excuse a
+ *  mirror-probe result is pointed at `manifest.mirrorProbe` instead — that trap is more likely to
+ *  be walked into now that "mirror-probe" is a real row a reviewer sees in every report. */
+export class UnknownExceptionGateError extends Error {
+  constructor(gate: string) {
+    const guidance =
+      gate === "mirror-probe"
+        ? '"mirror-probe" is not a gate exceptions[] can target — it never reports "fail" (only ' +
+          '"n/a"), so there is nothing for an exception to downgrade. Declare manifest.mirrorProbe ' +
+          "instead (platform-corrections.md C48/C62) if this game's mirror probe does not apply."
+        : `known exceptionable gates are: ${[...KNOWN_EXCEPTIONABLE_GATES].join(", ")}.`;
+    super(
+      `evaluateCiGates: manifest exception names gate "${gate}", which does not route through ` +
+        "applyException (platform-corrections.md C63) — an exception naming a gate that does not " +
+        "exist is silently dead, never downgrading anything, indistinguishable from a typo nobody " +
+        `caught. ${guidance}`
+    );
+    this.name = "UnknownExceptionGateError";
+  }
+}
+
 /** Applies a manifest exception (if any) to a raw "fail" verdict: downgrades to "warn" with the
  *  justification attached. A raw "pass"/"warn"/"n/a" is returned unchanged — an exception only
  *  ever SOFTENS a fail, it can never manufacture one, and it is applied per gate name (an
  *  exception for gate X must never touch gate Y). */
-function applyException(gate: string, raw: GateStatus, detail: string, exceptions: readonly ManifestException[]): GateResult {
+function applyException(
+  gate: ExceptionableGate,
+  raw: GateStatus,
+  detail: string,
+  exceptions: readonly ManifestException[]
+): GateResult {
   if (raw !== "fail") return { gate, status: raw, detail };
   const exception = exceptions.find((e) => e.gate === gate);
   if (!exception) return { gate, status: "fail", detail };
@@ -286,10 +353,22 @@ export function evaluateCiGates(
   ruthlessBudgets?: RuthlessVsStandardBudgets,
   deferral?: CiGateDeferral
 ): GateResult[] {
-  // Validated up front, before any gate runs — an exception with a blank justification is
-  // rejected regardless of whether it ends up matching a failing gate (see
+  // Validated up front, before any gate runs — an exception with a blank justification or an
+  // unknown gate name is rejected regardless of whether it ends up matching a failing gate (see
   // EmptyExceptionJustificationError's own doc for why this must never reach the report layer).
+  //
+  // C64: identity (does this gate exist) is checked BEFORE content (is the justification blank)
+  // — the more useful first error when an exception is broken in both ways at once. An author
+  // who mistypes a gate name AND leaves the justification blank should learn the gate name is
+  // wrong first; fixing the justification, re-running, and only then discovering the gate name
+  // was wrong too is a worse loop than the reverse. Neither check can ever silence the other —
+  // this is purely an ordering choice, not a change in what gets refused.
   for (const exception of exceptions) {
+    // C63: a dead exception (naming a gate applyException never sees) must never reach the
+    // report layer any more than a blank justification may.
+    if (!KNOWN_EXCEPTIONABLE_GATES.has(exception.gate)) {
+      throw new UnknownExceptionGateError(exception.gate);
+    }
     if (exception.justification.trim() === "") {
       throw new EmptyExceptionJustificationError(exception.gate);
     }
@@ -768,6 +847,83 @@ export function hasUnattainedGates(results: readonly GateResult[]): boolean {
   return results.some((r) => r.status === "unattained");
 }
 
+// ---------------------------------------------------------------------------------------
+// Mirror-probe declaration (platform-corrections.md C48, routed at C62). NOT one of the six
+// harness-COMPUTED self-play rows this module's header doc scopes `evaluateCiGates` to — a
+// manifest-only declaration with no self-play behind it is a different kind of claim (same
+// reasoning as C23's `n/a` for "no standard tier": a structural fact, not a measurement) — so
+// this lives as its own small, separately-testable function rather than folded into
+// `evaluateCiGates` itself. `runCiSuite` appends its result onto `CiSuiteReport.gates` (below)
+// ONLY when non-null, so a manifest that never declares `mirrorProbe` produces a `gates` array
+// with the exact same six rows this module has always produced — byte-identical, by
+// construction, because the append is conditional on the manifest, not on anything this
+// function computes.
+// ---------------------------------------------------------------------------------------
+
+/** Thrown when a manifest declares `mirrorProbe: { applicable: false, ... }` but `reason` is
+ *  empty or whitespace-only. Same posture, same seam as `EmptyExceptionJustificationError` and
+ *  `MissingSolvedValueProofError`: a declaration that silences a probe must be visible and
+ *  reviewable (platform-corrections.md C48: "a WARN invites someone to tune away a number that
+ *  never meant anything" — the identical hazard applies to a *silent* n/a), refused here, at the
+ *  manifest boundary, before any report is built on the strength of the claim. */
+export class EmptyMirrorProbeReasonError extends Error {
+  constructor(gameId: string) {
+    super(
+      `evaluateMirrorProbeGate: manifest "${gameId}" declares mirrorProbe.applicable === false ` +
+        'but "reason" is empty (or whitespace-only) — platform-corrections.md C48 requires a ' +
+        "stated, reviewable reason for taking a probe out of the report, not a bare opt-out."
+    );
+    this.name = "EmptyMirrorProbeReasonError";
+  }
+}
+
+/** Thrown by `evaluateMirrorProbeGate` when a declared `mirrorProbe.applicable` is present but is
+ *  not the literal `false` the type requires (`GameManifest.mirrorProbe`'s own type is `{
+ *  readonly applicable: false; readonly reason: string }` — there is no `applicable: true`
+ *  variant to set). The TYPE already promises this can't happen from ordinary TypeScript code;
+ *  this closes the gap between that promise and the RUNTIME, for a manifest that reaches this
+ *  function through a cast, or a future non-TS path (Phase 2 puts manifests near a database).
+ *  Without this check, `evaluateMirrorProbeGate` keyed on presence alone — a smuggled `applicable:
+ *  true` would still produce an n/a row whose detail asserts the opposite of what was declared. */
+export class InvalidMirrorProbeDeclarationError extends Error {
+  constructor(gameId: string, applicable: unknown) {
+    super(
+      `evaluateMirrorProbeGate: manifest "${gameId}" declares mirrorProbe.applicable as ` +
+        `${JSON.stringify(applicable)}, not the literal false the type requires — the ONLY ` +
+        'declaration this field supports is opting a probe OUT (there is no "applicable: true" ' +
+        "variant; omit mirrorProbe entirely for that). This manifest reached the gate through a " +
+        "cast or a non-TS path that bypassed the type — refused here so the runtime matches what " +
+        "the type already promises, rather than reporting an n/a row asserting the opposite of " +
+        "what was declared."
+    );
+    this.name = "InvalidMirrorProbeDeclarationError";
+  }
+}
+
+/**
+ * The C48/C62 mechanism: a game may declare, via `manifest.mirrorProbe`, that the mirror-bot
+ * degeneracy probe (roadmap §6's design gate, "mirror bot <40% as P2") does not apply to it —
+ * "where mirroring is provably not value-preserving, the probe cannot measure its claim" (C48).
+ * Returns the declared `n/a` row, citing the reason verbatim, when declared; `null` when the
+ * manifest does not declare (the default) — a game that never touches `mirrorProbe` gets no row
+ * and no behavior change at all, at any call site. Refuses (`EmptyMirrorProbeReasonError`) a
+ * declared-but-blank reason rather than silently accepting it.
+ */
+export function evaluateMirrorProbeGate(manifest: Pick<GameManifest, "id" | "mirrorProbe">): GateResult | null {
+  const decl = manifest.mirrorProbe;
+  if (decl === undefined) return null;
+  // Runtime must match the type (see InvalidMirrorProbeDeclarationError's own doc) — checked
+  // BEFORE the reason check below, so a smuggled `applicable: true` (or any non-`false` value)
+  // is refused on its own terms, never masked by (or dependent on) the blank-reason guard.
+  if (decl.applicable !== false) {
+    throw new InvalidMirrorProbeDeclarationError(manifest.id, decl.applicable);
+  }
+  if (decl.reason.trim().length === 0) {
+    throw new EmptyMirrorProbeReasonError(manifest.id);
+  }
+  return { gate: "mirror-probe", status: "n/a", detail: `not applicable: ${decl.reason}` };
+}
+
 /**
  * Runs the real self-play this gate table needs (strong-vs-random, strong self-play, and
  * ruthless-vs-standard when the manifest has a "standard" tier) and evaluates every gate
@@ -822,7 +978,12 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
       capHitRate: Number.NaN,
       ruthlessVsStandardWinRate: standardTier ? Number.NaN : null,
     };
-    const gates = evaluateCiGates(inputs, thresholds, exceptions, suite, manifest.solvedValue, undefined, deferral);
+    const baseGates = evaluateCiGates(inputs, thresholds, exceptions, suite, manifest.solvedValue, undefined, deferral);
+    // C48/C62: mirror-probe is a manifest-only declaration, orthogonal to deferral (it costs no
+    // self-play either way) — appended here too so a deferred-tier report is not the one place
+    // a declared game's n/a row silently goes missing.
+    const mirrorGate = evaluateMirrorProbeGate(manifest);
+    const gates = mirrorGate ? [...baseGates, mirrorGate] : baseGates;
     return {
       gameId: manifest.id,
       suite,
@@ -914,7 +1075,13 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
     standardN: standardTier && standardTier.budget.kind === "rollouts" ? standardTier.budget.n : null,
   };
 
-  const gates = evaluateCiGates(inputs, thresholds, exceptions, suite, manifest.solvedValue, ruthlessBudgets);
+  const baseGates = evaluateCiGates(inputs, thresholds, exceptions, suite, manifest.solvedValue, ruthlessBudgets);
+  // C48/C62: see the deferred branch above for why this is appended here rather than folded
+  // into evaluateCiGates itself, and why it is conditional on the manifest (never on suite,
+  // budget, or anything else computed in this function) — a manifest that never sets
+  // `mirrorProbe` gets `mirrorGate === null` and `gates === baseGates`, unchanged.
+  const mirrorGate = evaluateMirrorProbeGate(manifest);
+  const gates = mirrorGate ? [...baseGates, mirrorGate] : baseGates;
 
   return {
     gameId: manifest.id,

@@ -143,6 +143,30 @@ export interface GameManifest {
    *  `docs/research/games/fadeout-solve-report.md` §1.1. */
   solvedValue?: SolvedValueClaim;
 
+  /** Declares that the mirror-bot degeneracy probe (roadmap §6's design gate, "mirror bot
+   *  <40% as P2") does not apply to this game (platform-corrections.md C48, routed at C62).
+   *  Omitted (the default, and the ONLY way to get `applicable: true` — there is no such
+   *  variant to set) means mirroring is presumed meaningful; nothing about this field's
+   *  absence changes any existing behavior.
+   *
+   *  C48's ruling: "where mirroring is provably not value-preserving, the probe cannot
+   *  measure its claim... a WARN invites someone to tune away a number that never meant
+   *  anything." The correct report is `n/a`, citing why — never a silent skip and never
+   *  folded into a passing score (C2's rule, same shape as `solvedValue`'s relief above).
+   *
+   *  `reason` is REQUIRED and MUST be non-empty — the harness refuses loudly
+   *  (suites.ts's `EmptyMirrorProbeReasonError`) rather than accept a bare opt-out, the same
+   *  posture `exceptions[].justification` and `solvedValue.proof` already take at this exact
+   *  seam: a declaration that silences a probe must be visible and reviewable, never a
+   *  waiver a game can reach for just because a real mirror strategy would score badly.
+   *  Duel Draft (no prior move WITHIN a round to mirror under simultaneity) is the one known
+   *  user reachable from this branch today — see `games/duel-draft/probes.ts`'s own module doc
+   *  for the reasoning in full. Bid-Tac-Toe is expected to be a second user (spatially symmetric
+   *  board, but bids/the star have no reflective analogue) once that game's branch merges — it
+   *  does not exist on any branch reachable from here yet, so there is no `probes.ts` of its own
+   *  to point at until then. */
+  mirrorProbe?: { readonly applicable: false; readonly reason: string };
+
   /** Present iff players.max === 1. Drives which harness model and gate table apply. */
   solo?: {
     format: "daily-puzzle" | "score-chase";
