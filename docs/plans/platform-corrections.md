@@ -4345,3 +4345,61 @@ regret matching, per-seat value backup) are platform surgery against a byte-iden
 C29→C34 is exactly what mechanism-first exists to prevent. **The mechanism is now known and written
 down, which is the deliverable.** Bid-Tac-Toe stays undecided, as the user directed: its gate table
 cannot mean anything while the search is optimising a game nobody is playing.
+
+## C72 — The tsconfig audit C69 owed, and the second instance it found on a shipped game.
+
+C69 ruled that auditing every package's tsconfig coverage was owed and must not be assumed clean.
+Doing it found a second instance immediately — and the method matters more than the finding.
+
+### The method: ask the compiler, do not read the glob
+
+Reading include globs is how the first defect survived. The authoritative check is to compare what
+is **on disk** against what the compiler **actually reads**:
+
+```
+tsc -p <pkg>/tsconfig.json --noEmit --listFiles   ⟹   compare with `find` over the same package
+```
+
+Across all twelve packages, that produced two classes of gap.
+
+### Finding 1 — Tilt, on `main`, shipped
+
+```
+games/tilt        include: ["*.ts", "ui/**/*.tsx", "test/**/*.ts"]
+games/nine-grids  include: ["*.ts", "ui/**/*.ts", "ui/**/*.tsx", "test/**/*.ts"]
+```
+
+Tilt is missing **`ui/**/*.ts`**. The file it excludes is `games/tilt/ui/board-view.test.ts`, which
+**runs and passes 16 tests on every test run** — a shipped game's UI test suite, executing
+continuously, with its types never checked. Vitest discovers tests by its own glob, not by tsconfig,
+so the split is exact: **the tests ran, the type checking did not.**
+
+**Stated honestly: adding the glob surfaced no errors.** Typecheck is clean with the file in scope,
+so nothing was actually broken and I caught no bug. What existed was an unguarded surface — 16
+assertions about a shipped game that a whole class of error could have walked through untouched.
+Reporting this as a save would be dishonest; the finding is the gap, not a catch.
+
+### Finding 2 — `vitest.config.ts` is uncompiled in all five packages
+
+`packages/{bots,engine,game-spec,harness,daily}` each have a `vitest.config.ts` that no tsconfig
+includes. This is a common and largely benign convention, and it is left alone — but it is recorded
+so that nobody later reads "typecheck passes" as covering test configuration. It does not.
+
+### The rule this project keeps re-learning, now in its sharpest form
+
+C64: a probe that is never called. C69: a check that runs and does not look at the file. C72: the
+same, one package over, on shipped code. The unifying statement:
+
+**A configuration that scopes a guard is part of the guard, and is never verified by reading it.**
+
+Every `include`, `exclude`, `testMatch`, `files` and `paths` entry in this repository is an untested
+claim about what is covered. The only thing that settles such a claim is asking the tool what it
+actually processed.
+
+### Owed
+
+This audit was manual and will rot the moment someone adds a directory. **A guard that asserts every
+package's tsconfig covers that package's shipped files** — the audit above, run automatically — is
+the mechanism, and it is exactly the kind of check that would have made C69 and C72 impossible rather
+than merely findable. Registered as work; not built here, because it belongs in the CI wiring that
+C68 established does not currently run.
