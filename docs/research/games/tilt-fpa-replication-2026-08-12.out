@@ -1,0 +1,36 @@
+tilt FPA replication — CI_GAMES=100, suite=ci, seeds=["ci:tilt:ci","tilt-fpa-repl-b","tilt-fpa-repl-c","tilt-fpa-repl-d","tilt-fpa-repl-e"]
+start time: 2026-08-12T06:21:58.371Z
+
+--- running seed "ci:tilt:ci" ---
+seed=ci:tilt:ci fpa=70.0% draw=2.0% meanPlies=19.1 capHit=0.0% strongVsRandom=100.0% bandVerdict=FAIL suiteOk=false elapsedMs=279292
+
+--- running seed "tilt-fpa-repl-b" ---
+seed=tilt-fpa-repl-b fpa=54.0% draw=12.0% meanPlies=19.0 capHit=0.0% strongVsRandom=100.0% bandVerdict=PASS suiteOk=true elapsedMs=283587
+
+--- running seed "tilt-fpa-repl-c" ---
+tilt FPA replication — CI_GAMES=100, suite=ci, seeds=["tilt-fpa-repl-c","tilt-fpa-repl-d","tilt-fpa-repl-e"]
+start time: 2026-08-12T07:21:55.406Z
+
+--- running seed "tilt-fpa-repl-c" ---
+seed=tilt-fpa-repl-c fpa=48.0% draw=12.0% meanPlies=19.2 capHit=0.0% strongVsRandom=100.0% bandVerdict=PASS suiteOk=true elapsedMs=262485
+
+--- running seed "tilt-fpa-repl-d" ---
+seed=tilt-fpa-repl-d fpa=38.0% draw=12.0% meanPlies=19.6 capHit=0.0% strongVsRandom=100.0% bandVerdict=PASS suiteOk=true elapsedMs=255671
+
+--- running seed "tilt-fpa-repl-e" ---
+seed=tilt-fpa-repl-e fpa=40.0% draw=12.0% meanPlies=18.9 capHit=0.0% strongVsRandom=100.0% bandVerdict=PASS suiteOk=true elapsedMs=283560
+
+=== five-seed table ===
+seed            fpa%    draw%   meanPlies  capHit%  strongVsRandom%  verdict
+tilt-fpa-repl-c 48.0    12.0    19.2       0.0      100.0            PASS
+tilt-fpa-repl-d 38.0    12.0    19.6       0.0      100.0            PASS
+tilt-fpa-repl-e 40.0    12.0    18.9       0.0      100.0            PASS
+
+mean FPA across 3 seeds: 42.00% (SE 3.06pp)
+band [35, 65] — seeds outside band: 0/3
+
+end time: 2026-08-12T07:35:17.130Z
+
+REPLICATION_VERDICT=DOES_NOT_REPLICATE
+REPLICATION_RUN_COMPLETE
+EXIT=0

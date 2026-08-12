@@ -4241,3 +4241,107 @@ sitting at `OK` forever. Designing that is real work and gets a plan; recording 
 Crackstep and Fadeout and Nine Grids passed cleanly, and Fadeout's `solved-value-reached` reported
 100% attainment against its 90% floor — the C23/C59 machinery working exactly as designed on the one
 game with a real proof behind it.
+
+## C71 — Two pre-registered experiments, two answers, and neither is the one anyone was hunting.
+
+Both experiments were designed with their interpretation tables written **before** any number
+existed. Both fired cleanly. Raw output preserved at
+`docs/research/games/tilt-fpa-replication-2026-08-12.out` and
+`docs/research/games/bid-tac-toe-c57-ea-oracle-agreement.out`.
+
+### Part 1 — Tilt does not have a defect. The gate does.
+
+C70 reported Tilt failing `first-player-win-rate` at 70.0% against a [35,65] band, and refused to
+rule until it replicated. Five seeds, same engine, same shipped manifest, same `CI_GAMES = 100`:
+
+| seed | FPA | draw | verdict |
+|---|---|---|---|
+| `ci:tilt:ci` (**the production seed**) | **70.0%** | 2.0% | FAIL |
+| `tilt-fpa-repl-b` | 54.0% | 12.0% | PASS |
+| `tilt-fpa-repl-c` | 48.0% | 12.0% | PASS |
+| `tilt-fpa-repl-d` | 38.0% | 12.0% | PASS |
+| `tilt-fpa-repl-e` | 40.0% | 12.0% | PASS |
+
+**Mean 50.0% — dead centre of the band.** The production seed is the extreme outlier of the five,
+and its 2.0% draw rate stands alone against 12.0% on every other seed. **Tilt is fine.** Had C49's
+replication rule not existed, this project would have opened a bug lane on a healthy game.
+
+**The real finding is the measurement instrument.** `scripts/ci-gates.ts` hardcodes its seed as
+`` `ci:${gameId}:${opts.suite}` ``. So:
+
+- Across-seed spread is **32 points** (38%–70%) with a sample SD of **12.9 pp**.
+- If those 100 games were independent, the binomial SE at p=0.5 would be **5.0 pp**. Observed
+  dispersion is **2.6× that** — games within a run share a seed lineage and are correlated, so
+  **n=100 does not buy n=100 worth of precision.** The effective sample size is far smaller than the
+  game count implies.
+- The band is 30 points wide. **The measurement's own seed-to-seed SD (12.9 pp) is comparable to the
+  band it is being tested against.**
+
+That last line is the whole problem. A gate whose noise is the same order as its acceptance region
+decides borderline cases by coin flip, and **every marginal verdict in this project's history was
+produced by exactly one flip.** C49's "provisional within ~10 points of an edge" rule is doing real
+work, but it is a human convention applied after the fact — the gate itself has never replicated
+anything.
+
+Caveat stated honestly: an SD from five samples is itself imprecise, and 12.9 pp should be read as
+"much larger than 5" rather than as a settled number. It is enough to condemn single-seed gating; it
+is not enough to size the fix.
+
+**Owed:** the gate must run multiple seeds and judge the aggregate, or state its own precision beside
+every number. Which one, and at what cost, is a design question and gets a plan.
+
+### Part 2 — The search is not buggy. It is solving a different game, and doing so better with more budget.
+
+E-A ran the shipped, unmodified `mctsPolicy` against the exact oracle (root value **0**, seat-0
+optimal bids **{3}**), 20 seeds per cell, budget never entering the seed string, with every run
+self-checked against the real policy.
+
+| budget | P(chosen ∈ optimal) s0/s1 | mean chosen bid s0/s1 | **mean rootValue** s0/s1 | opp-bids-0 mass s0/s1 |
+|---|---|---|---|---|
+| 1,000 | .150 / .300 | 4.35 / 4.55 | 0.023 / 0.033 | .138 / .132 |
+| 2,000 | .150 / .200 | 4.75 / 4.80 | 0.039 / 0.050 | .149 / .146 |
+| 5,000 | .200 / .200 | 3.35 / 4.15 | 0.076 / 0.078 | .179 / .178 |
+| 10,000 | .350 / .350 | 3.05 / 2.35 | 0.117 / 0.122 | .215 / .222 |
+| 20,000 | **.150 / .050** | **1.10 / 0.40** | **0.206 / 0.210** | **.344 / .359** |
+
+All four pre-registered signatures of row (a) fired, monotonically, on **both seats**:
+
+1. **Both seats' root value rises steadily away from zero on a position exactly proven to be a
+   draw** — roughly doubling per budget step. Both players become *more* confident they are winning
+   the more they think. This was the pre-registered smoking gun precisely because no adequacy or
+   noise problem can produce it.
+2. **Mean chosen bid drifts down**, 4.4 → 1.1 and 0.4 — away from the exact draw price of 3, into
+   the 0–2 cheap-win region the solve report says wins outright *if the opponent cooperates*.
+3. **Visit mass on opponent-bids-zero more than doubles.** The extra budget is spent refining the
+   fantasy.
+4. **Oracle agreement collapses at the top budget** — seat 1 reaches 0.050, the worst cell in the
+   table, at the largest search.
+
+**Honest limit:** the plan predicted rootValue → +1. Observed is a monotone climb from 0.02 to 0.21
+across a 20× budget range. The direction is unambiguous and both seats agree; the endpoint is not
+reached at 20k. The trend is the finding, not the value.
+
+**Diagnosis: `edgeOwnerAt` makes the tree a max-max search — the opponent is modeled as a
+co-operator, not an adversary.** `mcts.ts`'s own module doc calls this "a deliberate simplification"
+scoped by the claim *"fine at our branching factors."* **That claim is false**, and C57/C58 have been
+its symptom for weeks. This is not a bug in the sense of code failing to do what it says; the code
+does exactly what it says, and what it says is wrong for simultaneous games.
+
+### Part 3 — H3 promoted to co-cause, and it bites at the budget that ships
+
+`P(argmaxDiffers)` is **0.000 for seat 0 at every budget** and **0.650 for seat 1 at 10,000
+rollouts** — Ruthless's shipped budget. Seat 1 holds the star. `aggregateByOwnMove` groups by
+`stableStringify` of the whole move, so `{amount:k}` and `{amount:k, star:true}` are distinct keys:
+the star holder's marginal visit mass is split across two buckets and the non-holder's never is.
+
+At the budget the game actually ships, **two-thirds of seat-1 decisions change depending on a
+grouping detail.** Duel Draft has no analogue, which is why one engine could be sick while its
+sibling stayed healthy — and why keeping Duel Draft's engine after C66 paid for itself twice.
+
+### Ruling
+
+No fix tonight. The plan's §4 says no fix before E-A, and the correct remedies (decoupled UCT/DUCT,
+regret matching, per-seat value backup) are platform surgery against a byte-identical guarantee —
+C29→C34 is exactly what mechanism-first exists to prevent. **The mechanism is now known and written
+down, which is the deliverable.** Bid-Tac-Toe stays undecided, as the user directed: its gate table
+cannot mean anything while the search is optimising a game nobody is playing.
