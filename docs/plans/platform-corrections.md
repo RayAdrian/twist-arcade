@@ -4139,3 +4139,47 @@ commit put Bid-Tac-Toe into git; git itself has never left this machine.
 Neither is a defect in the code. Both are recorded here because a plan that assumes CI enforces
 something, when CI has not run in eight days, is exactly the C64 shape — and the degeneracy-probe
 plan currently assumes precisely that.
+
+## C69 — The exact solve was never typechecked.
+
+Building C57/C58's oracle instrument, the team found that
+`games/bid-tac-toe/tsconfig.json`'s `include` glob **never covered `solver/**/*.ts` or any `*.mts`
+file.** Sibling games with solvers — Fadeout and Crackstep — include both. So Bid-Tac-Toe's
+backward-induction solver, its independent brute-force oracle, and every diagnostic script had
+**never been examined by `pnpm typecheck`**, which has been passing this whole time.
+
+Fixing the glob immediately surfaced three latent type errors (cross-function phase-narrowing gaps in
+`valueOfPlaceNode`/`bestPlaceCell`, and a stale generic in `_c36-diagnostic.mts`). All were
+behavior-preserving, confirmed by the existing suite staying green throughout — but they were there,
+and nothing would ever have found them.
+
+### Why this one lands harder than it looks
+
+The artifact this untypechecked code produces is **the exact solve** — 369,802 bid nodes, cited by
+name in the harness's own gate output as the proof standing `draw-rate` and `first-player-win-rate`
+down to `n/a`. Within one session, that same artifact has now been found to be:
+
+- **not in version control at all** (C67), and
+- **produced by code that typecheck never read** (here).
+
+Two independent guarantees, both assumed, neither true, on the single most load-bearing artifact in
+the repository.
+
+### The pattern this completes
+
+The session's thread has been guards that don't guard. This is its quietest form yet: **a check that
+runs, passes, and is not looking at the file you think it is.** `pnpm typecheck` was never broken and
+never lied — it truthfully reported success over a set of files that silently excluded the ones that
+mattered. Compare C64's probe, which was never called at all; this is worse in one respect, because
+CI's green tick was real, earned, and meaningless for this code.
+
+**The general check, and it is one command per package:** for every tsconfig in the repo, confirm the
+`include`/`exclude` globs actually cover the files the package ships. A configuration that scopes a
+guard is part of the guard, and this project has never once verified one.
+
+### Ruling
+
+The glob fix and its three type-error repairs are kept — flagged by the team rather than folded in
+silently, which is the behavior C65 asked for and got. **Auditing every other package's tsconfig
+coverage is owed**, and is not assumed to be clean merely because this one was found: Fadeout and
+Crackstep were checked and are correct, the rest were not.
