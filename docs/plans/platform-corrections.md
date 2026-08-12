@@ -4403,3 +4403,87 @@ package's tsconfig covers that package's shipped files** — the audit above, ru
 the mechanism, and it is exactly the kind of check that would have made C69 and C72 impossible rather
 than merely findable. Registered as work; not built here, because it belongs in the CI wiring that
 C68 established does not currently run.
+
+## C73 — DUCT lands. H1 is fixed, and it was masking a second defect underneath.
+
+The remedy plan's DUCT implementation is in (`dabc6a2` baseline, `9fad305` fix, `26fefe1` E-A
+re-run, on `feature/sim-search-residue`). The result splits cleanly, and the split is the finding.
+
+### What the fix achieved — H1 is dead
+
+| quantity, seat 0 / seat 1 | pre-fix (20k) | post-fix (20k) |
+|---|---|---|
+| **mean rootValue** | 0.206 / 0.210 | **−0.0007 / −0.0011** |
+| opponent-bids-zero visit mass | 0.344 / 0.359 | **0.038 / 0.020** |
+
+**§3.2 passes decisively.** Both seats' root value is essentially exact zero at *every* budget, not
+merely at 10k — against a proven-draw position whose exact value is 0. Pre-fix it climbed 0.02 → 0.21.
+And opponent-bids-zero mass **reversed direction**: it more than doubled with budget before, and now
+*shrinks* with budget. The search has stopped modelling the opponent as a co-operator. That is H1,
+diagnosed from `edgeOwnerAt` and killed by construction.
+
+**The blast radius held exactly as the plan asserted.** Byte-identity dumps for Fadeout, Nine Grids
+and Tilt are **identical** pre- and post-fix, confirmed twice, captured *before* `mcts.ts` was edited.
+Zero registered games changed behaviour. No existing test was modified — `git diff` on
+`mcts.test.ts` is additions only, and the C56 lucky-cell and RPS-legality tests pass unchanged.
+
+The new pure-saddle matrix fixture was a real plant: **red pre-fix** (picked decoy row "b",
+rootValue 1.9962 against a true saddle value of 3), green post-fix, with two deliberate decoys — a
+global-max cell off the saddle row and a very-negative cell off the saddle column — so it
+discriminates the bug rather than passing by accidental dominance.
+
+### What the fix revealed — §3.1 misses, in the opposite direction
+
+`P(chosen ∈ optimal)` is **0.000 at 10k and 20k for both seats**, and mean chosen bid drifts
+**up**: 5.80 → 7.46 (seat 0), 5.74 → 7.02 (seat 1), monotonically with budget.
+
+Set against the solve report's B=8 first-auction table:
+
+| payment | seat 0 wins → | seat 1 wins → |
+|---|---|---|
+| 0–2 | **+1** | −1 |
+| **3** | **0 (draw)** | **0 (draw)** |
+| 4–8 | **−1** | +1 |
+
+**The search is now systematically choosing bids that lose by exact analysis, while correctly
+reporting the position as drawn.** Seat 0 paying 7 for the first auction is a −1 position. That is
+not a smaller version of the old defect; it is the opposite sign, and it appeared only once H1 was
+removed.
+
+### The mechanism, and why H1 hid it
+
+The value model is now honest about the *position*; the move evaluation cannot distinguish a bid that
+draws (3) from one that loses (7). Rollouts are **uniform random for both seats**, and random
+continuation does not punish overpaying — nobody exploits the deficit — so every bid evaluates to
+≈0 and there is no gradient to select on. Higher bids win the auction more often, and winning under
+random continuation is marginally better than losing it, so selection drifts upward on a signal that
+has nothing to do with the game.
+
+**H1 was supplying the only gradient.** Max-max made cheap wins look like +1, which pulled bids down
+toward 0–2 — a region that is *genuinely winning*, so the pre-fix search was directionally closer to
+the truth **for entirely wrong reasons.** Removing the false signal revealed there was no true signal
+underneath. This is the shape worth remembering: **a defect that is also the only thing producing a
+usable ordering will look like competence right up until you fix it.**
+
+This is an evaluation defect (rollout policy), not a selection defect, and it is therefore a
+different lane from C57/C58. Recorded as its own work; **not diagnosed further here**, because the
+task that found it was scoped to steps 1–4 and extending scope on a fresh result is how C22 and C25
+went wrong.
+
+### H3's sequencing is vindicated
+
+Seat 1's `P(argmaxDiffers)` fell from **0.650 → 0.120** at 10k once H1 was fixed. The plan sequenced
+H1 first precisely because H3's headline was measured under H1-corrupted values and its causal weight
+was unknown; it turns out H1 was inflating it more than fivefold. **H3's promotion rule does not
+fire** — it required seat 0 meeting §3.1 while seat 1 missed, and seat 0 misses too. H3 stays open
+and unbuilt, which is the correct outcome of a rule written before the data existed.
+
+### Ruling
+
+DUCT stays. It is correct, it is cheaper per rollout, it fixed what it was designed to fix, and it is
+byte-identically inert for every shipped game. **§3.1 is not met and the plan's criteria are not
+being redefined to say otherwise** — `solved-value-reached` and the rest of Bid-Tac-Toe's gate table
+remain untrustworthy, so that game stays undecided exactly as the user directed. Steps 5–6 of the
+remedy plan (b3-sweep, gate predictions, Duel Draft control re-runs) are still owed, and their
+pre-registered predictions were written before this result and are not being revised now that part of
+it is known.
