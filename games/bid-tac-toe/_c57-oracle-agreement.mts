@@ -27,16 +27,24 @@
 // however additive.
 //
 // THE FIX: `runInstrumentedMcts` below is a byte-for-byte structural mirror of mcts.ts's
-// SELECT+EXPAND+ROLLOUT+BACKPROP loop and final-selection logic (same UCB1 formula, same
-// exploration constant, same edge-owner convention, same rollout — `uniformRandomMoveSelector`
-// equivalent, same cap), reimplemented locally ONLY to keep each joint child node's own
-// (own-move, opponent-move) pair before summing it away. `packages/bots/src/mcts.ts` itself is
+// SELECT+EXPAND+ROLLOUT+BACKPROP loop and final-selection logic — as of the C57/C58 DUCT
+// remedy (docs/plans/sim-search-remedy.md), that means: sequential selection is the original
+// UCB1-over-joint-children formula, unchanged; simultaneous selection is DECOUPLED (each
+// active seat runs its own UCB1 over a per-seat own-move statistics table, `CloneNode.
+// seatMoveStats`, mirroring `Node.seatMoveStats`/`selectDuctChild` in mcts.ts verbatim), and
+// final selection at the simultaneous root reads that table directly — reimplemented locally
+// ONLY to keep each joint child node's own (own-move, opponent-move) pair visible before the
+// per-seat tables sum it away (the heat-map need above). `packages/bots/src/mcts.ts` itself is
 // never imported, called, or modified for this purpose — its only role in this script is as
-// the ORACLE this clone is checked against. `aggregateByOwnMove` (the actual C56-fix logic
-// under investigation) is NOT re-exported from `@twist-arcade/bots`'s package barrel
-// (`packages/bots/package.json`'s `exports` field only opens `.`, `./worker/protocol`,
-// `./worker/host` — a deep import of `mcts.ts` would not even resolve), so it is mirrored
-// locally too (`aggregateByOwnMoveLocal`), verbatim from mcts.ts's own source.
+// the ORACLE this clone is checked against. `Node.seatMoveStats`/`selectDuctChild` are NOT
+// re-exported from `@twist-arcade/bots`'s package barrel (`packages/bots/package.json`'s
+// `exports` field only opens `.`, `./worker/protocol`, `./worker/host` — a deep import of
+// mcts.ts would not even resolve), so the DUCT mechanism is mirrored locally too, verbatim
+// from mcts.ts's own source (`selectDuctChildLocal`, the `seatMoveStats` backprop loop, and
+// the seatMoveStats-based final-selection branch replacing the OLD `aggregateByOwnMove`-based
+// one this script used pre-DUCT — `aggregateByOwnMoveLocal` is removed here for the same
+// reason mcts.ts's own live path stopped calling `aggregateByOwnMove`: it would silently
+// mirror dead code instead of the path E-A actually needs validated).
 //
 // SELF-VALIDATION, EVERY SINGLE RUN, NOT JUST IN A TEST SUITE: since `rngFromSeed(seed)` is a
 // pure function of the seed string (packages/engine/src/rng.ts), calling it twice with the
@@ -110,6 +118,12 @@ function jointMoveOptionsLocal(state: BidTacToeState): JointMove[] {
   return combos;
 }
 
+interface SeatMoveStatLocal {
+  move: BidTacToeMove;
+  visits: number;
+  totalValue: number;
+}
+
 interface CloneNode {
   state: BidTacToeState;
   status: Status;
@@ -117,6 +131,9 @@ interface CloneNode {
   totalValue: number;
   untried: JointMove[];
   children: Map<string, { jointMove: JointMove; child: CloneNode }>;
+  // DUCT (mcts.ts's Node.seatMoveStats, mirrored verbatim): per-active-seat own-move stats,
+  // populated/read ONLY at simultaneous nodes.
+  seatMoveStats?: Map<PlayerId, Map<string, SeatMoveStatLocal>>;
 }
 
 function makeCloneNode(state: BidTacToeState): CloneNode {
@@ -129,6 +146,42 @@ function makeCloneNode(state: BidTacToeState): CloneNode {
     untried: status.kind === "ongoing" ? jointMoveOptionsLocal(state) : [],
     children: new Map(),
   };
+}
+
+/** Verbatim mirror of mcts.ts's `selectDuctChild`. */
+function selectDuctChildLocal(
+  node: CloneNode,
+  activePlayers: readonly PlayerId[]
+): { jointMove: JointMove; child: CloneNode } {
+  const chosen = new Map<PlayerId, BidTacToeMove>();
+  for (const p of activePlayers) {
+    const table = node.seatMoveStats?.get(p);
+    if (!table || table.size === 0) {
+      throw new Error(
+        `selectDuctChildLocal: no recorded own-move statistics for player ${p} — unreachable ` +
+          "once every joint arm has been expanded."
+      );
+    }
+    let bestMove: BidTacToeMove | undefined;
+    let bestScore = Number.NEGATIVE_INFINITY;
+    for (const stat of table.values()) {
+      const score =
+        stat.visits === 0
+          ? Number.POSITIVE_INFINITY
+          : stat.totalValue / stat.visits + EXPLORATION_C * Math.sqrt(Math.log(node.visits) / stat.visits);
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = stat.move;
+      }
+    }
+    chosen.set(p, bestMove!);
+  }
+  const key = jointMoveKeyLocal(chosen);
+  const entry = node.children.get(key);
+  if (!entry) {
+    throw new Error("selectDuctChildLocal: composed joint move has no matching child.");
+  }
+  return entry;
 }
 
 function edgeOwnerAtLocal(state: BidTacToeState, rootPlayer: PlayerId): PlayerId {
@@ -180,31 +233,6 @@ function rolloutToHorizonLocal(
   return { status, state };
 }
 
-interface OwnMoveAggregateLocal {
-  move: BidTacToeMove;
-  visits: number;
-  totalValue: number;
-}
-
-/** Verbatim mirror of mcts.ts's exported `aggregateByOwnMove` — NOT re-exported from
- *  `@twist-arcade/bots`'s package barrel (see module doc), so it is reproduced here rather than
- *  deep-imported across the package boundary. */
-function aggregateByOwnMoveLocal(
-  entries: readonly { move: BidTacToeMove; visits: number; totalValue: number }[]
-): OwnMoveAggregateLocal[] {
-  const byKey = new Map<string, OwnMoveAggregateLocal>();
-  for (const entry of entries) {
-    const key = stableStringify(entry.move as unknown as Json);
-    const existing = byKey.get(key);
-    if (existing) {
-      existing.visits += entry.visits;
-      existing.totalValue += entry.totalValue;
-    } else {
-      byKey.set(key, { move: entry.move, visits: entry.visits, totalValue: entry.totalValue });
-    }
-  }
-  return Array.from(byKey.values());
-}
 
 interface InstrumentedResult {
   move: BidTacToeMove;
@@ -221,6 +249,7 @@ function runInstrumentedMcts(state: BidTacToeState, player: PlayerId, rollouts: 
   const runOnce = (): void => {
     const path: CloneNode[] = [root];
     const owners: PlayerId[] = [];
+    const jointMoves: JointMove[] = [];
     let node = root;
     let expanded = false;
     while (!expanded) {
@@ -235,27 +264,36 @@ function runInstrumentedMcts(state: BidTacToeState, player: PlayerId, rollouts: 
         node.children.set(jointMoveKeyLocal(jm), { jointMove: jm, child });
         path.push(child);
         owners.push(owner);
+        jointMoves.push(jm);
         node = child;
         expanded = true;
         break;
       }
       if (node.children.size === 0) break;
-      let best: { jointMove: JointMove; child: CloneNode } | undefined;
-      let bestScore = Number.NEGATIVE_INFINITY;
-      for (const entry of node.children.values()) {
-        const score =
-          entry.child.visits === 0
-            ? Number.POSITIVE_INFINITY
-            : entry.child.totalValue / entry.child.visits +
-              EXPLORATION_C * Math.sqrt(Math.log(node.visits) / entry.child.visits);
-        if (score > bestScore) {
-          bestScore = score;
-          best = entry;
+      const active = bidTacToe.active(node.state);
+      let selected: { jointMove: JointMove; child: CloneNode };
+      if (active.mode === "sequential") {
+        let best: { jointMove: JointMove; child: CloneNode } | undefined;
+        let bestScore = Number.NEGATIVE_INFINITY;
+        for (const entry of node.children.values()) {
+          const score =
+            entry.child.visits === 0
+              ? Number.POSITIVE_INFINITY
+              : entry.child.totalValue / entry.child.visits +
+                EXPLORATION_C * Math.sqrt(Math.log(node.visits) / entry.child.visits);
+          if (score > bestScore) {
+            bestScore = score;
+            best = entry;
+          }
         }
+        selected = best!;
+      } else {
+        selected = selectDuctChildLocal(node, active.players);
       }
-      path.push(best!.child);
+      path.push(selected.child);
       owners.push(owner);
-      node = best!.child;
+      jointMoves.push(selected.jointMove);
+      node = selected.child;
     }
 
     const { status: leafStatus } = rolloutToHorizonLocal(node.state, rng, ROLLOUT_CAP_PLIES);
@@ -265,6 +303,32 @@ function runInstrumentedMcts(state: BidTacToeState, player: PlayerId, rollouts: 
       const value = valueOfStatusLocal(leafStatus, owner);
       path[i]!.visits += 1;
       path[i]!.totalValue += value;
+    }
+    // DUCT per-seat backprop — verbatim mirror of mcts.ts's own additive loop.
+    for (let i = 0; i < path.length - 1; i++) {
+      const from = path[i]!;
+      const activeAtFrom = bidTacToe.active(from.state);
+      if (activeAtFrom.mode !== "simultaneous") continue;
+      const jm = jointMoves[i]!;
+      if (!from.seatMoveStats) from.seatMoveStats = new Map();
+      for (const p of activeAtFrom.players) {
+        const ownMove = jm.get(p);
+        if (ownMove === undefined) continue;
+        let table = from.seatMoveStats.get(p);
+        if (!table) {
+          table = new Map();
+          from.seatMoveStats.set(p, table);
+        }
+        const seatKey = stableStringify(ownMove as unknown as Json);
+        const seatValue = valueOfStatusLocal(leafStatus, p);
+        const existing = table.get(seatKey);
+        if (existing) {
+          existing.visits += 1;
+          existing.totalValue += seatValue;
+        } else {
+          table.set(seatKey, { move: ownMove, visits: 1, totalValue: seatValue });
+        }
+      }
     }
   };
 
@@ -282,20 +346,29 @@ function runInstrumentedMcts(state: BidTacToeState, player: PlayerId, rollouts: 
     visits: entry.child.visits,
   }));
 
-  const ownEntries = Array.from(root.children.values()).map((entry) => ({
-    move: entry.jointMove.get(player)!,
-    visits: entry.child.visits,
-    totalValue: entry.child.totalValue,
-  }));
-  const aggregates = aggregateByOwnMoveLocal(ownEntries);
-  let bestAgg = aggregates[0];
-  for (const agg of aggregates) if (bestAgg === undefined || agg.visits > bestAgg.visits) bestAgg = agg;
-  if (!bestAgg) throw new Error("runInstrumentedMcts: no legal moves were available to search from the given state");
+  // DUCT final selection — mirrors mcts.ts's live path verbatim: the requester's own
+  // seatMoveStats table at the root ALREADY IS the marginal (every joint arm sharing an
+  // own-move component contributed to that move's single entry during backprop above), so
+  // this is what `mctsPolicy`'s real simultaneous-root branch reads today; the OLD
+  // aggregateByOwnMove-over-root.children path this script used pre-DUCT would silently
+  // validate against dead code, not the path E-A needs.
+  const ownTable = root.seatMoveStats?.get(player);
+  if (!ownTable || ownTable.size === 0) {
+    throw new Error("runInstrumentedMcts: no legal moves were available to search from the given state");
+  }
+  let best: SeatMoveStatLocal | undefined;
+  let bestVisits = -1;
+  for (const stat of ownTable.values()) {
+    if (stat.visits > bestVisits) {
+      bestVisits = stat.visits;
+      best = stat;
+    }
+  }
 
   return {
-    move: bestAgg.move,
+    move: best!.move,
     rootValue: root.visits > 0 ? root.totalValue / root.visits : 0,
-    rootVisits: aggregates.map((agg) => ({ move: agg.move as unknown as Json, visits: agg.visits })),
+    rootVisits: Array.from(ownTable.values()).map((stat) => ({ move: stat.move as unknown as Json, visits: stat.visits })),
     jointRootVisits,
   };
 }
@@ -389,10 +462,11 @@ function argmaxAmountCombined(byAmount: Map<number, number>): number {
 // small values now; the full sweep later reuses this same script unedited).
 // ---------------------------------------------------------------------------------------
 
-function parseArgs(argv: readonly string[]): { budgets: number[]; seedCount: number; seats: Seat[] } {
+function parseArgs(argv: readonly string[]): { budgets: number[]; seedCount: number; seats: Seat[]; verbose: boolean } {
   let budgets = [1000, 2000, 5000, 10000, 20000]; // plan §2's full sweep
   let seedCount = 20; // plan §2's full sweep
   let seats: Seat[] = [0, 1];
+  let verbose = false;
   for (const arg of argv) {
     const budgetsMatch = /^--budgets=(.+)$/.exec(arg);
     if (budgetsMatch) budgets = budgetsMatch[1]!.split(",").map((s) => Number(s.trim()));
@@ -400,8 +474,74 @@ function parseArgs(argv: readonly string[]): { budgets: number[]; seedCount: num
     if (seedsMatch) seedCount = Number(seedsMatch[1]);
     const seatsMatch = /^--seats=(.+)$/.exec(arg);
     if (seatsMatch) seats = seatsMatch[1]!.split(",").map((s) => Number(s.trim()) as Seat);
+    if (arg === "--verbose") verbose = true;
   }
-  return { budgets, seedCount, seats };
+  return { budgets, seedCount, seats, verbose };
+}
+
+// ---------------------------------------------------------------------------------------
+// Per-cell aggregation — plan §2's pre-registered quantities: P(chosen in exact optimal
+// set), mean chosen amount, mean rootValue per seat, P(H3 argmax differs), and joint-visit
+// concentration on the opponent-bids-0 column (H1's own "smoking gun" phrase).
+// ---------------------------------------------------------------------------------------
+
+interface RunRecord {
+  budget: number;
+  seat: Seat;
+  seedIndex: number;
+  seedLabel: string;
+  chosenKey: string;
+  chosenAmount: number;
+  inOptimal: boolean;
+  rootValue: number;
+  argmaxDiffers: boolean;
+  oppZeroMass: number; // fraction of total joint-visit mass where the opponent's amount === 0
+}
+
+function summarize(records: readonly RunRecord[]): void {
+  const cells = new Map<string, RunRecord[]>();
+  for (const r of records) {
+    const key = `${r.budget}|${r.seat}`;
+    const list = cells.get(key) ?? [];
+    list.push(r);
+    cells.set(key, list);
+  }
+  const mean = (xs: readonly number[]): number => xs.reduce((a, b) => a + b, 0) / xs.length;
+
+  console.log("==== SUMMARY (plan §2's pre-registered per-cell quantities) ====");
+  console.log(
+    "budget".padEnd(8) +
+      "seat".padEnd(6) +
+      "n".padEnd(5) +
+      "P(chosen∈optimal)".padEnd(20) +
+      "meanChosenAmt".padEnd(15) +
+      "meanRootValue".padEnd(16) +
+      "P(argmaxDiffers)".padEnd(19) +
+      "meanOppZeroMass"
+  );
+  const budgetsSeen = Array.from(new Set(records.map((r) => r.budget))).sort((a, b) => a - b);
+  for (const budget of budgetsSeen) {
+    for (const seat of [0, 1] as const) {
+      const key = `${budget}|${seat}`;
+      const list = cells.get(key);
+      if (!list || list.length === 0) continue;
+      const pOptimal = mean(list.map((r) => (r.inOptimal ? 1 : 0)));
+      const meanAmt = mean(list.map((r) => r.chosenAmount));
+      const meanRV = mean(list.map((r) => r.rootValue));
+      const pArgmaxDiffers = mean(list.map((r) => (r.argmaxDiffers ? 1 : 0)));
+      const meanOppZero = mean(list.map((r) => r.oppZeroMass));
+      console.log(
+        String(budget).padEnd(8) +
+          String(seat).padEnd(6) +
+          String(list.length).padEnd(5) +
+          pOptimal.toFixed(3).padEnd(20) +
+          meanAmt.toFixed(3).padEnd(15) +
+          meanRV.toFixed(4).padEnd(16) +
+          pArgmaxDiffers.toFixed(3).padEnd(19) +
+          meanOppZero.toFixed(3)
+      );
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------------------
@@ -409,11 +549,23 @@ function parseArgs(argv: readonly string[]): { budgets: number[]; seedCount: num
 // ---------------------------------------------------------------------------------------
 
 function main(): void {
-  const { budgets, seedCount, seats } = parseArgs(process.argv.slice(2));
+  const { budgets, seedCount, seats, verbose } = parseArgs(process.argv.slice(2));
   process.stderr.write(
     `E-A: budgets=[${budgets.join(",")}] seeds=${seedCount} seats=[${seats.join(",")}] ` +
       `at the real initial state (B=${STARTING_BUDGET}, star=1)\n`
   );
+
+  // Seeding-rule demonstration (C22/C24): for a FIXED seed index, the seed string is
+  // IDENTICAL across every budget — printed once, up front, before any budget-dependent
+  // work happens, so it cannot be confused with per-run output.
+  console.log("==== seed-string check (budget must NEVER appear here) ====");
+  for (const seat of seats) {
+    for (let seedIndex = 0; seedIndex < Math.min(seedCount, 5); seedIndex++) {
+      const label = `c57-ea-seat${seat}-seed${seedIndex}`;
+      console.log(`  seat=${seat} seedIndex=${seedIndex} -> "${label}" (reused unchanged across every budget in [${budgets.join(",")}])`);
+    }
+  }
+  console.log("");
 
   process.stderr.write("solving the exact oracle (B=8, one-time cost)...\n");
   const oracleStart = Date.now();
@@ -428,17 +580,24 @@ function main(): void {
   process.stderr.write(`  seat 0 optimal bids: {${Array.from(optimalBids0).join(", ")}}\n`);
   process.stderr.write(`  seat 1 optimal bids: {${Array.from(optimalBids1).join(", ")}}\n\n`);
 
+  const records: RunRecord[] = [];
+  const runStart = Date.now();
+  let runCount = 0;
+  const totalRuns = budgets.length * seedCount * seats.length;
+
   for (const budget of budgets) {
     for (let seedIndex = 0; seedIndex < seedCount; seedIndex++) {
-      console.log(`==== budget=${budget} seedIndex=${seedIndex} ====`);
+      if (verbose) console.log(`==== budget=${budget} seedIndex=${seedIndex} ====`);
       for (const seat of seats) {
         // C22/C24: the seed varies by seat and seed index, NEVER by budget.
         const seedLabel = `c57-ea-seat${seat}-seed${seedIndex}`;
         const rng = rngFromSeed(seedLabel);
         const result = runInstrumentedMcts(root, seat, budget, rng);
         assertCloneAgrees(seedLabel, seat, budget, result);
+        runCount += 1;
 
         const chosenKey = bidMoveKey(result.move as unknown as { amount: number; star?: boolean });
+        const chosenAmount = (result.move as unknown as { amount: number }).amount;
         const optimalSet = seat === 0 ? optimalBids0 : optimalBids1;
         const byAmount = amountCombined(result.rootVisits);
         const starArgmax = argmaxStarSeparate(result.rootVisits);
@@ -446,28 +605,10 @@ function main(): void {
         const starArgmaxAmount = Number(starArgmax.endsWith("*") ? starArgmax.slice(0, -1) : starArgmax);
         const argmaxDiffers = starArgmaxAmount !== amountArgmax;
 
-        console.log(`  seat ${seat} (seed "${seedLabel}"):`);
-        console.log(`    chosen: ${chosenKey}  (in exact optimalBids? ${optimalSet.has(chosenKey)})`);
-        console.log(`    rootValue (seat ${seat} own perspective): ${result.rootValue.toFixed(4)}`);
-        console.log(
-          `    marginals star-separate: ` +
-            result.rootVisits
-              .slice()
-              .sort((a, b) => b.visits - a.visits)
-              .map((r) => `${bidMoveKey(r.move as unknown as { amount: number; star?: boolean })}:${r.visits}`)
-              .join(", ")
-        );
-        console.log(
-          `    marginals amount-combined: ` +
-            Array.from(byAmount.entries())
-              .sort((a, b) => b[1] - a[1])
-              .map(([amount, visits]) => `${amount}:${visits}`)
-              .join(", ")
-        );
-        console.log(`    argmax differs (star-separate=${starArgmax} vs amount-combined=${amountArgmax}): ${argmaxDiffers}`);
-
         // Joint-visit heat-map: own-move rows, opponent-bid columns, conditional on own bid.
         const byOwn = new Map<string, { total: number; byOpp: Map<string, number> }>();
+        let totalJointVisits = 0;
+        let oppZeroVisits = 0;
         for (const { own, opp, visits } of result.jointRootVisits) {
           const ownKey = bidMoveKey(own as unknown as { amount: number; star?: boolean });
           const oppKey = bidMoveKey(opp as unknown as { amount: number; star?: boolean });
@@ -475,23 +616,76 @@ function main(): void {
           bucket.total += visits;
           bucket.byOpp.set(oppKey, (bucket.byOpp.get(oppKey) ?? 0) + visits);
           byOwn.set(ownKey, bucket);
+          totalJointVisits += visits;
+          if ((opp as unknown as { amount: number }).amount === 0) oppZeroVisits += visits;
         }
-        console.log(`    joint heat-map (own -> [opponent-bid:visits, ...], row totals sum to own-move's visits):`);
-        for (const [ownKey, bucket] of Array.from(byOwn.entries()).sort((a, b) => b[1].total - a[1].total)) {
-          const cells = Array.from(bucket.byOpp.entries())
-            .sort((a, b) => b[1] - a[1])
-            .map(([oppKey, v]) => `${oppKey}:${v}`)
-            .join(", ");
-          console.log(`      own=${ownKey} (total=${bucket.total}): ${cells}`);
+        const oppZeroMass = totalJointVisits > 0 ? oppZeroVisits / totalJointVisits : 0;
+
+        records.push({
+          budget,
+          seat,
+          seedIndex,
+          seedLabel,
+          chosenKey,
+          chosenAmount,
+          inOptimal: optimalSet.has(chosenKey),
+          rootValue: result.rootValue,
+          argmaxDiffers,
+          oppZeroMass,
+        });
+
+        if (verbose) {
+          console.log(`  seat ${seat} (seed "${seedLabel}"):`);
+          console.log(`    chosen: ${chosenKey}  (in exact optimalBids? ${optimalSet.has(chosenKey)})`);
+          console.log(`    rootValue (seat ${seat} own perspective): ${result.rootValue.toFixed(4)}`);
+          console.log(
+            `    marginals star-separate: ` +
+              result.rootVisits
+                .slice()
+                .sort((a, b) => b.visits - a.visits)
+                .map((r) => `${bidMoveKey(r.move as unknown as { amount: number; star?: boolean })}:${r.visits}`)
+                .join(", ")
+          );
+          console.log(
+            `    marginals amount-combined: ` +
+              Array.from(byAmount.entries())
+                .sort((a, b) => b[1] - a[1])
+                .map(([amount, visits]) => `${amount}:${visits}`)
+                .join(", ")
+          );
+          console.log(`    argmax differs (star-separate=${starArgmax} vs amount-combined=${amountArgmax}): ${argmaxDiffers}`);
+          console.log(`    opponent-bid=0 mass: ${(oppZeroMass * 100).toFixed(1)}% of total joint visits`);
+          console.log(`    joint heat-map (own -> [opponent-bid:visits, ...], row totals sum to own-move's visits):`);
+          for (const [ownKey, bucket] of Array.from(byOwn.entries()).sort((a, b) => b[1].total - a[1].total)) {
+            const cells = Array.from(bucket.byOpp.entries())
+              .sort((a, b) => b[1] - a[1])
+              .map(([oppKey, v]) => `${oppKey}:${v}`)
+              .join(", ");
+            console.log(`      own=${ownKey} (total=${bucket.total}): ${cells}`);
+          }
+        } else {
+          console.log(
+            `budget=${budget} seed="${seedLabel}" seat=${seat} chosen=${chosenKey} ` +
+              `inOptimal=${optimalSet.has(chosenKey)} rootValue=${result.rootValue.toFixed(4)} ` +
+              `argmaxDiffers=${argmaxDiffers} oppZeroMass=${oppZeroMass.toFixed(3)}`
+          );
         }
       }
-      console.log("");
+      if (verbose) console.log("");
     }
+    const elapsedMs = Date.now() - runStart;
+    process.stderr.write(
+      `  [budget=${budget} complete — ${runCount}/${totalRuns} runs, ${(elapsedMs / 1000).toFixed(1)}s elapsed]\n`
+    );
   }
 
-  process.stderr.write("E-A complete. This run is instrument validation / a shape check ONLY " +
-    "when budgets/seeds are small (e.g. a smoke pass) — see docs/plans/sim-search-residue.md §2's " +
-    "pre-registered interpretation table before drawing any H1/H2 conclusion from it.\n");
+  console.log("");
+  summarize(records);
+
+  process.stderr.write(
+    "E-A complete. Read this ONLY against the plan's pre-registered interpretation table " +
+      "(docs/plans/sim-search-residue.md §2) — do not improvise a new interpretation.\n"
+  );
 }
 
 main();
