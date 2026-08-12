@@ -9,6 +9,23 @@ import { fakeClock } from "./helpers";
 import { rps, type RPSMove, type RPSState } from "./fixtures/rps";
 import { luckyCellRps, type LuckyCellRPSMove, type LuckyCellRPSState } from "./fixtures/lucky-cell-rps";
 import { tinyFog, type TinyFogMove, type TinyFogState, type TinyFogView } from "./fixtures/tiny-fog";
+import {
+  matrixSaddle,
+  SADDLE_ROW,
+  SADDLE_COL,
+  SADDLE_VALUE,
+  type MatrixSaddleMove,
+  type MatrixSaddleState,
+} from "./fixtures/matrix-saddle";
+import {
+  matrixGeneralSum,
+  EQUILIBRIUM_ROW,
+  EQUILIBRIUM_COL,
+  EQUILIBRIUM_P0_VALUE,
+  EQUILIBRIUM_P1_VALUE,
+  type MatrixGeneralSumMove,
+  type MatrixGeneralSumState,
+} from "./fixtures/matrix-general-sum";
 
 describe("mctsPolicy", () => {
   it("mcts1k beats random >= 90% over a seeded batch on classic-ttt (free oracle, plan §9)", () => {
@@ -246,6 +263,164 @@ describe("mctsPolicy", () => {
       // pre-C56-fix search would make on this exact (state, seed, budget) (empirically
       // confirmed to be "B" against the unfixed selection rule).
       expect(move.choice).toBe("A");
+    });
+  });
+
+  describe("DUCT — decoupled UCT at simultaneous nodes (docs/plans/sim-search-remedy.md §1)", () => {
+    it("the oracle-in-miniature: converges to the KNOWN PURE SADDLE POINT of a hand-verified matrix game", () => {
+      // matrix-saddle.ts's payoff table has an exact, hand-computed saddle at (row "a", col
+      // "y"), value 3 for player 0 / -3 for player 1 (maximin === minimax === 3 — see that
+      // file's own doc for the row/column arithmetic). This is the single most valuable test
+      // in this suite (plan §6.2): decoupled best-response dynamics have their fixed point
+      // EXACTLY at a pure saddle, so DUCT — correctly implemented — has nowhere else to go.
+      // The OLD max-max defect (C57/C58) would instead drift toward whichever cell looks best
+      // if the opponent were a co-operator: row "a" against col "x" (payoff 4), the single
+      // highest cell in the matrix — a DIFFERENT row/col pair than the true saddle, and
+      // provably wrong once the opponent is modeled as adversarial rather than cooperative.
+      const engine = matrixSaddle;
+      const state = engine.setup(2, rngFromSeed("matrix-saddle-setup"));
+      const policy = mctsPolicy<MatrixSaddleState, MatrixSaddleMove>({ explorationC: 1.4 });
+
+      const p0 = policy.chooseMove({
+        engine,
+        state,
+        player: 0,
+        rng: rngFromSeed("matrix-saddle-decision-p0"),
+        budget: { kind: "rollouts", n: 20000 },
+        clock: fakeClock(),
+      });
+      const p1 = policy.chooseMove({
+        engine,
+        state,
+        player: 1,
+        rng: rngFromSeed("matrix-saddle-decision-p1"),
+        budget: { kind: "rollouts", n: 20000 },
+        clock: fakeClock(),
+      });
+
+      expect(p0.move.choice).toBe(SADDLE_ROW);
+      expect(p1.move.choice).toBe(SADDLE_COL);
+      // rootValue is each seat's OWN running average across every rollout that passed through
+      // the root — not asserted to hit 3/-3 exactly (UCB1 keeps sampling non-saddle cells
+      // forever, by design), only close enough that "the search believes it is near the exact
+      // game value" is a fair description, mirroring plan §3's ±0.15 style tolerance.
+      expect(p0.stats.rootValue).toBeDefined();
+      expect(p1.stats.rootValue).toBeDefined();
+      expect(Math.abs(p0.stats.rootValue! - SADDLE_VALUE)).toBeLessThan(0.5);
+      expect(Math.abs(p1.stats.rootValue! - -SADDLE_VALUE)).toBeLessThan(0.5);
+    });
+
+    it("general-sum smoke test: each seat converges to ITS OWN dominant strategy with ITS OWN (non-negated) value", () => {
+      // matrix-general-sum.ts is deliberately NOT zero-sum (payoffs at the equilibrium are 3
+      // and 5, not v/-v) — this is what makes a coupled or negated per-seat implementation
+      // visibly wrong instead of accidentally passing a zero-sum-only test.
+      const engine = matrixGeneralSum;
+      const state = engine.setup(2, rngFromSeed("matrix-gs-setup"));
+      const policy = mctsPolicy<MatrixGeneralSumState, MatrixGeneralSumMove>({ explorationC: 1.4 });
+
+      const p0 = policy.chooseMove({
+        engine,
+        state,
+        player: 0,
+        rng: rngFromSeed("matrix-gs-decision-p0"),
+        budget: { kind: "rollouts", n: 20000 },
+        clock: fakeClock(),
+      });
+      const p1 = policy.chooseMove({
+        engine,
+        state,
+        player: 1,
+        rng: rngFromSeed("matrix-gs-decision-p1"),
+        budget: { kind: "rollouts", n: 20000 },
+        clock: fakeClock(),
+      });
+
+      expect(p0.move.choice).toBe(EQUILIBRIUM_ROW);
+      expect(p1.move.choice).toBe(EQUILIBRIUM_COL);
+      expect(Math.abs(p0.stats.rootValue! - EQUILIBRIUM_P0_VALUE)).toBeLessThan(0.5);
+      expect(Math.abs(p1.stats.rootValue! - EQUILIBRIUM_P1_VALUE)).toBeLessThan(0.5);
+    });
+
+    it("documents DUCT's mixed-node limitation on best-of-5 RPS WITHOUT claiming equilibrium convergence", () => {
+      // Honest scoping (plan §1's refutation condition 2 / the module doc rewrite this fix
+      // owes): DUCT is exact-target ONLY at pure-saddle nodes. best-of-5 RPS has no pure
+      // equilibrium at any single round — the only Nash equilibrium is the uniform mixed
+      // strategy (1/3 rock/paper/scissors each). Decoupled per-seat UCB1 has NO mechanism to
+      // converge to a MIXED distribution: it always reports one deterministic "best" pure move
+      // per search call, and is known (plan §1's refutation condition 1) to potentially cycle
+      // between rock/paper/scissors across independent searches rather than settle.
+      //
+      // This test deliberately does NOT assert:
+      //   - which specific choice is returned (any of the three is a legitimate DUCT output —
+      //     asserting one would be asserting an implementation accident, not a property)
+      //   - that rootValue approaches 0 (the true mixed-equilibrium value) — DUCT has no reason
+      //     to reach that number and a passing assertion here would misrepresent what the
+      //     algorithm promises (exactly the C31/C64 "the doc must not outrun the code" lesson
+      //     the plan calls out for this fix).
+      // It asserts only what DUCT DOES promise at a mixed node: a legal move, without crashing,
+      // and — same seed in, same move out — deterministic given the caller's rng, same as
+      // every other policy in this file.
+      const engine = rps;
+      const state = engine.setup(2, rngFromSeed("mcts-rps-mixed-node-setup"));
+      const policy = mctsPolicy<RPSState, RPSMove>({ explorationC: 1.4 });
+
+      const first = policy.chooseMove({
+        engine,
+        state,
+        player: 0,
+        rng: rngFromSeed("mcts-rps-mixed-node-decision"),
+        budget: { kind: "rollouts", n: 2000 },
+        clock: fakeClock(),
+      });
+      const second = policy.chooseMove({
+        engine,
+        state,
+        player: 0,
+        rng: rngFromSeed("mcts-rps-mixed-node-decision"),
+        budget: { kind: "rollouts", n: 2000 },
+        clock: fakeClock(),
+      });
+
+      const legal = engine.legalMoves(state, 0);
+      expect(legal.some((m) => m.choice === first.move.choice)).toBe(true);
+      expect(first.move.choice).toBe(second.move.choice); // deterministic given the same seed
+      expect(first.stats.rootValue).toBeDefined();
+      expect(Number.isFinite(first.stats.rootValue)).toBe(true);
+    });
+
+    it("sequential-game determinism pin (in-suite byte-identity guard): exact move + stats on a fixed seed, unaffected by DUCT", () => {
+      // Pinned literal values, captured from classic-ttt BEFORE the DUCT change existed (plan
+      // §6's byte-identity requirement, restated at the unit-test level so a regression is
+      // caught by `pnpm vitest run packages/bots` alone, without needing the external harness
+      // dump). DUCT only ever executes inside `active.mode === "simultaneous"` branches
+      // (module doc); classic-ttt is unconditionally sequential, so every one of these numbers
+      // — including rootVisits' exact insertion order — must survive the fix byte-for-byte.
+      const engine = classicTicTacToe;
+      const state = engine.setup(2, rngFromSeed("mcts-pin-golden-setup"));
+      const policy = mctsPolicy<TTTState, TTTMove>({ explorationC: 1.4 });
+      const { move, stats } = policy.chooseMove({
+        engine,
+        state,
+        player: 0,
+        rng: rngFromSeed("mcts-pin-golden-decision"),
+        budget: { kind: "rollouts", n: 500 },
+        clock: fakeClock(0),
+      });
+
+      expect(move).toEqual({ cell: 4 });
+      expect(stats.rollouts).toBe(500);
+      expect(stats.rootValue).toBeCloseTo(0.348, 10);
+      expect(stats.rootVisits).toEqual([
+        { move: { cell: 6 }, visits: 33 },
+        { move: { cell: 2 }, visits: 8 },
+        { move: { cell: 4 }, visits: 248 },
+        { move: { cell: 0 }, visits: 22 },
+        { move: { cell: 1 }, visits: 79 },
+        { move: { cell: 5 }, visits: 46 },
+        { move: { cell: 8 }, visits: 29 },
+        { move: { cell: 7 }, visits: 6 },
+        { move: { cell: 3 }, visits: 29 },
+      ]);
     });
   });
 
