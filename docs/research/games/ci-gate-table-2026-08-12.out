@@ -1,0 +1,70 @@
+$ tsx scripts/ci-gates.ts -- --suite ci
+solo-ci (daily-puzzle) for "crackstep" — OK
+  [PASS] certificatePresent: present and verified by replay
+  [PASS] certificatePar: par=30 (fail outside [8, 80])
+  [PASS] randomPlayoutSolveRate: 0.0% (fail if > 30.0%)
+  [PASS] forcedMoveFraction: 46.7% (fail if > 85.0%)
+  [WARN] generatorRejectionRate: 66.7% (warn > 50%, fail if > 90%)
+  [PASS] dayOverDayDrift: 0.000σ (fail if |Δ| > 1.5σ)
+  [PASS] certifiedBufferDays: 84 days buffered (alert < 30, fail if < 7)
+  [N/A ] fogDeductionOnly: non-fog (perfect-information) puzzle — no guess-free requirement to check
+  [N/A ] strongVsRandomRatio: daily-puzzle format — no score() distribution
+  [N/A ] distributionOverlap: daily-puzzle format — no score() distribution
+  [N/A ] greedyVsRandomRatio: daily-puzzle format — no score() distribution
+  [N/A ] strongVsGreedyRatio: daily-puzzle format — no score() distribution
+  [N/A ] strongScoreCV: daily-puzzle format — no score() distribution
+  [N/A ] alwaysSafeVsStrong: daily-puzzle format — no bank/push risk decision, no safeMove hook required
+  [N/A ] grindProbe: daily-puzzle format — termination is structural, discharged by the contract suite, not a tripwire search
+  [N/A ] medianRunLength: daily-puzzle format — the puzzle analogue is the certificate par band, which applies
+  [N/A ] capHitRate: daily-puzzle format — the puzzle analogue is the certificate par band, which applies
+  [N/A ] ceilingPileUp: daily-puzzle format — no score ceiling to pile up against
+  [N/A ] suicideProbe: daily-puzzle format — score-chase-only probe (crackstep.md §5)
+
+CI suite (ci) for "fadeout" — OK
+  [PASS] strong-vs-random: 100.0% (min 90.0%)
+  [N/A ] first-player-win-rate: manifest.solvedValue is a proven "draw" (docs/research/games/fadeout-solve-report.md §1.1 (remove-first/solid/threefold: draw, 128,170 states, all 9 openings drawn)) — a balanced-FPA band does not apply to a solved game
+  [N/A ] draw-rate: manifest.solvedValue is a proven draw (docs/research/games/fadeout-solve-report.md §1.1 (remove-first/solid/threefold: draw, 128,170 states, all 9 openings drawn)) — a draw-rate ceiling is unsatisfiable by construction for a drawn game
+  [PASS] mean-plies: mean 35.5 plies, 0 cap hits across all matchups
+  [N/A ] ruthless-vs-standard: manifest.solvedValue is a proven draw (docs/research/games/fadeout-solve-report.md §1.1 (remove-first/solid/threefold: draw, 128,170 states, all 9 openings drawn)) — ruthless cannot out-win standard when neither can win
+  [PASS] solved-value-reached: self-play reached the proven "draw" 100.0% of the time (floor 90%, proof: docs/research/games/fadeout-solve-report.md §1.1 (remove-first/solid/threefold: draw, 128,170 states, all 9 openings drawn))
+
+solo-ci (score-chase) for "mine-run" — OK (provisional — deferred rows not yet measured at this tier)
+  [DEFER] strongVsRandomRatio: measured at nightly (Strong-dependent; ~165s/seed at soloChaseCiRollouts=750 on the real 10x10/20-mine board (up to 83min/seed at higher search) — ~4.6h at seedCount=100 in CI — platform-corrections.md C27)
+  [DEFER] distributionOverlap: measured at nightly (Strong-dependent; ~165s/seed at soloChaseCiRollouts=750 on the real 10x10/20-mine board (up to 83min/seed at higher search) — ~4.6h at seedCount=100 in CI — platform-corrections.md C27)
+  [PASS] greedyVsRandomRatio: 15.545 (fail if < 1.2)
+  [DEFER] strongVsGreedyRatio: measured at nightly (Strong-dependent; ~165s/seed at soloChaseCiRollouts=750 on the real 10x10/20-mine board (up to 83min/seed at higher search) — ~4.6h at seedCount=100 in CI — platform-corrections.md C27)
+  [DEFER] strongScoreCV: measured at nightly (Strong-dependent; ~165s/seed at soloChaseCiRollouts=750 on the real 10x10/20-mine board (up to 83min/seed at higher search) — ~4.6h at seedCount=100 in CI — platform-corrections.md C27)
+  [DEFER] alwaysSafeVsStrong: measured at nightly (Strong-dependent; ~165s/seed at soloChaseCiRollouts=750 on the real 10x10/20-mine board (up to 83min/seed at higher search) — ~4.6h at seedCount=100 in CI — platform-corrections.md C27)
+  [PASS] grindProbe: no zero-risk unbounded cycle found
+  [DEFER] medianRunLength: measured at nightly (Strong-dependent; ~165s/seed at soloChaseCiRollouts=750 on the real 10x10/20-mine board (up to 83min/seed at higher search) — ~4.6h at seedCount=100 in CI — platform-corrections.md C27)
+  [DEFER] capHitRate: measured at nightly (Strong-dependent; ~165s/seed at soloChaseCiRollouts=750 on the real 10x10/20-mine board (up to 83min/seed at higher search) — ~4.6h at seedCount=100 in CI — platform-corrections.md C27)
+  [DEFER] ceilingPileUp: measured at nightly (Strong-dependent; ~165s/seed at soloChaseCiRollouts=750 on the real 10x10/20-mine board (up to 83min/seed at higher search) — ~4.6h at seedCount=100 in CI — platform-corrections.md C27)
+  [N/A ] suicideProbe: not misère-tagged
+  [N/A ] certificatePresent: score-chase format — no daily certificate pipeline
+  [N/A ] certificatePar: score-chase format — no par to certify
+  [N/A ] randomPlayoutSolveRate: score-chase format — no single 'solve' to rate
+  [N/A ] forcedMoveFraction: score-chase format — no optimal solve path to measure
+  [N/A ] generatorRejectionRate: score-chase format — no certify-time generator
+  [N/A ] dayOverDayDrift: score-chase format — no daily difficulty band
+  [N/A ] certifiedBufferDays: score-chase format — no certificate buffer to deplete
+  [N/A ] fogDeductionOnly: score-chase format — no daily certificate, no guess-free requirement to check
+
+CI suite (ci) for "nine-grids" — OK
+  [PASS] strong-vs-random: 100.0% (min 90.0%)
+  [PASS] first-player-win-rate: 40.0% (band [35%, 65%])
+  [PASS] draw-rate: 30.0% (max 60.0%)
+  [PASS] mean-plies: mean 49.8 plies, 0 cap hits across all matchups
+  [N/A ] ruthless-vs-standard: manifest.ciGateBudget.twoPlayerCiRollouts is active for this CI-suite run — "ruthless" is measured at 1500 rollouts vs "standard"'s shipped 1000 — the override has changed the very quantity under comparison, so this gate cannot measure its claim at suite "ci" (C26). Nightly measures it at the real shipped budgets, where it means something.
+  [N/A ] solved-value-reached: no proven manifest.solvedValue — nothing to confirm
+
+CI suite (ci) for "tilt" — FAILED
+  [PASS] strong-vs-random: 100.0% (min 90.0%)
+  [FAIL] first-player-win-rate: 70.0% (band [35%, 65%])
+  [PASS] draw-rate: 2.0% (max 60.0%)
+  [PASS] mean-plies: mean 19.1 plies, 0 cap hits across all matchups
+  [N/A ] ruthless-vs-standard: manifest.ciGateBudget.twoPlayerCiRollouts is active for this CI-suite run — "ruthless" is measured at 3000 rollouts vs "standard"'s shipped 1000 — the override has changed the very quantity under comparison, so this gate cannot measure its claim at suite "ci" (C26). Nightly measures it at the real shipped budgets, where it means something.
+  [N/A ] solved-value-reached: no proven manifest.solvedValue — nothing to confirm
+
+ci-gates: 1/5 game(s) failed their gate table (ci).
+[ELIFECYCLE] Command failed with exit code 1.
+EXIT=1

@@ -4183,3 +4183,61 @@ The glob fix and its three type-error repairs are kept — flagged by the team r
 silently, which is the behavior C65 asked for and got. **Auditing every other package's tsconfig
 coverage is owed**, and is not assumed to be clean merely because this one was found: Fadeout and
 Crackstep were checked and are correct, the rest were not.
+
+## C70 — `main` is not green, and one shipped game's gates have never been measured at all.
+
+The user's instruction after C68 was to run everything locally. Doing so produced the first real gate
+verdict this repository has had in eight days, and it is not the verdict the project has been
+assuming. Full output preserved at `docs/research/games/ci-gate-table-2026-08-12.out`.
+
+```
+ci-gates: 1/5 game(s) failed their gate table (ci).
+```
+
+### Finding 1 — Tilt fails its gate table
+
+```
+CI suite (ci) for "tilt" — FAILED
+  [FAIL] first-player-win-rate: 70.0% (band [35%, 65%])
+```
+
+**Not yet ruled on.** `scripts/ci-gates.ts` hardcodes its seed as `` `ci:${gameId}:${opts.suite}` ``
+(lines 155/168) at `CI_GAMES = 100`, so that 70% is **one seed**. It sits 5 points outside a 65%
+edge against a binomial SE of ~4.6 — about 1.1 SE out. C49's rule is that any row within ~10 points
+of a band edge is provisional until a second seed, and C47 is the record of me reading a pattern
+into noise twice. Replication across five seeds is running before this is called anything.
+
+Either outcome is a finding. If it replicates, Tilt has a seat-asymmetry defect that shipped. If it
+does not, then **the production gate decides borderline rows on a single hardcoded seed** — every
+marginal verdict in this project's history has been a coin flip, and that is the larger problem.
+
+### Finding 2 — eight of Mine Run's ten gates have never been measured anywhere
+
+Mine Run's report reads **"OK (provisional — deferred rows not yet measured at this tier)"** with
+eight rows `[DEFER]`red to nightly: `strongVsRandomRatio`, `distributionOverlap`,
+`strongVsGreedyRatio`, `strongScoreCV`, `alwaysSafeVsStrong`, `medianRunLength`, `capHitRate`,
+`ceilingPileUp`.
+
+C68 established that **nightly has never once run.** So a shipped game's core quality gates —
+including `alwaysSafeVsStrong`, the probe whose entire purpose is catching a fake risk/reward
+decision, and `distributionOverlap`, which decides whether the difficulty tiers are distinguishable
+at all — have been measured **nowhere, ever.** Only two of its ten gates have a real number behind
+them.
+
+This is C68's "deferred has meant discarded" made concrete on a specific shipped game, and it is
+worse than the abstract version, because the report **prints `OK`.** The honesty caveat is there —
+"provisional", spelled out — and the exit code is still success. C27 built deferral as a genuine
+cost-management mechanism and it is sound; what was never built is anything that notices the tier
+you deferred *to* does not run. **A deferral is a promise about the future, and nothing in this
+system ever checks that the promise was kept.**
+
+### The ruling that follows regardless of how Tilt resolves
+
+A `deferred` row must not be allowed to age silently. The mechanism owed is one that makes an
+unmet deferral **visible and eventually fatal** — a deferred gate carries the run that was supposed
+to measure it, and a deferral that has never been discharged degrades to a failure rather than
+sitting at `OK` forever. Designing that is real work and gets a plan; recording it is not optional.
+
+Crackstep and Fadeout and Nine Grids passed cleanly, and Fadeout's `solved-value-reached` reported
+100% attainment against its 90% floor — the C23/C59 machinery working exactly as designed on the one
+game with a real proof behind it.
