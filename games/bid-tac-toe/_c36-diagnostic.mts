@@ -9,6 +9,7 @@ import {
   bidTacToe,
   STARTING_BUDGET,
   type BidTacToeBidMove,
+  type BidTacToeMove,
   type BidTacToeState,
 } from "./engine";
 import { manifest } from "./manifest";
@@ -149,7 +150,7 @@ if (targetState.phase.kind === "bid") {
   // raw per-joint-arm visit counts (coordinator's second ask).
   // -------------------------------------------------------------------------------------
   for (const n of [2000, 10000]) {
-    const agent = tierPolicy<BidTacToeState, BidTacToeBidMove>({ id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n }, minReplyMs: 0 });
+    const agent = tierPolicy<BidTacToeState, BidTacToeMove>({ id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n }, minReplyMs: 0 });
     const { move, stats } = agent.chooseMove({
       engine: bidTacToe,
       state: targetState,

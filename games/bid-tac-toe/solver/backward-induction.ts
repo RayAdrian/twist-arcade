@@ -195,6 +195,14 @@ function valueOf(solver: SolverState, state: BidTacToeState): number {
 }
 
 function valueOfPlaceNode(solver: SolverState, state: BidTacToeState): number {
+  // `state.phase.kind === "place"` is already established by valueOf()'s own caller-side
+  // narrowing (its only call site), but that narrowing does not cross a function boundary —
+  // TS sees `state: BidTacToeState`'s full phase union again here, so it must be re-asserted
+  // locally (never previously caught: this file was outside the package's typecheck `include`
+  // glob until the games/bid-tac-toe/tsconfig.json fix alongside this — see C57/C58).
+  if (state.phase.kind !== "place") {
+    throw new Error(`valueOfPlaceNode: state.phase.kind must be "place", got "${state.phase.kind}"`);
+  }
   const winner = state.phase.winner;
   const legal = bidTacToe.legalMoves(state, winner);
   let best = winner === 0 ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY;
@@ -236,12 +244,26 @@ function valueOfResolvedWin(
   return valueOf(solver, successor);
 }
 
-function valueOfBidNode(solver: SolverState, state: BidTacToeState): number {
+interface BidMatrix {
+  readonly rows: readonly { amount: number; star: boolean }[];
+  readonly cols: readonly { amount: number; star: boolean }[];
+  readonly cellValue: (
+    row: { amount: number; star: boolean },
+    col: { amount: number; star: boolean }
+  ) => number;
+}
+
+/** Builds the (rows x cols) matrix-game payoff structure at a bid node (module doc's "THE ONE
+ *  GENUINELY NOVEL PIECE") — the O(budget) distinct-successor precompute plus a `cellValue`
+ *  lookup closure over it. Factored out of `valueOfBidNode`/`bestBidPair` (both need the exact
+ *  same matrix) and reused by `optimalBidsAt` below, so the maximin/minimax computation that
+ *  underpins `createExactOracle().optimalBids()` shares this construction rather than
+ *  reimplementing it a third time. */
+function buildBidMatrix(solver: SolverState, state: BidTacToeState): BidMatrix {
   const [b0, b1] = state.budgets;
   const holder = state.star;
   const minBudget = Math.min(b0, b1);
 
-  // O(budget) distinct-successor precompute (module doc).
   const nonDecisive0: number[] = [];
   for (let k = 0; k <= b0; k++) nonDecisive0.push(valueOfResolvedWin(solver, state, 0, k, false));
   const nonDecisive1: number[] = [];
@@ -259,6 +281,12 @@ function valueOfBidNode(solver: SolverState, state: BidTacToeState): number {
     if (resolved.starDecisive) return decisive[resolved.payment]!;
     return resolved.winner === 0 ? nonDecisive0[resolved.payment]! : nonDecisive1[resolved.payment]!;
   };
+
+  return { rows, cols, cellValue };
+}
+
+function valueOfBidNode(solver: SolverState, state: BidTacToeState): number {
+  const { rows, cols, cellValue } = buildBidMatrix(solver, state);
 
   let maximin = Number.NEGATIVE_INFINITY;
   for (const row of rows) {
@@ -293,10 +321,21 @@ function valueOfBidNode(solver: SolverState, state: BidTacToeState): number {
 // ---------------------------------------------------------------------------------------
 
 function bestPlaceCell(solver: SolverState, state: BidTacToeState): { cell: number; value: number } {
+  // Same cross-function narrowing note as valueOfPlaceNode above.
+  if (state.phase.kind !== "place") {
+    throw new Error(`bestPlaceCell: state.phase.kind must be "place", got "${state.phase.kind}"`);
+  }
   const winner = state.phase.winner;
   const legal = bidTacToe.legalMoves(state, winner);
   let best: { cell: number; value: number } | undefined;
   for (const move of legal) {
+    // legalMoves() at a place-phase state only ever returns place moves (engine.ts), but its
+    // return type is the full BidTacToeMove union, so `move.cell` resolves through the shared
+    // `[key: string]: Json` index signature (Json, which includes null) rather than the
+    // place-specific `cell: number` field — narrow explicitly rather than widen the field type.
+    if (move.kind !== "place") {
+      throw new Error(`bestPlaceCell: legalMoves() at a place-phase state returned a non-place move: kind=${move.kind}`);
+    }
     const successor = bidTacToe.apply(state, new Map<PlayerId, typeof move>([[winner, move]]), NULL_RNG);
     const v = valueOf(solver, successor);
     if (!best || (winner === 0 ? v > best.value : v < best.value)) best = { cell: move.cell, value: v };
@@ -313,26 +352,7 @@ function bestBidPair(
   solver: SolverState,
   state: BidTacToeState
 ): { row: { amount: number; star: boolean }; col: { amount: number; star: boolean } } {
-  const [b0, b1] = state.budgets;
-  const holder = state.star;
-  const rows = movesFor(b0, holder === 0);
-  const cols = movesFor(b1, holder === 1);
-
-  const nonDecisive0: number[] = [];
-  for (let k = 0; k <= b0; k++) nonDecisive0.push(valueOfResolvedWin(solver, state, 0, k, false));
-  const nonDecisive1: number[] = [];
-  for (let k = 0; k <= b1; k++) nonDecisive1.push(valueOfResolvedWin(solver, state, 1, k, false));
-  const minBudget = Math.min(b0, b1);
-  const decisive: number[] = [];
-  for (let k = 0; k <= minBudget; k++) decisive.push(valueOfResolvedWin(solver, state, holder, k, true));
-
-  const cellValue = (row: { amount: number; star: boolean }, col: { amount: number; star: boolean }): number => {
-    const rowMove: BidTacToeBidMove = { kind: "bid", amount: row.amount, ...(row.star ? { star: true } : {}) };
-    const colMove: BidTacToeBidMove = { kind: "bid", amount: col.amount, ...(col.star ? { star: true } : {}) };
-    const resolved = resolveBid(holder, rowMove, colMove);
-    if (resolved.starDecisive) return decisive[resolved.payment]!;
-    return resolved.winner === 0 ? nonDecisive0[resolved.payment]! : nonDecisive1[resolved.payment]!;
-  };
+  const { rows, cols, cellValue } = buildBidMatrix(solver, state);
 
   let maximin = Number.NEGATIVE_INFINITY;
   let bestRow = rows[0]!;
@@ -430,5 +450,103 @@ export function solveBudget(budget: number): SolveResult {
     saddleCensus,
     reachableStates: solver.memo.size,
     canonicalLine: extractCanonicalLine(solver, root),
+  };
+}
+
+// ---------------------------------------------------------------------------------------
+// createExactOracle() — docs/plans/sim-search-residue.md §2's prerequisite for E-A (the
+// root-agreement experiment that discriminates H1 from H2). An EXPORT, not a behavior change:
+// nothing shipped calls this solver, and `valueOf`/`buildBidMatrix`/the memo are the exact same
+// private machinery `solveBudget` already uses — this only exposes two read-only views over it:
+// the memoized value of an ARBITRARY reachable state (not just the root), and, at a bid node,
+// the FULL SET of bids achieving the maximin (seat 0) / minimax (seat 1) bound — `bestBidPair`
+// above only ever returns ONE canonical (first-found) tie-break per side, which is enough for
+// `extractCanonicalLine` but not for E-B's planned "is the search's chosen bid a member of the
+// optimal set" membership test, which needs every tied optimum, not one arbitrary
+// representative.
+// ---------------------------------------------------------------------------------------
+
+/** A bid's canonical string key — `"3"` or `"3*"` — matching the label format already used by
+ *  `extractCanonicalLine`'s `detail` strings and by the C36/C57 diagnostic scripts
+ *  (`_c36-diagnostic.mts`'s `${row.amount}${row.star ? "*" : ""}`), so a caller comparing an
+ *  MCTS-chosen move against `optimalBids()`'s set doesn't need a second ad hoc formatter. */
+export type BidMoveKey = string;
+
+export function bidMoveKey(move: { amount: number; star?: boolean }): BidMoveKey {
+  return `${move.amount}${move.star ? "*" : ""}`;
+}
+
+export interface ExactOracle {
+  /** The memoized, seat-0-perspective exact value of ANY reachable state under this oracle's
+   *  budget (not only the root) — a plain memo lookup, computing on first access. `state` must
+   *  be reachable from the real initial position (budget conservation
+   *  `budgets[0] + budgets[1] === 2 * budget` holds for every state this solver ever
+   *  constructs); passing a state built from a DIFFERENT total budget silently mixes two
+   *  disjoint memo spaces under one key scheme and is a caller error, not something this
+   *  function can detect (the same trust `solveBudget` already places in its own callers). */
+  exactValue(state: BidTacToeState): number;
+  /** The full SET of `seat`'s bids achieving its own bound at a bid-phase `state` — maximin
+   *  rows for seat 0 (`max_i min_j`), minimax cols for seat 1 (`min_j max_i`), exactly per the
+   *  module doc's saddle-point definition. Ties are the common case (module doc / solve report
+   *  §1.2), so this is deliberately a `Set`, not a single canonical pick like `bestBidPair`'s.
+   *  Throws if `state.phase.kind !== "bid"` — there is no bid to be optimal about elsewhere. */
+  optimalBids(state: BidTacToeState, seat: Seat): ReadonlySet<BidMoveKey>;
+}
+
+function optimalBidsAt(solver: SolverState, state: BidTacToeState, seat: Seat): Set<BidMoveKey> {
+  if (state.phase.kind !== "bid") {
+    throw new Error(
+      `createExactOracle().optimalBids: state.phase.kind must be "bid", got "${state.phase.kind}"`
+    );
+  }
+  const { rows, cols, cellValue } = buildBidMatrix(solver, state);
+  const EPS = 1e-9;
+  const result = new Set<BidMoveKey>();
+
+  if (seat === 0) {
+    const rowMins = rows.map((row) => {
+      let rowMin = Number.POSITIVE_INFINITY;
+      for (const col of cols) rowMin = Math.min(rowMin, cellValue(row, col));
+      return rowMin;
+    });
+    const maximin = Math.max(...rowMins);
+    rows.forEach((row, i) => {
+      if (Math.abs(rowMins[i]! - maximin) < EPS) result.add(bidMoveKey(row));
+    });
+  } else {
+    const colMaxes = cols.map((col) => {
+      let colMax = Number.NEGATIVE_INFINITY;
+      for (const row of rows) colMax = Math.max(colMax, cellValue(row, col));
+      return colMax;
+    });
+    const minimax = Math.min(...colMaxes);
+    cols.forEach((col, i) => {
+      if (Math.abs(colMaxes[i]! - minimax) < EPS) result.add(bidMoveKey(col));
+    });
+  }
+  return result;
+}
+
+/** Builds an exact oracle for `budget`, pre-solved from the real initial position
+ *  (`initialState(budget, 1)` — seat 1 holds the star, matching `engine.ts`'s actual `setup()`)
+ *  so `reachableStates`-worth of memo entries are warm before the first `exactValue`/
+ *  `optimalBids` call. Cross-checked (backward-induction.test.ts) against `oracle.ts`'s
+ *  independent `solveBudgetBruteForce` at B<=3 and against
+ *  `docs/research/games/bid-tac-toe-solve-report.md`'s published canonical numbers — the same
+ *  two-source trust structure the original solve used. */
+export function createExactOracle(budget: number): ExactOracle {
+  if (!Number.isInteger(budget) || budget < 0) {
+    throw new RangeError(`createExactOracle: budget must be a non-negative integer, got ${budget}`);
+  }
+  const solver = newSolverState();
+  valueOf(solver, initialState(budget, 1));
+
+  return {
+    exactValue(state: BidTacToeState): number {
+      return valueOf(solver, state);
+    },
+    optimalBids(state: BidTacToeState, seat: Seat): ReadonlySet<BidMoveKey> {
+      return optimalBidsAt(solver, state, seat);
+    },
   };
 }
