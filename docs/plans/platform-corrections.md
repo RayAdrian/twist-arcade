@@ -4487,3 +4487,74 @@ remain untrustworthy, so that game stays undecided exactly as the user directed.
 remedy plan (b3-sweep, gate predictions, Duel Draft control re-runs) are still owed, and their
 pre-registered predictions were written before this result and are not being revised now that part of
 it is known.
+
+## C74 — Scoring the pre-registered gate predictions. One met, two half-met, and the pathology moved.
+
+The remedy plan's §5 predictions were written before DUCT existed. C73 then found the search picks
+losing bids, which gave real reason to doubt them. **They are scored here as written, not revised.**
+Raw output: `docs/research/games/bid-tac-toe-b3-sweep-postfix-duct.out`, same script, same fixed seed
+`b3-sweep-fixed-seed`, same ladder, n=60.
+
+### Prediction 1 — "the strong-vs-random decline reverses" — **MET, decisively**
+
+Pre-fix: 93.3 / 96.7 / **88.3 FAIL** / **88.3 FAIL** / **75.0 FAIL**.
+Post-fix: 100.0 / 100.0 / 98.3 / 100.0 / **96.7**.
+
+**Three failing gates now pass.** At the shipped 10,000 budget the gate went **75.0% → 96.7%**, a
++21.7-point move clearing the 90% floor. The pre-fix signature was a systematic collapse toward the
+top of the ladder (96.7 → 75.0); post-fix the curve is flat and saturated. The small dips
+(100 → 98.3, 100 → 96.7) sit inside ~2.2 pp SE at n=60 and carry no signature. **This is C55's decline
+inverted, which is exactly what the prediction named.**
+
+### Predictions 2 and 3 — "attainment and draw rate up a lot from 0.0%" — **half met, and zero where it counts**
+
+Attainment: 0.0% → 10.0 / 10.0 / 16.7 / 10.0 / **0.0%**. Draw rate identical shape.
+
+Off the floor at four of five budgets, and **still exactly 0.0% at 10,000 rollouts — the shipped
+Ruthless budget** — nowhere near the 90% floor. The prediction deliberately did not claim the floor
+would be crossed, so this is not a surprise; but "up a lot" is not an honest description of 0 → 10%,
+and it is *no* movement at the budget that ships. **Scored: partially met, failed at the shipped
+budget.**
+
+### The new failure, and the confound I must state before reading it
+
+**FPA at 10,000 moved 33.3% → 73.3%** and now FAILs the [35,65] band. At n=60 that is a ~40-point
+move against ~6.5 pp SE — about 6 SE, unambiguously real.
+
+**But the pre/post relief status is not comparable, and saying otherwise would be dishonest.** The
+pre-fix baseline in `bid-tac-toe-b3-report.md` reports FPA and draw-rate as `(n/a — proven draw)`,
+i.e. **relief granted**, while attainment sat at 0.0%. That is precisely the C55 defect — relief
+granted on a declaration whose validity was never checked — and it has since been fixed. The post-fix
+run now prints:
+
+> `solvedValue relief withheld: self-play reached the proven "draw" only 10.0% of the time (floor 90%)`
+
+So part of "a new FAIL appeared" is **the C55/C59 machinery working exactly as designed**, refusing to
+hide a number it previously concealed. The gate did not get worse; it started being enforced.
+**The raw measurement is the comparable quantity, and it genuinely degraded: 33.3% → 73.3%.**
+
+### The finding: the pathology moved metrics rather than disappearing
+
+Read down the post-fix ladder as budget rises: FPA 46.7 → 36.7 → 46.7 → 46.7 → **73.3**; draw rate
+10.0 → 10.0 → 16.7 → 10.0 → **0.0**; attainment the same. **The low budgets look healthy and the
+shipped budget does not.**
+
+Pre-fix, "more search makes the game look worse" showed up as `strong-vs-random` declining. Post-fix
+that gate is fixed — and the same statement is now true of FPA, draw rate and attainment instead.
+**C55's signature did not go away; it relocated.**
+
+This is consistent with C73 and independent of it. At 10k both seats overpay (E-A: mean bid 7.28 and
+7.14); seat 0 bids marginally higher, wins the first auction more often, and an equally-blind opponent
+cannot punish the overpayment the solve report says is losing — so seat 0 converts to 73.3% wins and
+zero draws. **The game looks decisive and unbalanced precisely because both bots are bad in the same
+way.**
+
+### Ruling
+
+DUCT stays: it fixed what it was designed to fix, three gates recovered, and it is byte-identically
+inert for every shipped game (C73). The remaining defect is the evaluation lane already opened —
+rollouts cannot price an auction — and this sweep is now its second independent line of evidence.
+**No threshold moves and no prediction is retroactively softened.** Bid-Tac-Toe stays undecided.
+
+Still owed from the remedy plan: the Duel Draft control re-runs (refutation condition 3 — the healthy
+control must stay healthy), running now.

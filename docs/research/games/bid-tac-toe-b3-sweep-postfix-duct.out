@@ -1,0 +1,56 @@
+
+==== rollouts=1600 ====
+  strongSelfPlay: drawRate=10.0% firstPlayerWinRate=46.7% meanPlies=10.2 capHitRate=0.00%
+  gates:
+    [PASS] strong-vs-random: 100.0% (min 90.0%)
+    [PASS] first-player-win-rate: 46.7% (band [35%, 65%]) — solvedValue relief withheld: self-play reached the proven "draw" only 10.0% of the time (floor 90%, see solved-value-reached)
+    [PASS] draw-rate: 10.0% (max 60.0%) — solvedValue relief withheld: self-play reached the proven draw only 10.0% of the time (floor 90%, see solved-value-reached)
+    [PASS] mean-plies: mean 10.2 plies, 0 cap hits across all matchups
+    [N/A] ruthless-vs-standard: manifest.ciGateBudget.twoPlayerCiRollouts is active for this CI-suite run — "ruthless" is measured at 1600 rollouts vs "standard"'s shipped 1500 — the override has changed the very quantity under comparison, so this gate cannot measure its claim at suite "ci" (C26). Nightly measures it at the real shipped budgets, where it means something.
+    [UNATTAINED] solved-value-reached: self-play has never reached the proven "draw" (10.0% observed, floor 90%) — no manifest.solvedValue.attainmentBaseline declared, so there is no history to regress from; this describes search adequacy for this tree, not a regression (platform-corrections.md C57)
+    [N/A] mirror-probe: not applicable: the board is spatially symmetric, but every move also spends chips from a private, asymmetric bid budget (and the star can be held by only one seat) — bids and the star have no reflective analogue, so a mirrored bid preserves nothing about the position once the two seats' remaining budgets diverge. Report as n/a with this reason, never a WARN (platform-corrections.md C48's ruling shape).
+
+==== rollouts=2000 ====
+  strongSelfPlay: drawRate=10.0% firstPlayerWinRate=36.7% meanPlies=10.3 capHitRate=0.00%
+  gates:
+    [PASS] strong-vs-random: 100.0% (min 90.0%)
+    [PASS] first-player-win-rate: 36.7% (band [35%, 65%]) — solvedValue relief withheld: self-play reached the proven "draw" only 10.0% of the time (floor 90%, see solved-value-reached)
+    [PASS] draw-rate: 10.0% (max 60.0%) — solvedValue relief withheld: self-play reached the proven draw only 10.0% of the time (floor 90%, see solved-value-reached)
+    [PASS] mean-plies: mean 10.3 plies, 0 cap hits across all matchups
+    [N/A] ruthless-vs-standard: manifest.ciGateBudget.twoPlayerCiRollouts is active for this CI-suite run — "ruthless" is measured at 2000 rollouts vs "standard"'s shipped 1500 — the override has changed the very quantity under comparison, so this gate cannot measure its claim at suite "ci" (C26). Nightly measures it at the real shipped budgets, where it means something.
+    [UNATTAINED] solved-value-reached: self-play has never reached the proven "draw" (10.0% observed, floor 90%) — no manifest.solvedValue.attainmentBaseline declared, so there is no history to regress from; this describes search adequacy for this tree, not a regression (platform-corrections.md C57)
+    [N/A] mirror-probe: not applicable: the board is spatially symmetric, but every move also spends chips from a private, asymmetric bid budget (and the star can be held by only one seat) — bids and the star have no reflective analogue, so a mirrored bid preserves nothing about the position once the two seats' remaining budgets diverge. Report as n/a with this reason, never a WARN (platform-corrections.md C48's ruling shape).
+
+==== rollouts=3000 ====
+  strongSelfPlay: drawRate=16.7% firstPlayerWinRate=46.7% meanPlies=10.0 capHitRate=0.00%
+  gates:
+    [PASS] strong-vs-random: 98.3% (min 90.0%)
+    [PASS] first-player-win-rate: 46.7% (band [35%, 65%]) — solvedValue relief withheld: self-play reached the proven "draw" only 16.7% of the time (floor 90%, see solved-value-reached)
+    [PASS] draw-rate: 16.7% (max 60.0%) — solvedValue relief withheld: self-play reached the proven draw only 16.7% of the time (floor 90%, see solved-value-reached)
+    [PASS] mean-plies: mean 10.0 plies, 0 cap hits across all matchups
+    [N/A] ruthless-vs-standard: manifest.ciGateBudget.twoPlayerCiRollouts is active for this CI-suite run — "ruthless" is measured at 3000 rollouts vs "standard"'s shipped 1500 — the override has changed the very quantity under comparison, so this gate cannot measure its claim at suite "ci" (C26). Nightly measures it at the real shipped budgets, where it means something.
+    [UNATTAINED] solved-value-reached: self-play has never reached the proven "draw" (16.7% observed, floor 90%) — no manifest.solvedValue.attainmentBaseline declared, so there is no history to regress from; this describes search adequacy for this tree, not a regression (platform-corrections.md C57)
+    [N/A] mirror-probe: not applicable: the board is spatially symmetric, but every move also spends chips from a private, asymmetric bid budget (and the star can be held by only one seat) — bids and the star have no reflective analogue, so a mirrored bid preserves nothing about the position once the two seats' remaining budgets diverge. Report as n/a with this reason, never a WARN (platform-corrections.md C48's ruling shape).
+
+==== rollouts=5000 ====
+  strongSelfPlay: drawRate=10.0% firstPlayerWinRate=46.7% meanPlies=9.4 capHitRate=0.00%
+  gates:
+    [PASS] strong-vs-random: 100.0% (min 90.0%)
+    [PASS] first-player-win-rate: 46.7% (band [35%, 65%]) — solvedValue relief withheld: self-play reached the proven "draw" only 10.0% of the time (floor 90%, see solved-value-reached)
+    [PASS] draw-rate: 10.0% (max 60.0%) — solvedValue relief withheld: self-play reached the proven draw only 10.0% of the time (floor 90%, see solved-value-reached)
+    [PASS] mean-plies: mean 9.4 plies, 0 cap hits across all matchups
+    [N/A] ruthless-vs-standard: manifest.ciGateBudget.twoPlayerCiRollouts is active for this CI-suite run — "ruthless" is measured at 5000 rollouts vs "standard"'s shipped 1500 — the override has changed the very quantity under comparison, so this gate cannot measure its claim at suite "ci" (C26). Nightly measures it at the real shipped budgets, where it means something.
+    [UNATTAINED] solved-value-reached: self-play has never reached the proven "draw" (10.0% observed, floor 90%) — no manifest.solvedValue.attainmentBaseline declared, so there is no history to regress from; this describes search adequacy for this tree, not a regression (platform-corrections.md C57)
+    [N/A] mirror-probe: not applicable: the board is spatially symmetric, but every move also spends chips from a private, asymmetric bid budget (and the star can be held by only one seat) — bids and the star have no reflective analogue, so a mirrored bid preserves nothing about the position once the two seats' remaining budgets diverge. Report as n/a with this reason, never a WARN (platform-corrections.md C48's ruling shape).
+
+==== rollouts=10000 ====
+  strongSelfPlay: drawRate=0.0% firstPlayerWinRate=73.3% meanPlies=8.1 capHitRate=0.00%
+  gates:
+    [PASS] strong-vs-random: 96.7% (min 90.0%)
+    [FAIL] first-player-win-rate: 73.3% (band [35%, 65%]) — solvedValue relief withheld: self-play reached the proven "draw" only 0.0% of the time (floor 90%, see solved-value-reached)
+    [PASS] draw-rate: 0.0% (max 60.0%) — solvedValue relief withheld: self-play reached the proven draw only 0.0% of the time (floor 90%, see solved-value-reached)
+    [PASS] mean-plies: mean 8.1 plies, 0 cap hits across all matchups
+    [N/A] ruthless-vs-standard: manifest.ciGateBudget.twoPlayerCiRollouts is active for this CI-suite run — "ruthless" is measured at 10000 rollouts vs "standard"'s shipped 1500 — the override has changed the very quantity under comparison, so this gate cannot measure its claim at suite "ci" (C26). Nightly measures it at the real shipped budgets, where it means something.
+    [UNATTAINED] solved-value-reached: self-play has never reached the proven "draw" (0.0% observed, floor 90%) — no manifest.solvedValue.attainmentBaseline declared, so there is no history to regress from; this describes search adequacy for this tree, not a regression (platform-corrections.md C57)
+    [N/A] mirror-probe: not applicable: the board is spatially symmetric, but every move also spends chips from a private, asymmetric bid budget (and the star can be held by only one seat) — bids and the star have no reflective analogue, so a mirrored bid preserves nothing about the position once the two seats' remaining budgets diverge. Report as n/a with this reason, never a WARN (platform-corrections.md C48's ruling shape).
+EXIT=0
