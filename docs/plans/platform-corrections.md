@@ -4558,3 +4558,92 @@ rollouts cannot price an auction — and this sweep is now its second independen
 
 Still owed from the remedy plan: the Duel Draft control re-runs (refutation condition 3 — the healthy
 control must stay healthy), running now.
+
+## C75 — Refutation condition 3 fires. DUCT's record is mixed and the remedy choice is reopened.
+
+The remedy plan pre-registered three conditions that would make DUCT the wrong call. **Condition 3 —
+"Duel Draft's control gates degrade post-fix" — has fired**, on a matched-precision comparison.
+
+### The measurement, both arms at n=200
+
+Pre-DUCT was measured by checking out the pre-fix commit into its own worktree and running the
+**identical script, identical seed, identical n** against the old `mcts.ts`. Raw output at
+`docs/research/games/duel-draft-d2-71-{PRE,POST}DUCT-n200.out`.
+
+| rollouts | pre-DUCT | post-DUCT |
+|---|---|---|
+| 1,000 | 79.5% | 82.0% |
+| 2,000 | 86.0% | 81.5% |
+| 5,000 | 86.0% | 84.5% |
+| **10,000** | **88.0%** | **77.0%** |
+
+Paired per-index transitions at 5k→10k — the correct error model:
+**pre-DUCT 23 toward / 19 away** (net +4, McNemar p ≈ 0.64, nothing);
+**post-DUCT 18 toward / 33 away** (net −15, p ≈ 0.036). At the shipped budget the arms differ by
+**11.0 points, p ≈ 0.004.**
+
+Pre-DUCT is monotone non-decreasing across the whole ladder. Post-DUCT rises then falls at the top.
+
+### Why the matched arm was necessary, and what I would have concluded without it
+
+The first control ran at n=30 and its verdict line said "POSSIBLE C55 signature." **The paired data
+at n=30 gave p = 0.375 — nothing at all.** Had I ruled there, I would have reported a false alarm.
+Had I instead compared n=200 post-fix against the *existing* n=30 pre-fix baseline, I would have
+reported a real-looking degradation without knowing whether the old search did the same thing —
+and that baseline's apparent monotone rise was, as the D2 report already flagged, an artifact of
+exactly +1 win per step. **Only two arms at equal precision could answer this**, and running the old
+code was cheap: one detached worktree.
+
+### The instrument's own defect, worth recording
+
+The script computes paired transitions and labels them *"the correct error model"* — then produces
+its **verdict from the unpaired combined SE.** At n=30 it flagged a decline the paired data put at
+p = 0.375; at n=200 it flagged one the paired data supports at p ≈ 0.036. **Same verdict string,
+opposite evidentiary weight, and the tool cannot tell the difference.** That is C63's species — a
+guard that computes the honest number and reports a different one — inside an instrument commissioned
+to enforce precisely that discipline. Every verdict from it must be re-derived from the paired
+columns by hand until fixed.
+
+### DUCT's record, stated without favouring the outcome I wanted
+
+**For DUCT:**
+- It killed H1. Root value is ~0 at every budget on a proven draw, where it previously climbed to
+  0.21, and opponent-bids-zero mass reversed from growing to shrinking (C73). The co-operator model
+  is genuinely gone.
+- It removed Bid-Tac-Toe's pathological decline: `strong-vs-random` went 75.0% → 96.7% at 10k, three
+  failing gates to zero (C74).
+- Byte-identically inert for every shipped game, verified pre- and post-edit (C73).
+
+**Against DUCT:**
+- **It picks optimal moves less often than max-max did.** E-A: `P(chosen ∈ optimal)` at 10k was
+  0.350/0.350 pre-fix and **0.000/0.000** post-fix. The value estimate improved; the move choice got
+  worse.
+- **It introduced a budget decline on the healthy control** — the defect it was built to remove,
+  now appearing in a different game.
+
+**So the pathology did not disappear at either step. C74 recorded it moving between metrics within
+Bid-Tac-Toe; C75 records it moving between games.** That pattern is itself evidence for the
+diagnosis in C73/#22: if the underlying defect is that **rollouts cannot evaluate a position**, then
+changing the *selection* rule redistributes which game and which metric absorbs the error without
+removing it. DUCT fixed the thing it was aimed at and left the deeper one untouched.
+
+### A hypothesis that must not be adopted without testing
+
+`strong-vs-random` measures play **against a random opponent**. A search that models the opponent as
+non-adversarial is, for that specific matchup, *modelling it correctly* — a random opponent really
+does not block. So an adversarial model may be penalised by this metric while being better against
+real opposition. **This is plausible, it is convenient, and it is exactly the kind of story I should
+distrust for being both** — it would explain the Duel Draft result as DUCT being right and the gate
+being wrong. It is recorded as an untested hypothesis and **is not being used to dismiss condition
+3.** The discriminating experiment is a head-to-head between the two searches, or a comparison
+against a competent opponent rather than a random one; neither has been run.
+
+### Ruling
+
+**The remedy choice is reopened, as the plan said it would be.** DUCT is not reverted and not
+confirmed. It stays on `feature/sim-search-residue`, unmerged, where it has always been — nothing
+shipped depends on it, so there is no urgency to decide wrongly. What is owed before the choice is
+made: the head-to-head discriminator above, and a judgement on whether `strong-vs-random` is the
+right acceptance metric for a change to the opponent model at all.
+
+Bid-Tac-Toe remains undecided, which is unchanged and now doubly justified.
