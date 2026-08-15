@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "check:engine-purity": "node scripts/check-engine-purity.mjs",
     "check:tsconfig-coverage": "node scripts/check-tsconfig-coverage.mjs",
+    "check:deps": "node scripts/check-declared-deps.mjs",
     "harness": "tsx packages/harness/src/cli.ts",
     "harness:ci-gates": "tsx scripts/ci-gates.ts",
     "harness:verify-certificates": "tsx scripts/verify-certificates.ts",

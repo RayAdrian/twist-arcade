@@ -56,6 +56,20 @@ jobs:
         # to depend on React for real; only packages/engine is constrained. See
         # scripts/check-engine-purity.mjs.
 
+      - name: Declared-dependency guard (C83)
+        run: pnpm check:deps
+        # C83: four branches merged, each typechecked/linted/tested/reviewed green, then the
+        # real gate table failed instantly on `main` — "Cannot find package
+        # '@twist-arcade/fadeout' imported from scripts/ci-gates.ts". scripts/ci-gates.ts
+        # resolves each game via a TEMPLATED dynamic import (`import(`@twist-arcade/${gameId}`)`)
+        # that names no package a static analyzer can see; the root package.json had silently
+        # never declared fadeout, and it had only ever resolved via a stale node_modules
+        # symlink. This compares every workspace package's (and scripts/'s) real imports —
+        # static and templated-dynamic — against its own declared dependencies. Must stay
+        # BEFORE the harness CI gates below: it verifies the dependency surface those gates'
+        # own dynamic imports rely on, the same relationship the tsconfig coverage guard has
+        # to Typecheck above. See scripts/check-declared-deps.mjs's header.
+
       - name: Per-game harness CI gates (M4)
         run: pnpm harness:ci-gates -- --suite ci
         # Wires the ALREADY-BUILT harness suites (packages/harness/src/ci-gates.ts composes
