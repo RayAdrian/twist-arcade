@@ -65,6 +65,7 @@ export type {
 export {
   assertSuiteOk,
   compareBudgets,
+  DEFERRABLE_CI_GATES,
   EmptyExceptionJustificationError,
   EmptyMirrorProbeReasonError,
   evaluateCiGates,
@@ -88,10 +89,13 @@ export {
 
 export {
   formatCiSuiteTable,
+  formatCiSuiteTableWithAging,
   formatGameCiGateReport,
+  formatGameCiGateReportWithAging,
   formatMatchupTable,
   formatSolveResult,
   formatSoloGateTable,
+  formatSoloGateTableWithAging,
   toGameCiGateReportJson,
   toMatchupReportJson,
   toReportJson,
@@ -151,7 +155,13 @@ export type {
   SoloGateChaseInputsFull,
   SoloGatePuzzleInputs,
 } from "./solo-gates";
-export { allGatesPass, evaluateSoloGates, hasDeferredGates as soloHasDeferredGates, SoloDeferredGateAtNightlyError } from "./solo-gates";
+export {
+  allGatesPass,
+  evaluateSoloGates,
+  hasDeferredGates as soloHasDeferredGates,
+  SoloDeferredGateAtNightlyError,
+  STRONG_DEPENDENT_CHASE_GATES,
+} from "./solo-gates";
 
 export type { SoloHeuristic } from "./solver/generic-solo";
 export { dfsSolver, idaStarSolver, StochasticEngineUnsupportedError } from "./solver/generic-solo";
@@ -200,3 +210,38 @@ export {
   selectGateKind,
   UnrecognizedSoloFormatError,
 } from "./ci-gates";
+
+// M4 CI wiring, continued (deferral-ledger.ts): the deferral-DISCHARGE ledger
+// (platform-corrections.md C70) — checks that a `"deferred"` row's promise ("measured at
+// nightly") was actually kept, ages an undischarged deferral visibly and eventually fatally,
+// and fails a report outright once a MATERIAL fraction of a game's gates have gone stale
+// together. Deliberately does not touch suites.ts/solo-gates.ts/ci-gates.ts — every existing
+// gate's raw output stays byte-identical; this is a strictly additive layer on top.
+export type {
+  DeferralAgingReport,
+  DeferralLane,
+  DeferralLedger,
+  DeferralLedgerEntry,
+  DeferralObservation,
+  DeferralRowAging,
+  DeferralSeverity,
+  GateRowLike,
+} from "./deferral-ledger";
+export {
+  annotateDeferralAging,
+  annotateDeferralAgingForReport,
+  defaultLedgerPath,
+  DEFERRAL_FATAL_DAYS,
+  DEFERRAL_MATERIAL_FRACTION,
+  DEFERRAL_WARN_DAYS,
+  deferralAgeDays,
+  deferralSeverity,
+  effectiveOk,
+  gateRowsFromReport,
+  InvalidDeferralSinceError,
+  laneOfReport,
+  observeDeferral,
+  readDeferralLedger,
+  recordDischarge,
+  writeDeferralLedger,
+} from "./deferral-ledger";

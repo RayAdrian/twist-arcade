@@ -65,4 +65,17 @@ describe("mine-run manifest", () => {
     expect(mineRunManifest.ciGateBudget?.deferGatesToNightly?.reason).toMatch(/C27/);
     expect(mineRunManifest.ciGateBudget?.deferGatesToNightly?.reason).toMatch(/165s|seed/);
   });
+
+  // platform-corrections.md C70: the deferral-discharge ledger (@twist-arcade/harness's
+  // deferral-ledger.ts) ages an undischarged deferral from `since`, not from whenever the
+  // ledger mechanism first happens to run — so `since` MUST be the real, git-verified day this
+  // deferral was declared (2026-08-07: `git log -S deferGatesToNightly -- games/mine-run/
+  // manifest.ts` finds a29772a1/c8f88609, both dated 2026-08-07), never today's date and never
+  // left unset (an unset `since` would silently understate this deferral's real age — exactly
+  // the trap C70 exists to close).
+  it("declares `since` as the real day this deferral was committed (C70) — a valid, non-empty UTC date, not left to default to 'whenever this is read'", () => {
+    const since = mineRunManifest.ciGateBudget?.deferGatesToNightly?.since;
+    expect(since).toBe("2026-08-07");
+    expect(since).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
 });

@@ -81,8 +81,12 @@ export type SoloGateChaseInputs = SoloGateChaseInputsFull | SoloGateChaseInputsD
 
 /** The exact set of chase gate rows that need `strong` and therefore become `"deferred"`
  *  (never evaluated) under `SoloGateChaseInputsDeferred` — named once here so both
- *  `evaluateChaseGates` and the nightly abuse guard below stay in lockstep with each other. */
-const STRONG_DEPENDENT_CHASE_GATES = [
+ *  `evaluateChaseGates` and the nightly abuse guard below stay in lockstep with each other.
+ *  Exported (platform-corrections.md C70) so deferral-ledger.ts's nightly-discharge wiring
+ *  knows exactly which gate identity a real nightly run for THIS lane discharges, without
+ *  re-deriving it from a report that (being nightly) never shows any row as `"deferred"` to
+ *  read the list back off of. */
+export const STRONG_DEPENDENT_CHASE_GATES = [
   "strongVsRandomRatio",
   "distributionOverlap",
   "strongVsGreedyRatio",

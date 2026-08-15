@@ -32,9 +32,22 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Json } from "@twist-arcade/engine";
 import type { Registry } from "@twist-arcade/game-spec";
 import {
-  formatGameCiGateReport,
+  annotateDeferralAgingForReport,
+  defaultLedgerPath,
+  DEFERRABLE_CI_GATES,
+  effectiveOk,
+  formatGameCiGateReportWithAging,
+  gateRowsFromReport,
+  laneOfReport,
+  observeDeferral,
+  readDeferralLedger,
+  recordDischarge,
   runGameCiGate,
   selectGateKind,
+  STRONG_DEPENDENT_CHASE_GATES,
+  writeDeferralLedger,
+  type DeferralAgingReport,
+  type DeferralLedger,
   type GameCiGateReport,
   type SafeMoveFn,
 } from "@twist-arcade/harness";
@@ -191,6 +204,108 @@ export async function runAllGates(
   return reports;
 }
 
+// ---------------------------------------------------------------------------------------
+// platform-corrections.md C70 — the deferral-discharge ledger, wired to THIS script because
+// the ledger's own real location (`data/deferral-ledger.json`) and "what day is it" are repo-
+// layout/clock concerns, exactly like `CERT_BASE_DIR`/`todayUtc()` above (this file's own
+// module doc: repo-layout conventions the harness dispatcher deliberately does not know
+// about). `@twist-arcade/harness`'s deferral-ledger.ts owns every actual decision (identity,
+// aging, materiality); this function only feeds it real reports and real manifests and persists
+// the result — same "pure logic vs thin wiring" split cli.ts/this file already follow.
+// ---------------------------------------------------------------------------------------
+
+export interface DeferralLedgerIoDeps {
+  readonly ledgerPath: string;
+  readonly today: string;
+  readonly readLedger: (filePath: string) => Promise<DeferralLedger>;
+  readonly writeLedger: (filePath: string, ledger: DeferralLedger) => Promise<void>;
+}
+
+export function defaultDeferralLedgerDeps(): DeferralLedgerIoDeps {
+  return {
+    ledgerPath: defaultLedgerPath(REPO_ROOT),
+    today: todayUtc(),
+    readLedger: readDeferralLedger,
+    writeLedger: writeDeferralLedger,
+  };
+}
+
+export interface GatedGameReport {
+  readonly report: GameCiGateReport;
+  readonly aging: DeferralAgingReport | undefined;
+  readonly effectiveOk: boolean;
+}
+
+/**
+ * Feeds every game's already-computed `GameCiGateReport` through the deferral-discharge ledger:
+ * at suite "ci", a game whose manifest still declares `ciGateBudget.deferGatesToNightly` and
+ * whose report actually shows `"deferred"` rows gets `observeDeferral`d (self-registering — no
+ * separate step to remember, this module's own doc, property 1); at suite "nightly", a game
+ * whose manifest STILL declares a deferral gets `recordDischarge`d using this lane's canonical
+ * gate-name list (`DEFERRABLE_CI_GATES` / `STRONG_DEPENDENT_CHASE_GATES`) — nightly's own report
+ * never shows `"deferred"` to read the list back off of (it structurally never accepts a
+ * partial roster), so the canonical list is what recognizes "this IS the discharging run"
+ * (requirement 1). The ledger is written back to disk ONLY if something actually changed — an
+ * unaffected run (no deferrals in this registry slice) touches nothing.
+ *
+ * Games with no active deferral pass straight through with `aging: undefined` and
+ * `effectiveOk === report.ok` — untouched, by construction (`annotateDeferralAgingForReport`
+ * returns `undefined` whenever no row is `"deferred"`).
+ */
+export async function applyDeferralLedger(
+  reports: readonly GameCiGateReport[],
+  registry: Registry,
+  suite: "ci" | "nightly",
+  deps: DeferralLedgerIoDeps = defaultDeferralLedgerDeps()
+): Promise<GatedGameReport[]> {
+  let ledger = await deps.readLedger(deps.ledgerPath);
+  let ledgerChanged = false;
+
+  for (const report of reports) {
+    const lane = laneOfReport(report);
+    if (lane === undefined) continue; // solo-puzzle — C27 deferral never applies here
+
+    const entry = registry[report.gameId];
+    const deferral = entry?.manifest.ciGateBudget?.deferGatesToNightly;
+    if (!deferral) continue; // this game has never declared a deferral — nothing to track
+
+    if (suite === "nightly") {
+      // Nightly always measures the full roster for real (structurally enforced upstream —
+      // SoloDeferredGateAtNightlyError / TwoPlayerDeferredGateAtNightlyError). If this
+      // manifest still declares a deferral, THIS run is exactly what discharges it.
+      const gates = lane === "two-player" ? [...DEFERRABLE_CI_GATES] : [...STRONG_DEPENDENT_CHASE_GATES];
+      ledger = recordDischarge(
+        ledger,
+        { gameId: report.gameId, lane, gates, ...(deferral.since !== undefined ? { since: deferral.since } : {}) },
+        deps.today
+      );
+      ledgerChanged = true;
+      continue;
+    }
+
+    const deferredNames = gateRowsFromReport(report)
+      .filter((r) => r.status === "deferred")
+      .map((r) => r.name);
+    if (deferredNames.length > 0) {
+      ledger = observeDeferral(
+        ledger,
+        { gameId: report.gameId, lane, gates: deferredNames, ...(deferral.since !== undefined ? { since: deferral.since } : {}) },
+        deps.today
+      );
+      ledgerChanged = true;
+    }
+  }
+
+  if (ledgerChanged) {
+    await deps.writeLedger(deps.ledgerPath, ledger);
+  }
+
+  return reports.map((report) => {
+    const aging = annotateDeferralAgingForReport(report, ledger, deps.today);
+    return { report, aging, effectiveOk: effectiveOk(report.ok, aging) };
+  });
+}
+
 async function loadRegistry(): Promise<Registry> {
   const registryUrl = pathToFileURL(path.join(REPO_ROOT, "games/registry.ts")).href;
   const mod = (await import(registryUrl)) as { registry: Registry };
@@ -234,12 +349,18 @@ async function main(): Promise<void> {
   }
 
   const reports = await runAllGates(registry, { suite, ...(game !== undefined ? { game } : {}) });
-  for (const report of reports) {
-    console.log(formatGameCiGateReport(report));
+
+  // platform-corrections.md C70: check every deferral's promise against the deferral-discharge
+  // ledger BEFORE printing anything — a report with undischarged, materially-stale deferrals
+  // must not render as an unqualified "OK", and must not exit 0.
+  const gated = await applyDeferralLedger(reports, registry, suite);
+
+  for (const { report, aging } of gated) {
+    console.log(formatGameCiGateReportWithAging(report, aging));
     console.log("");
   }
 
-  const failing = reports.filter((r) => !r.ok);
+  const failing = gated.filter((g) => !g.effectiveOk);
   if (failing.length > 0) {
     console.error(`ci-gates: ${failing.length}/${reports.length} game(s) failed their gate table (${suite}).`);
     process.exitCode = 1;

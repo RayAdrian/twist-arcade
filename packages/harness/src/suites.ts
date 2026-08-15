@@ -80,8 +80,12 @@ export interface CiGateDeferral {
  *  passing, which is itself computed from self-play data. Deferral means that data was never
  *  collected this tier, so whether the proof was reached is UNMEASURED, not "known true" — those
  *  branches defer along with everything else, exactly like `solved-value-reached` itself. Named
- *  once here so the nightly abuse guard stays in lockstep with the gate blocks themselves. */
-const DEFERRABLE_CI_GATES = [
+ *  once here so the nightly abuse guard stays in lockstep with the gate blocks themselves.
+ *  Exported (platform-corrections.md C70) for the same reason solo-gates.ts exports its own
+ *  `STRONG_DEPENDENT_CHASE_GATES` sibling: deferral-ledger.ts's nightly-discharge wiring needs
+ *  this lane's canonical deferred-gate identity independent of any report's own rows (a nightly
+ *  report never shows `"deferred"` to read the list back off of). */
+export const DEFERRABLE_CI_GATES = [
   "strong-vs-random",
   "first-player-win-rate",
   "draw-rate",

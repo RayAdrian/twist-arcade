@@ -3,11 +3,20 @@
 // no logic of its own beyond formatting, per its module doc).
 
 import { describe, expect, it } from "vitest";
-import { formatCiSuiteTable, formatGameCiGateReport, formatSoloGateTable, toGameCiGateReportJson } from "../src/report";
+import {
+  formatCiSuiteTable,
+  formatCiSuiteTableWithAging,
+  formatGameCiGateReport,
+  formatGameCiGateReportWithAging,
+  formatSoloGateTable,
+  formatSoloGateTableWithAging,
+  toGameCiGateReportJson,
+} from "../src/report";
 import type { CiSuiteReport, GateResult } from "../src/suites";
 import type { MatchupReport } from "../src/runner";
 import type { GameCiGateReport } from "../src/ci-gates";
 import type { GateResult as SoloGateResult } from "../src/solo-gates";
+import { annotateDeferralAging, observeDeferral, type DeferralAgingReport } from "../src/deferral-ledger";
 
 function fakeMatchupReport(): MatchupReport {
   return {
@@ -311,5 +320,137 @@ describe("formatCiSuiteTable() — C57: '[NEVER]' is visually distinct from '[FA
     );
     expect(output).toContain("— FAILED");
     expect(output).not.toContain("provisional");
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// platform-corrections.md C70: the deferral-discharge ledger's aging annotation, rendered.
+// `formatXWithAging(report, undefined)` must be BYTE-IDENTICAL to the un-aged formatter (this
+// IS the byte-identity guard for games with no deferrals, proven at the unit level rather than
+// only via the fixed-seed CLI diff) — every other case below is Mine Run's real 8/10 shape.
+// ---------------------------------------------------------------------------------------
+
+const MINE_RUN_DEFERRED_GATES = [
+  "strongVsRandomRatio",
+  "distributionOverlap",
+  "strongVsGreedyRatio",
+  "strongScoreCV",
+  "alwaysSafeVsStrong",
+  "medianRunLength",
+  "capHitRate",
+  "ceilingPileUp",
+] as const;
+
+function mineRunShapedSoloGates(): SoloGateResult[] {
+  return [
+    ...MINE_RUN_DEFERRED_GATES.map((name) => ({ name, status: "deferred" as const, detail: DEFER_DETAIL })),
+    { name: "greedyVsRandomRatio", status: "pass", detail: "1.800 (fail if < 1.5)" },
+    { name: "grindProbe", status: "pass", detail: "no zero-risk unbounded cycle found" },
+    { name: "suicideProbe", status: "n/a", detail: "not misère-tagged" },
+    { name: "certificatePresent", status: "n/a", detail: "score-chase format — no daily certificate pipeline" },
+    { name: "certificatePar", status: "n/a", detail: "score-chase format — no par to certify" },
+    { name: "randomPlayoutSolveRate", status: "n/a", detail: "score-chase format — no single 'solve' to rate" },
+    { name: "forcedMoveFraction", status: "n/a", detail: "score-chase format — no optimal solve path to measure" },
+    { name: "generatorRejectionRate", status: "n/a", detail: "score-chase format — no certify-time generator" },
+    { name: "dayOverDayDrift", status: "n/a", detail: "score-chase format — no daily difficulty band" },
+    { name: "certifiedBufferDays", status: "n/a", detail: "score-chase format — no certificate buffer to deplete" },
+    { name: "fogDeductionOnly", status: "n/a", detail: "score-chase format — no daily certificate, no guess-free requirement to check" },
+  ];
+}
+
+function agingFor(ageDays: number): DeferralAgingReport | undefined {
+  const today = "2026-08-15";
+  const since = new Date(Date.parse(`${today}T00:00:00Z`) - ageDays * 86_400_000).toISOString().slice(0, 10);
+  const ledger = observeDeferral(
+    {},
+    { gameId: "mine-run-fixture", lane: "solo-chase", gates: [...MINE_RUN_DEFERRED_GATES], since },
+    today
+  );
+  return annotateDeferralAging("mine-run-fixture", mineRunShapedSoloGates(), ledger["mine-run-fixture"], today);
+}
+
+describe("formatXWithAging — no aging (undefined) is byte-identical to the un-aged formatter", () => {
+  it("formatSoloGateTableWithAging(..., undefined) === formatSoloGateTable(...)", () => {
+    const withAging = formatSoloGateTableWithAging("mine-run-fixture", "score-chase", true, mineRunShapedSoloGates(), undefined);
+    const plain = formatSoloGateTable("mine-run-fixture", "score-chase", true, mineRunShapedSoloGates());
+    expect(withAging).toBe(plain);
+  });
+
+  it("formatCiSuiteTableWithAging(..., undefined) === formatCiSuiteTable(...)", () => {
+    const report = fakeSuiteReport([{ gate: "strong-vs-random", status: "pass", detail: "95.0%" }]);
+    expect(formatCiSuiteTableWithAging(report, undefined)).toBe(formatCiSuiteTable(report));
+  });
+
+  it("formatGameCiGateReportWithAging(report, undefined) === formatGameCiGateReport(report), for both lanes", () => {
+    const soloReport: GameCiGateReport = {
+      kind: "solo-chase",
+      gameId: "mine-run-fixture",
+      ok: true,
+      report: { gameId: "mine-run-fixture", format: "score-chase", ok: true, gates: mineRunShapedSoloGates(), metrics: {} as never, grind: { found: false } },
+    };
+    expect(formatGameCiGateReportWithAging(soloReport, undefined)).toBe(formatGameCiGateReport(soloReport));
+  });
+});
+
+describe("formatXWithAging — fresh (age 0): identical header/rows to the un-aged render (C27 stays usable on day one)", () => {
+  it("no [STALE]/[OVERDUE] suffixes, header still bare 'OK (provisional — ...)'", () => {
+    const aging = agingFor(0);
+    const output = formatSoloGateTableWithAging("mine-run-fixture", "score-chase", true, mineRunShapedSoloGates(), aging);
+    expect(output).toContain('for "mine-run-fixture" — OK (provisional');
+    expect(output).not.toContain("STALLED");
+    expect(output).not.toContain("STALE");
+    expect(output).not.toContain("OVERDUE");
+  });
+});
+
+describe("formatXWithAging — PLANTED VIOLATION, material fraction (requirement 3): Mine Run's real 8/10 shape, aged 8 days, never discharged", () => {
+  it("header says STALLED, not OK — this is the direct fix for C70's 'OK (provisional) with exit code 0'", () => {
+    const aging = agingFor(8);
+    const output = formatSoloGateTableWithAging("mine-run-fixture", "score-chase", true, mineRunShapedSoloGates(), aging);
+    const header = output.split("\n")[0]!;
+    expect(header).toContain("STALLED");
+    expect(header).not.toMatch(/— OK\b/);
+    expect(header).toMatch(/8\/10|80%/); // names the material fraction
+  });
+
+  it("every deferred row is individually annotated [STALE] with its undischarged day count", () => {
+    const aging = agingFor(8);
+    const output = formatSoloGateTableWithAging("mine-run-fixture", "score-chase", true, mineRunShapedSoloGates(), aging);
+    for (const name of MINE_RUN_DEFERRED_GATES) {
+      const line = output.split("\n").find((l) => l.includes(`] ${name}:`))!;
+      expect(line, name).toContain("STALE");
+      expect(line, name).toContain("8d");
+    }
+    // Rows that were never deferred (measured for real, or n/a) carry no aging suffix at all.
+    const passLine = output.split("\n").find((l) => l.includes("] greedyVsRandomRatio:"))!;
+    expect(passLine).not.toContain("STALE");
+    expect(passLine).not.toContain("OVERDUE");
+  });
+});
+
+describe("formatXWithAging — PLANTED VIOLATION, aged past fatal (requirement 2): 30+ days undischarged", () => {
+  it("header says STALLED and every deferred row is [OVERDUE]", () => {
+    const aging = agingFor(30);
+    const output = formatSoloGateTableWithAging("mine-run-fixture", "score-chase", true, mineRunShapedSoloGates(), aging);
+    const header = output.split("\n")[0]!;
+    expect(header).toContain("STALLED");
+    for (const name of MINE_RUN_DEFERRED_GATES) {
+      const line = output.split("\n").find((l) => l.includes(`] ${name}:`))!;
+      expect(line, name).toContain("OVERDUE");
+      expect(line, name).toContain("30d");
+    }
+  });
+});
+
+describe("formatXWithAging — a real FAIL row still renders FAILED, never STALLED, even when aging also forces a fail", () => {
+  it("two-player table: FAILED wins the header text (the exit code is already non-zero either way)", () => {
+    const aging = agingFor(30);
+    const failedReport = fakeSuiteReport([
+      { gate: "strong-vs-random", status: "deferred", detail: DEFER_DETAIL },
+      { gate: "mean-plies", status: "fail", detail: "mean 900.0 plies (band [10, 40])" },
+    ]);
+    const output = formatCiSuiteTableWithAging(failedReport, aging);
+    expect(output).toContain("— FAILED");
+    expect(output).not.toContain("STALLED");
   });
 });

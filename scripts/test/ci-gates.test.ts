@@ -21,7 +21,10 @@ import {
 import { certifyDay, writeCertificate, dfsSolver } from "@twist-arcade/harness";
 import type { Json } from "@twist-arcade/engine";
 import type { SafeMoveFn } from "@twist-arcade/harness";
+import type { DeferralLedger, GameCiGateReport } from "@twist-arcade/harness";
+import type { RegistryEntry } from "@twist-arcade/game-spec";
 import {
+  applyDeferralLedger,
   CI_GAMES,
   CI_SEED_COUNT,
   dayFor,
@@ -29,6 +32,7 @@ import {
   SafeMoveNotExportedError,
   todayUtc,
   UnknownGameIdError,
+  type DeferralLedgerIoDeps,
 } from "../ci-gates";
 
 describe("todayUtc / dayFor", () => {
@@ -331,5 +335,165 @@ describe("runAllGates — C13 --game filter", () => {
       }
     );
     expect(reports).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// platform-corrections.md C70: applyDeferralLedger — the repo-layout wiring around
+// @twist-arcade/harness's deferral-ledger.ts. All ledger persistence is injected (an in-memory
+// Map standing in for the real `data/deferral-ledger.json`), so these never touch real disk
+// except the one explicit round-trip test at the end, which uses a scratch tmp dir.
+// ---------------------------------------------------------------------------------------
+
+function inMemoryLedgerDeps(today: string, seed: DeferralLedger = {}): DeferralLedgerIoDeps & { writes: number } {
+  const store = { current: JSON.parse(JSON.stringify(seed)) as DeferralLedger };
+  const deps = {
+    ledgerPath: "unused://in-memory",
+    today,
+    writes: 0,
+    async readLedger() {
+      return store.current;
+    },
+    async writeLedger(_path: string, ledger: DeferralLedger) {
+      store.current = ledger;
+      deps.writes += 1;
+    },
+  };
+  return deps;
+}
+
+function deferringChaseManifest(since: string): GameManifest {
+  return { ...chaseManifest(), ciGateBudget: { deferGatesToNightly: { reason: "unit-test fixture", since } } };
+}
+
+function fakeRegistry(manifest: GameManifest): Registry {
+  const entry: RegistryEntry = {
+    manifest,
+    loadEngine: () => Promise.reject(new Error("not called — applyDeferralLedger never loads an engine")),
+    loadPresentation: () => Promise.reject(new Error("not called")),
+  };
+  return { [manifest.id]: entry };
+}
+
+function soloChaseReport(gameId: string, ok: boolean, gates: { name: string; status: string; detail: string }[]): GameCiGateReport {
+  return {
+    kind: "solo-chase",
+    gameId,
+    ok,
+    report: { gameId, format: "score-chase", ok, gates: gates as never, metrics: {} as never, grind: { found: false } },
+  };
+}
+
+const MINE_RUN_LIKE_DEFERRED = [
+  "strongVsRandomRatio",
+  "distributionOverlap",
+  "strongVsGreedyRatio",
+  "strongScoreCV",
+  "alwaysSafeVsStrong",
+  "medianRunLength",
+  "capHitRate",
+  "ceilingPileUp",
+] as const;
+
+function deferredGatesFixture(): { name: string; status: string; detail: string }[] {
+  return [
+    ...MINE_RUN_LIKE_DEFERRED.map((name) => ({ name, status: "deferred", detail: "measured at nightly (unit-test fixture)" })),
+    { name: "greedyVsRandomRatio", status: "pass", detail: "1.8" },
+    { name: "grindProbe", status: "pass", detail: "no cycle" },
+  ];
+}
+
+describe("applyDeferralLedger — suite 'ci' observes an active deferral (requirement 1: records what would discharge it)", () => {
+  it("writes a ledger entry anchored at the manifest's declared `since`, not at `today`", async () => {
+    const manifest = deferringChaseManifest("2026-08-07");
+    const registry = fakeRegistry(manifest);
+    const report = soloChaseReport(manifest.id, true, deferredGatesFixture());
+    const deps = inMemoryLedgerDeps("2026-08-15");
+
+    const gated = await applyDeferralLedger([report], registry, "ci", deps);
+
+    expect(deps.writes).toBe(1);
+    const stored = (await deps.readLedger(deps.ledgerPath)) as Record<string, { firstObservedAt: string }>;
+    expect(stored[manifest.id]!.firstObservedAt).toBe("2026-08-07");
+    // 8 days undischarged (2026-08-07 -> 2026-08-15), 8/10 applicable — stale AND material.
+    expect(gated[0]!.aging?.forcesFail).toBe(true);
+    expect(gated[0]!.effectiveOk).toBe(false);
+  });
+
+  it("a game with no ciGateBudget.deferGatesToNightly declared is untouched — no ledger write at all", async () => {
+    const manifest = chaseManifest();
+    const registry = fakeRegistry(manifest);
+    const report = soloChaseReport(manifest.id, true, [{ name: "greedyVsRandomRatio", status: "pass", detail: "1.8" }]);
+    const deps = inMemoryLedgerDeps("2026-08-15");
+
+    const gated = await applyDeferralLedger([report], registry, "ci", deps);
+
+    expect(deps.writes).toBe(0);
+    expect(gated[0]!.aging).toBeUndefined();
+    expect(gated[0]!.effectiveOk).toBe(true);
+  });
+});
+
+describe("applyDeferralLedger — suite 'nightly' recognizes itself as the discharging run (requirement 1, the other half)", () => {
+  it("PLANTED VIOLATION, DISCHARGED: an aged, undischarged deferral is reset to age 0 by a nightly run for the SAME manifest", async () => {
+    const manifest = deferringChaseManifest("2026-08-07");
+    const registry = fakeRegistry(manifest);
+
+    // Simulate 8 days of "ci" runs having already observed this deferral.
+    const ciDeps = inMemoryLedgerDeps("2026-08-15");
+    const agedReport = soloChaseReport(manifest.id, true, deferredGatesFixture());
+    await applyDeferralLedger([agedReport], registry, "ci", ciDeps);
+    const seeded = await ciDeps.readLedger(ciDeps.ledgerPath);
+
+    // Tonight, nightly runs for real (its own report shows every row MEASURED — never
+    // "deferred", matching solo-gates.ts's SoloDeferredGateAtNightlyError guarantee) and
+    // discharges it.
+    const nightlyDeps = inMemoryLedgerDeps("2026-08-15", seeded);
+    const nightlyReport = soloChaseReport(manifest.id, true, [
+      { name: "strongVsRandomRatio", status: "pass", detail: "measured for real" },
+      { name: "alwaysSafeVsStrong", status: "pass", detail: "measured for real" },
+    ]);
+    const gatedNightly = await applyDeferralLedger([nightlyReport], registry, "nightly", nightlyDeps);
+    expect(gatedNightly[0]!.effectiveOk).toBe(true); // nightly's own report never shows "deferred"
+
+    const discharged = await nightlyDeps.readLedger(nightlyDeps.ledgerPath);
+    expect(discharged[manifest.id]!.lastDischargedAt).toBe("2026-08-15");
+    // Discharged against the CANONICAL STRONG_DEPENDENT_CHASE_GATES list, not whatever subset
+    // happened to be in this particular nightly report's own rows.
+    expect(discharged[manifest.id]!.gates).toContain("distributionOverlap");
+
+    // Tomorrow's "ci" run re-declares the same deferral (Strong is still unaffordable at "ci")
+    // — its age must measure from last night's discharge, not from 2026-08-07 again.
+    const tomorrowDeps = inMemoryLedgerDeps("2026-08-16", discharged);
+    const tomorrowReport = soloChaseReport(manifest.id, true, deferredGatesFixture());
+    const gatedTomorrow = await applyDeferralLedger([tomorrowReport], registry, "ci", tomorrowDeps);
+    expect(gatedTomorrow[0]!.aging?.rows[0]!.ageDays).toBe(1);
+    expect(gatedTomorrow[0]!.aging?.forcesFail).toBe(false); // fresh again — 1 day, not material
+    expect(gatedTomorrow[0]!.effectiveOk).toBe(true);
+  });
+});
+
+describe("applyDeferralLedger — round-trips through the real filesystem (not just in-memory deps)", () => {
+  it("writes and reads back data/deferral-ledger.json's real shape via a scratch tmp dir", async () => {
+    const { readDeferralLedger, writeDeferralLedger, defaultLedgerPath } = await import("@twist-arcade/harness");
+    const dir = await mkdtemp(path.join(tmpdir(), "scripts-ci-gates-ledger-"));
+    const ledgerPath = defaultLedgerPath(dir);
+
+    const manifest = deferringChaseManifest("2026-08-07");
+    const registry = fakeRegistry(manifest);
+    const report = soloChaseReport(manifest.id, true, deferredGatesFixture());
+
+    const gated = await applyDeferralLedger([report], registry, "ci", {
+      ledgerPath,
+      today: "2026-08-15",
+      readLedger: readDeferralLedger,
+      writeLedger: writeDeferralLedger,
+    });
+    expect(gated[0]!.effectiveOk).toBe(false);
+
+    const onDisk = await readDeferralLedger(ledgerPath);
+    expect(onDisk[manifest.id]!.firstObservedAt).toBe("2026-08-07");
+
+    await rm(dir, { recursive: true, force: true });
   });
 });
