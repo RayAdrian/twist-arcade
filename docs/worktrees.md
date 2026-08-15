@@ -62,6 +62,10 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 | home1b (design direction 1b "Riso Zine" — the library home rebuilt from the user's Claude Design project, replacing Phase 0's placeholder `app/page.tsx`) | `../claude-project-home1b` | `feature/home-riso-zine` | `twistarcade_home1b` | 57021–57029 (RELEASED) | never started (no DB) | **CLOSED 2026-08-15** — merged at a8b7f9f; the 1b home is live on `main`. Worktree removed, branch deleted, no containers ever created. |
 | seedgate (C71: single hardcoded gate seed makes borderline verdicts coin flips — 12.9pp across-seed SD against a 30-point band, `docs/plans/platform-corrections.md` C49/C71) | `../claude-project-seedgate` | `feature/multi-seed-gates` | `twistarcade_seedgate` | 57121–57129 | not started (no DB) — harness/gate-table work only | ACTIVE — verified free with `lsof` AND `docker ps` per C62 |
 
+| classic (C77 ruling 4 / task #23: `GameManifest.classic` becomes `string | null` so two consumers stop pattern-matching an "N/A" sentinel) | `../claude-project-classic` | `feature/classic-nullable` | `twistarcade_classic` | 57621–57629 | not started (no DB) | ACTIVE — verified free with `lsof` AND `docker ps`; 57321 was skipped, held by 4 unrelated containers (C62) |
+| mirrorfix (C81 tasks #26/#27: Nine Grids' mirrorMove null convention + harness fallback counting, and rush's draw-relief source under multi-seed) | `../claude-project-mirrorfix` | `feature/mirror-convention` | `twistarcade_mirrorfix` | 57721–57729 | not started (no DB) | ACTIVE — verified free with `lsof` AND `docker ps` |
+| depguard (C83 task #28: a guard comparing workspace imports against declared dependencies, including the templated-dynamic case) | `../claude-project-depguard` | `feature/deps-guard` | `twistarcade_depguard` | 57821–57829 | not started (no DB) | ACTIVE — verified free with `lsof` AND `docker ps` |
+
 ## Port blocks
 
 | Block | Team | Status |
@@ -107,3 +111,7 @@ exists is exactly the leak §6 exists to prevent.
 | 56921–56929 (team 25) | tsconfig | CLAIMED 2026-08-15 — verified free with `lsof` AND `docker ps` |
 | 57021–57029 (team 26) | — | **FREE** — released 2026-08-15 when home1b merged at a8b7f9f. Never bound: no Supabase stack. |
 | 57121–57129 (team 27) | seedgate | CLAIMED 2026-08-15 — verified free with `lsof` AND `docker ps` |
+| 57321–57329 | — | **NOT AVAILABLE** — externally occupied by 4 unrelated Docker containers, confirmed via `docker ps` 2026-08-16. Skip when allocating. |
+| 57621–57629 (team 28) | classic | CLAIMED 2026-08-16 — `lsof` AND `docker ps` |
+| 57721–57729 (team 29) | mirrorfix | CLAIMED 2026-08-16 — `lsof` AND `docker ps` |
+| 57821–57829 (team 30) | depguard | CLAIMED 2026-08-16 — `lsof` AND `docker ps` |
