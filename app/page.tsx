@@ -41,7 +41,13 @@
 // monorepo's root tsconfig.json, a references-only stub with no `paths` of its own), not
 // tsconfig.app.json (where the alias is actually declared).
 import Link from "next/link";
-import { buildShelves, cardTiltClass, GameCard, pickFeaturedManifest } from "@twist-arcade/shell";
+import {
+  buildShelves,
+  cardTiltClass,
+  classicAttributionLine,
+  GameCard,
+  pickFeaturedManifest,
+} from "@twist-arcade/shell";
 import { registry } from "../games/registry";
 import { StreakBadge } from "./StreakBadge";
 
@@ -50,12 +56,22 @@ import { StreakBadge } from "./StreakBadge";
 // and never depicts real board/piece state (there is no live board here — see this file's
 // module doc) — so it needs no reduced-motion gate of its own beyond the global blanket
 // globals.css already applies to every animation in the product.
+//
+// CONTAINED in its own grid column (rendered only at `lg+`, alongside the hero text column —
+// see the JSX below), never absolutely positioned across the whole panel: a first pass scattered
+// these with absolute `top`/`left` percentages over the ENTIRE hero, and at the width where the
+// two-column layout collapses to one column, a tile ended up sitting on top of the rule
+// sentence's word "without" (orchestrator review of design 1b). A dedicated flow-layout column
+// cannot overlap the text column's content — there is no shared positioning context between them.
 const HERO_TILES = [
-  { top: "8%", left: "6%", size: 22, delay: "0s" },
-  { top: "62%", left: "10%", size: 16, delay: "0.6s" },
-  { top: "20%", left: "88%", size: 18, delay: "0.3s" },
-  { top: "72%", left: "82%", size: 24, delay: "0.9s" },
-  { top: "42%", left: "94%", size: 14, delay: "1.2s" },
+  { size: 20, delay: "0s" },
+  { size: 14, delay: "0.5s" },
+  { size: 18, delay: "1s" },
+  { size: 12, delay: "0.2s" },
+  { size: 22, delay: "0.8s" },
+  { size: 16, delay: "1.3s" },
+  { size: 14, delay: "0.4s" },
+  { size: 20, delay: "1.1s" },
 ] as const;
 
 export default function HomePage() {
@@ -74,12 +90,24 @@ export default function HomePage() {
        * reasoning applies to `role="contentinfo"` on the footer below. */}
       <header
         role="banner"
-        className="flex h-14 items-center justify-between border-b-brush border-ink bg-accent-p1 px-4"
+        className="border-b-brush border-ink bg-accent-p1 px-4 py-4 sm:px-6"
       >
-        <span className="font-display text-lg font-semibold text-paper text-shadow-overprint">
-          <span aria-hidden="true">◇</span> Twist Arcade
-        </span>
-        <StreakBadge />
+        <div className="mx-auto flex max-w-5xl items-start justify-between gap-4">
+          <div>
+            {/* The page's ONE <h1> — the site wordmark, not the featured game below (which is
+             * an <h2>, matching every shelf header's own level). e2e/a11y.spec.ts's home-page
+             * gate asserts a heading named "Twist Arcade" is visible (a pre-existing
+             * expectation from the Phase 0 page, which also used an <h1> here); a first pass
+             * of this redesign made the wordmark a plain <p>, which both broke that gate AND
+             * left two competing <h1>s in play (this one, and the hero's "Crackstep") once
+             * fixed the wrong way. */}
+            <h1 className="text-shadow-overprint font-display text-[clamp(1.75rem,7vw,3.375rem)] font-black leading-none text-paper">
+              <span aria-hidden="true">◇</span> Twist Arcade
+            </h1>
+            <p className="font-texture mt-1 text-paper">classic games, one rule changed</p>
+          </div>
+          <StreakBadge />
+        </div>
       </header>
 
       {manifests.length === 0 ? (
@@ -93,34 +121,28 @@ export default function HomePage() {
           {featured && (
             <section
               aria-labelledby="featured-heading"
-              className="edge-hand relative overflow-hidden rotate-[-0.5deg] border-brush border-ink bg-accent-p2 p-6 shadow-print-4 lg:grid lg:grid-cols-2 lg:items-center lg:gap-8 lg:p-10"
+              // No `.edge-hand` here (Move 6's wobble border is spec'd for a board-frame-sized
+              // element — the result stamp, an aha-callout, a live board frame — not a large
+              // full-width panel). A first pass applied it to this whole section and its
+              // enormous asymmetric radius fought visibly with the hard offset `shadow-print-4`
+              // at one corner (orchestrator review of design 1b: "the bottom edge is
+              // doubled/warped"). Plain `rounded-xl` (the same combo GameCard's own
+              // non-featured variant already uses successfully) has no such conflict.
+              className="rotate-[-0.5deg] rounded-xl border-brush border-ink bg-accent-p2 p-6 shadow-print-4 lg:grid lg:grid-cols-2 lg:items-center lg:gap-10 lg:p-10"
             >
-              {HERO_TILES.map((tile, i) => (
-                <span
-                  key={i}
-                  aria-hidden="true"
-                  className="ta-float pointer-events-none absolute rounded-sm border-hairline border-paper-lift bg-marker"
-                  style={{
-                    top: tile.top,
-                    left: tile.left,
-                    width: tile.size,
-                    height: tile.size,
-                    animationDelay: tile.delay,
-                  }}
-                />
-              ))}
-
-              <div className="relative">
-                <span className="inline-block -rotate-[2deg] border-hairline border-ink bg-marker px-3 py-1 font-mono text-xs uppercase tracking-[0.12em] text-ink shadow-print-2">
+              <div>
+                <span className="inline-block -rotate-3 border-hairline border-ink bg-marker px-3 py-1 font-mono text-xs uppercase tracking-[0.12em] text-ink shadow-print-2">
                   Featured Twist
                 </span>
-                <h1
+                <h2
                   id="featured-heading"
                   className="mt-3 font-display text-[clamp(2.25rem,8vw,4rem)] font-extrabold leading-[1.02] tracking-[-0.01em] text-paper"
                 >
                   {featured.title}
-                </h1>
-                <p className="mt-1 text-sm text-paper">a twist on {featured.classic}</p>
+                </h2>
+                {classicAttributionLine(featured.classic) && (
+                  <p className="mt-1 text-sm text-paper">{classicAttributionLine(featured.classic)}</p>
+                )}
                 <p className="mt-3 font-texture text-paper">{featured.ruleSentence}</p>
                 <Link
                   href={`/play/${featured.id}`}
@@ -128,6 +150,28 @@ export default function HomePage() {
                 >
                   ▶ Play {featured.title}
                 </Link>
+              </div>
+
+              {/* The tile-grid motif — its OWN grid column, `lg+` only. Never absolutely
+               * positioned over the text column (see HERO_TILES's own comment above for the
+               * defect this replaced: a tile used to sit on top of the rule sentence). Hidden
+               * below `lg` entirely rather than reflowed underneath the text, so it can never
+               * become a mobile overlap risk either. */}
+              <div
+                aria-hidden="true"
+                className="pointer-events-none hidden lg:grid lg:grid-cols-4 lg:place-items-center lg:gap-4"
+              >
+                {HERO_TILES.map((tile, i) => (
+                  <span
+                    key={i}
+                    className="ta-float rounded-sm border-hairline border-paper-lift bg-marker"
+                    style={{
+                      width: tile.size,
+                      height: tile.size,
+                      animationDelay: tile.delay,
+                    }}
+                  />
+                ))}
               </div>
             </section>
           )}
@@ -157,7 +201,10 @@ export default function HomePage() {
                 {shelf.games.map((manifest, i) => (
                   <li
                     key={manifest.id}
-                    className={`transition-transform duration-place ease-arcade ${cardTiltClass(i)}`}
+                    // The tilt class (app/globals.css's `.tilt-a`..`.tilt-f`) carries its own
+                    // `transition: transform` and `:hover { transform: rotate(0) }` — nothing
+                    // extra needed here.
+                    className={cardTiltClass(i)}
                   >
                     <GameCard manifest={manifest} />
                   </li>

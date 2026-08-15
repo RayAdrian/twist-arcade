@@ -57,32 +57,27 @@ describe("shouldShowStreakFlame — never renders an invented number", () => {
   });
 });
 
-describe("cardTiltClass — deterministic alternating rotation for cut-out cards", () => {
-  it("returns a Tailwind rotate class containing a small fractional degree", () => {
-    expect(cardTiltClass(0)).toMatch(/rotate-\[-?\d+(\.\d+)?deg\]/);
+// The actual rotation degrees live in app/globals.css's `.tilt-a`..`.tilt-f` hand-authored
+// classes (NOT Tailwind arbitrary-value classes — see home.ts's own doc comment for why a
+// first pass using `rotate-[-0.6deg]`-style strings silently failed to render in the real
+// build). This file can only assert the NAME-cycling contract from here; app/page.tsx's own
+// screenshot verification is what confirms the named classes actually rotate a card.
+describe("cardTiltClass — deterministic alternating tilt-class name for cut-out cards", () => {
+  it("returns one of the known hand-authored tilt class names", () => {
+    expect(cardTiltClass(0)).toMatch(/^tilt-[a-f]$/);
   });
 
   it("is deterministic: same index always yields the same class", () => {
     expect(cardTiltClass(2)).toBe(cardTiltClass(2));
   });
 
-  it("cycles rather than growing unbounded (index 0 and index N both resolve to a class)", () => {
-    const first = cardTiltClass(0);
-    const wrapped = cardTiltClass(1000);
-    expect(typeof wrapped).toBe("string");
-    expect(wrapped.length).toBeGreaterThan(0);
-    // Not asserting first === wrapped for a SPECIFIC modulus (that would over-constrain the
-    // implementation's cycle length) — only that wrapping never throws or returns empty.
-    expect(typeof first).toBe("string");
+  it("alternates: consecutive indices never yield the same class", () => {
+    for (let i = 0; i < 8; i++) {
+      expect(cardTiltClass(i)).not.toBe(cardTiltClass(i + 1));
+    }
   });
 
-  it("never rotates by a whole 90/180/etc degree — this is a subtle cut-out tilt, not a spin", () => {
-    for (let i = 0; i < 8; i++) {
-      const match = /rotate-\[(-?\d+(?:\.\d+)?)deg\]/.exec(cardTiltClass(i));
-      expect(match).not.toBeNull();
-      const deg = Math.abs(Number(match![1]));
-      expect(deg).toBeGreaterThan(0);
-      expect(deg).toBeLessThanOrEqual(1.5);
-    }
+  it("cycles rather than growing unbounded (a large index still resolves to a valid class)", () => {
+    expect(cardTiltClass(1000)).toMatch(/^tilt-[a-f]$/);
   });
 });

@@ -42,20 +42,16 @@ export function shouldShowStreakFlame(streak: StreakRecord): boolean {
 // Cut-out card material (design 1b): each shelf card is rotated a FRACTION of a degree,
 // alternating direction, and straightens to 0deg on hover (app/page.tsx composes this with
 // GameCard's own existing hover lift — see that file's module doc for why no extra JS is
-// needed for the straighten-on-hover behavior). Tailwind arbitrary-value classes, not inline
-// `style.transform` — an inline style would silently defeat the `hover:rotate-0` /
-// `motion-reduce:rotate-0` utilities below (inline styles win over non-`!important` classes for
-// the same CSS property), and JIT only needs to see these literal strings somewhere in the
-// source to generate them, which this const array guarantees regardless of which index is
-// picked at runtime.
-const CARD_TILT_CLASSES: readonly string[] = [
-  "rotate-[-0.6deg] hover:rotate-0 motion-reduce:rotate-0",
-  "rotate-[0.5deg] hover:rotate-0 motion-reduce:rotate-0",
-  "rotate-[-0.4deg] hover:rotate-0 motion-reduce:rotate-0",
-  "rotate-[0.7deg] hover:rotate-0 motion-reduce:rotate-0",
-  "rotate-[-0.8deg] hover:rotate-0 motion-reduce:rotate-0",
-  "rotate-[0.3deg] hover:rotate-0 motion-reduce:rotate-0",
-];
+// needed for the straighten-on-hover behavior).
+//
+// These are HAND-AUTHORED class names (`.tilt-a`..`.tilt-f`, defined in app/globals.css),
+// deliberately NOT Tailwind arbitrary-value classes (`rotate-[-0.6deg]`) — a first pass used
+// arbitrary-value strings assembled inside this array and Tailwind's JIT content scanner never
+// picked them up in the real build (reported in orchestrator review of design 1b: "every card
+// here is axis-aligned"), even though the scanned-file glob covers this module. Named classes
+// sidestep that dependency entirely: they're written directly in app/globals.css, so there's
+// nothing for a content-scanner to fail to detect.
+const CARD_TILT_CLASSES: readonly string[] = ["tilt-a", "tilt-b", "tilt-c", "tilt-d", "tilt-e", "tilt-f"];
 
 /** Deterministic per-card tilt class, cycling through `CARD_TILT_CLASSES` by shelf position. */
 export function cardTiltClass(index: number): string {

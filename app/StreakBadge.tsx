@@ -31,11 +31,15 @@ export function StreakBadge() {
     setCurrent(shouldShowStreakFlame(streak) ? streak.current : null);
   }, []);
 
+  // Never a hollow placeholder (e.g. an empty badge or a bare "0"/"N") when there is no real
+  // streak yet — absence is the honest state (this page's conflict-2 resolution: no fabricated
+  // numbers, see app/page.tsx's own module doc). Nothing renders here at all until a genuine
+  // nonzero streak is read from storage.
   if (current === null) return null;
 
   return (
     <span
-      className="inline-flex items-center gap-1 font-mono text-sm font-semibold tabular-nums text-paper"
+      className="inline-flex shrink-0 -rotate-3 items-center gap-1 border-ui border-ink bg-marker px-3 py-1.5 font-mono text-sm font-semibold tabular-nums text-ink shadow-print-2"
       aria-label={`${current} day streak`}
     >
       <span aria-hidden="true">🔥</span>

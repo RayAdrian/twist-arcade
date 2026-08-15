@@ -77,6 +77,52 @@
   :root.dark .divider-squiggle {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='8' viewBox='0 0 48 8'%3E%3Cpath d='M0 4 Q6 0 12 4 T24 4 T36 4 T48 4' fill='none' stroke='%23b7ae9c' stroke-width='1'/%3E%3C/svg%3E");
   }
+
+  /* Riso Zine home direction (design 1b) — the cut-out shelf cards' deterministic alternating
+   * tilt (packages/shell/src/home.ts's `cardTiltClass`). Hand-authored, named classes — NOT
+   * Tailwind arbitrary-value classes (`rotate-[-0.6deg]`) — because a first pass built with
+   * that approach silently failed to render in the real build: `rotate-[-0.6deg]` etc. lived
+   * only inside a runtime-selected string in a .ts module, and Tailwind's JIT content scanner
+   * never generated the CSS for it there, even though the file is covered by the scanned-file
+   * glob (orchestrator review of design 1b: "every card here is axis-aligned"). Named classes,
+   * written directly here, remove that dependency entirely. `:hover` (not `.group:hover` /
+   * `:has()`) straightens the tilt because hovering the card's inner `<GameCard>` Link makes
+   * the pointer physically over THIS wrapper's box too — CSS `:hover` bubbles to every
+   * ancestor, so no extra machinery is needed for the "straightens on hover" behavior. */
+  .tilt-a {
+    transform: rotate(-0.6deg);
+  }
+  .tilt-b {
+    transform: rotate(0.5deg);
+  }
+  .tilt-c {
+    transform: rotate(-0.4deg);
+  }
+  .tilt-d {
+    transform: rotate(0.7deg);
+  }
+  .tilt-e {
+    transform: rotate(-0.8deg);
+  }
+  .tilt-f {
+    transform: rotate(0.3deg);
+  }
+  .tilt-a,
+  .tilt-b,
+  .tilt-c,
+  .tilt-d,
+  .tilt-e,
+  .tilt-f {
+    transition: transform var(--dur-place) var(--ease);
+  }
+  .tilt-a:hover,
+  .tilt-b:hover,
+  .tilt-c:hover,
+  .tilt-d:hover,
+  .tilt-e:hover,
+  .tilt-f:hover {
+    transform: rotate(0deg);
+  }
 }
 
 /* Riso Zine home direction (design 1b) — the hero panel's floating tile-grid motif

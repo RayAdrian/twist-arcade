@@ -43,4 +43,20 @@ describe("GameCard", () => {
     const { container } = render(<GameCard manifest={manifest} />);
     expect(await axe(container)).toHaveNoViolations();
   });
+
+  // Regression (orchestrator review of design 1b): Crackstep's real `classic` field is
+  // "N/A — an original twist on a floor-coverage path puzzle" (games/crackstep/manifest.ts) —
+  // an explanatory placeholder, not a classic-game name. Prefixing "a twist on " onto it
+  // rendered garbled copy on the card. Never render an "a twist on N/A..." line.
+  it("omits the attribution line for a classic starting with 'N/A' (e.g. Crackstep)", () => {
+    const soloPuzzle: GameManifest = {
+      ...manifest,
+      id: "crackstep",
+      title: "Crackstep",
+      classic: "N/A — an original twist on a floor-coverage path puzzle",
+    };
+    render(<GameCard manifest={soloPuzzle} />);
+    expect(screen.queryByText(/a twist on/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/N\/A/i)).not.toBeInTheDocument();
+  });
 });
