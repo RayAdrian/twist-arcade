@@ -28,13 +28,15 @@ import {
   hasUnattainedGates,
   InvalidAttainmentBaselineError,
   InvalidMirrorProbeDeclarationError,
+  InvalidSeedCountError,
   KNOWN_EXCEPTIONABLE_GATES,
   MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE,
   MissingCiRolloutBudgetError,
   MissingSolvedValueProofError,
   NonDivisibleSeedCountError,
-  PROVISIONAL_Z,
+  provisionalMultiplier,
   runCiSuite,
+  withBinomialSeFloor,
   SOLVED_VALUE_SELF_PLAY_FLOOR,
   SuiteFailedError,
   TierBudgetCollapseError,
@@ -1502,6 +1504,35 @@ describe("compareBudgets — C24: one seed, many rollout candidates, never a han
     expect(weak.status).toBe("fail");
     expect(strong.status).toBe("pass");
   });
+
+  it("C80 (stage-6 review, finding 5): seedCount omitted stays single-seed (byte-identical) — every budget sweep this repo has ever run defaults to exactly what it did before this option existed", () => {
+    const points = compareBudgets(classicTicTacToe, manifest, [1000, 5000], {
+      seed: "suites-test:c80:no-seedcount",
+      games: 20,
+    });
+    for (const point of points) {
+      expect(point.report.matchups).not.toBeNull();
+      expect(point.report.seedRuns).toBeUndefined();
+      expect(point.report.precision).toBeUndefined();
+    }
+  });
+
+  it("C80 (stage-6 review, finding 5): seedCount is forwarded to EVERY candidate — a budget sweep can now opt into multi-seed measurement instead of reading as a settled single-seed number", () => {
+    const points = compareBudgets(classicTicTacToe, manifest, [1000, 5000], {
+      seed: "suites-test:c80:seedcount",
+      games: 20,
+      seedCount: 5,
+    });
+    expect(points).toHaveLength(2);
+    for (const point of points) {
+      expect(point.report.matchups).toBeNull();
+      expect(point.report.seedRuns).toHaveLength(5);
+      expect(point.report.precision).toBeDefined();
+      // Same seedCount applied to every candidate — total games conserved per candidate, same
+      // "one seed[set], many candidates" discipline C24 already established for the seed string.
+      expect(point.report.seedRuns!.reduce((sum, r) => sum + r.strongSelfPlay.metrics.games, 0)).toBe(20);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------------------
@@ -2009,7 +2040,7 @@ describe("runCiSuite() — C48/C62: mirror-probe declaration wired into the real
 });
 
 // ---------------------------------------------------------------------------------------
-// platform-corrections.md C71 Part 1 / C77 — single-seed gating measured Tilt's own noise, not
+// platform-corrections.md C71 Part 1 / C80 — single-seed gating measured Tilt's own noise, not
 // Tilt: five independent single-seed FPA readings spread 38%-70% (SD 12.9pp) against a 5.0pp
 // binomial-at-n=100 expectation, and the shipped `` `ci:${gameId}:${opts.suite}` `` seed happened
 // to land on the extreme outlier. A rate-style gate is now judged on multiple seeds, aggregated,
@@ -2018,7 +2049,7 @@ describe("runCiSuite() — C48/C62: mirror-probe declaration wired into the real
 // properly, that is a finding, not a reason to widen the band).
 // ---------------------------------------------------------------------------------------
 
-describe("aggregateAcrossSeeds() — C71/C77's pure cross-seed statistic", () => {
+describe("aggregateAcrossSeeds() — C71/C80's pure cross-seed statistic", () => {
   it("a single value: seedCount 1, mean unchanged, sd/se both 0 (no spread to judge, never NaN)", () => {
     const agg = aggregateAcrossSeeds([0.5]);
     expect(agg).toEqual({ seedCount: 1, mean: 0.5, sd: 0, se: 0 });
@@ -2039,7 +2070,82 @@ describe("aggregateAcrossSeeds() — C71/C77's pure cross-seed statistic", () =>
   });
 });
 
-describe("evaluateCiGates() — C71/C77: precision is additive-only (no precision arg = byte-identical GateResult shape)", () => {
+describe("withBinomialSeFloor() — C80 (stage-6 review): a fraction gate's SE can never read better than a pooled binomial estimate over every game actually played", () => {
+  it("PLANT: five chance-identical seed readings (cross-seed SD/SE both 0) get floored to the binomial SE at the real total game count", () => {
+    const agg = aggregateAcrossSeeds([0.5, 0.5, 0.5, 0.5, 0.5]); // identical every seed — se=0
+    expect(agg.se).toBe(0);
+    const floored = withBinomialSeFloor(agg, 20); // 20 total games (the exact granularity trap)
+    expect(floored.se).toBeCloseTo(Math.sqrt((0.5 * 0.5) / 20), 10);
+    expect(floored.se).toBeGreaterThan(0);
+    // mean/sd/seedCount pass through unchanged — only se is ever floored.
+    expect(floored.mean).toBe(agg.mean);
+    expect(floored.sd).toBe(agg.sd);
+    expect(floored.seedCount).toBe(agg.seedCount);
+  });
+
+  it("does NOT lower a cross-seed SE that already exceeds the binomial floor — Tilt's real numbers (64.0% mean, SE 6.8pp, 100 total games) are unaffected", () => {
+    const tiltLike = { seedCount: 5, mean: 0.64, sd: 0.152, se: 0.068 };
+    const floored = withBinomialSeFloor(tiltLike, 100);
+    expect(floored.se).toBeCloseTo(0.068, 6); // unchanged — 0.068 > sqrt(0.64*0.36/100)=0.048
+  });
+
+  it("Fadeout's real case (p=1 every seed) is UNAFFECTED — the floor itself is 0 at a boundary rate, so a genuinely zero-noise measurement stays zero-noise", () => {
+    const allWin = aggregateAcrossSeeds([1, 1, 1, 1, 1]);
+    expect(allWin.se).toBe(0);
+    const floored = withBinomialSeFloor(allWin, 100);
+    expect(floored.se).toBe(0); // mean*(1-mean) = 1*0 = 0 — floor is exactly 0
+  });
+
+  it("same boundary at p=0 (never happens, floor is still 0)", () => {
+    const allLoss = aggregateAcrossSeeds([0, 0, 0, 0, 0]);
+    const floored = withBinomialSeFloor(allLoss, 100);
+    expect(floored.se).toBe(0);
+  });
+});
+
+describe("provisionalMultiplier() — C80: df-keyed Student's-t, one-sided 95%, not a fixed z", () => {
+  it("matches the standard one-tailed-0.05 t-table at df=1..9 (seedCount 2..10)", () => {
+    const expected: Record<number, number> = {
+      2: 6.314,
+      3: 2.92,
+      4: 2.353,
+      5: 2.132,
+      6: 2.015,
+      7: 1.943,
+      8: 1.895,
+      9: 1.86,
+      10: 1.833,
+    };
+    for (const [seedCount, t] of Object.entries(expected)) {
+      expect(provisionalMultiplier(Number(seedCount))).toBeCloseTo(t, 3);
+    }
+  });
+
+  it("K=5 (df=4, C80's own headline number): 2.132, about 30% wider than the z=1.645 an earlier draft used unconditionally", () => {
+    expect(provisionalMultiplier(5)).toBeCloseTo(2.132, 3);
+    expect(provisionalMultiplier(5) / 1.645).toBeGreaterThan(1.29);
+    expect(provisionalMultiplier(5) / 1.645).toBeLessThan(1.3);
+  });
+
+  it("K=10 (df=9, C80's own nightly number): 1.833, still ~11% wider than z=1.645", () => {
+    expect(provisionalMultiplier(10)).toBeCloseTo(1.833, 3);
+    expect(provisionalMultiplier(10) / 1.645).toBeGreaterThan(1.1);
+  });
+
+  it("falls back to the z=1.645 large-sample value at df >= 10 (seedCount >= 11)", () => {
+    expect(provisionalMultiplier(11)).toBeCloseTo(1.645, 3);
+    expect(provisionalMultiplier(100)).toBeCloseTo(1.645, 3);
+  });
+
+  it("is monotonically non-increasing in seedCount — more seeds never WIDEN the multiplier", () => {
+    const seedCounts = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 20];
+    for (let i = 1; i < seedCounts.length; i++) {
+      expect(provisionalMultiplier(seedCounts[i]!)).toBeLessThanOrEqual(provisionalMultiplier(seedCounts[i - 1]!));
+    }
+  });
+});
+
+describe("evaluateCiGates() — C71/C80: precision is additive-only (no precision arg = byte-identical GateResult shape)", () => {
   it("no GateResult carries a 'provisional' key at all when precision is omitted", () => {
     const gates = evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [], "ci");
     for (const g of gates) {
@@ -2048,7 +2154,7 @@ describe("evaluateCiGates() — C71/C77: precision is additive-only (no precisio
   });
 });
 
-describe("evaluateCiGates() — C71/C77 PLANT: the aggregate passes even though its worst seed, measured alone, would have failed", () => {
+describe("evaluateCiGates() — C71/C80 PLANT: the aggregate passes even though its worst seed, measured alone, would have failed", () => {
   it("first-player-win-rate: per-seed [30%, 55%, 50%, 45%, 60%] aggregates to 48% (PASS) — but seed 1 alone (30%) fails the SAME band", () => {
     const perSeed = [0.3, 0.55, 0.5, 0.45, 0.6];
     const agg = aggregateAcrossSeeds(perSeed);
@@ -2059,12 +2165,12 @@ describe("evaluateCiGates() — C71/C77 PLANT: the aggregate passes even though 
     expect(gate.detail).toContain("seeds=5");
 
     // Control: seed 1's OWN 30% reading, evaluated as if it were the whole (single-seed) story —
-    // exactly what the pre-C77 gate would have done had it drawn that one seed.
+    // exactly what the pre-C80 gate would have done had it drawn that one seed.
     expect(statusOf({ ...HEALTHY, firstPlayerWinRate: perSeed[0]! }, "first-player-win-rate")).toBe("fail");
   });
 });
 
-describe("evaluateCiGates() — C71/C77 PLANT: a gate genuinely failing across every seed is a real fail, not provisional", () => {
+describe("evaluateCiGates() — C71/C80 PLANT: a gate genuinely failing across every seed is a real fail, not provisional", () => {
   it("first-player-win-rate: per-seed [20%, 22%, 18%, 25%, 19%] aggregates to 20.8% — far outside the band, and far outside its own noise too", () => {
     const perSeed = [0.2, 0.22, 0.18, 0.25, 0.19];
     const agg = aggregateAcrossSeeds(perSeed);
@@ -2076,19 +2182,22 @@ describe("evaluateCiGates() — C71/C77 PLANT: a gate genuinely failing across e
   });
 });
 
-describe("evaluateCiGates() — C71/C77 PLANT: an aggregate sitting inside its own error bar is flagged provisional, WITHOUT moving the band", () => {
-  it("first-player-win-rate: per-seed [30%, 30%, 42%, 42%, 36%] aggregates to 36% — inside [35%,65%], but the 35% edge sits within 1 SE of the mean", () => {
+describe("evaluateCiGates() — C80 PLANT: an aggregate sitting inside its own error bar is flagged provisional, WITHOUT moving the band", () => {
+  it("first-player-win-rate: per-seed [30%, 30%, 42%, 42%, 36%] aggregates to 36% — inside [35%,65%], but the 35% edge sits within t(0.95,4)*SE of the mean", () => {
     const perSeed = [0.3, 0.3, 0.42, 0.42, 0.36];
     const agg = aggregateAcrossSeeds(perSeed);
     expect(agg.mean).toBeCloseTo(0.36, 10);
     expect(agg.se).toBeCloseTo(0.026833, 5);
-    expect(Math.abs(agg.mean - 0.35)).toBeLessThan(PROVISIONAL_Z * agg.se); // the actual trigger condition
+    // df=4 (seedCount=5) — the correct multiplier is t(0.95,4)=2.132, NOT the z=1.645 an earlier
+    // draft used unconditionally (C80's own stage-6 finding: z under-fires at low df).
+    expect(provisionalMultiplier(5)).toBeCloseTo(2.132, 3);
+    expect(Math.abs(agg.mean - 0.35)).toBeLessThan(provisionalMultiplier(agg.seedCount) * agg.se); // the actual trigger condition
 
     const precision: GatePrecisionInputs = { firstPlayerWinRate: agg };
     const gates = evaluateCiGates({ ...HEALTHY, firstPlayerWinRate: agg.mean }, DEFAULT_HARNESS_THRESHOLDS, [], "ci", undefined, undefined, undefined, precision);
     const gate = gates.find((g) => g.gate === "first-player-win-rate")!;
     // The band is UNCHANGED (0.35 still the edge, 0.36 still clears it) — this is still a real
-    // pass, exactly as the pre-C77 gate would have called it. Provisional says "this pass is
+    // pass, exactly as the pre-C80 gate would have called it. Provisional says "this pass is
     // close enough to the gate's own noise that a second measurement could flip it," never
     // "widen the band so this counts as comfortably inside" (C55's ruling).
     expect(gate.status).toBe("pass");
@@ -2106,7 +2215,7 @@ describe("evaluateCiGates() — C71/C77 PLANT: an aggregate sitting inside its o
   });
 });
 
-describe("evaluateCiGates() — C71/C77: precision on the other rate-style gates (strong-vs-random, draw-rate, ruthless-vs-standard)", () => {
+describe("evaluateCiGates() — C71/C80: precision on the other rate-style gates (strong-vs-random, draw-rate, ruthless-vs-standard)", () => {
   it("strong-vs-random: a floor gate, provisional when the mean sits within 1.645*SE of the 90% floor", () => {
     const precision: GatePrecisionInputs = { strongVsRandomWinRate: { seedCount: 5, sd: 0.045, se: 0.02012 } };
     const gates = evaluateCiGates({ ...HEALTHY, strongVsRandomWinRate: 0.91 }, DEFAULT_HARNESS_THRESHOLDS, [], "ci", undefined, undefined, undefined, precision);
@@ -2133,7 +2242,7 @@ describe("evaluateCiGates() — C71/C77: precision on the other rate-style gates
   });
 });
 
-describe("evaluateCiGates() — C71/C77: mean-plies' precision applies to the PLIES band only, never to the structural cap-hit-rate=0 check", () => {
+describe("evaluateCiGates() — C71/C80: mean-plies' precision applies to the PLIES band only, never to the structural cap-hit-rate=0 check", () => {
   it("plies mean sits near its own band edge WITH precision, zero cap hits: pass, flagged provisional", () => {
     const precision: GatePrecisionInputs = { meanPlies: { seedCount: 5, sd: 4, se: 1.789 } };
     const gates = evaluateCiGates({ ...HEALTHY, meanPlies: 199, capHitRate: 0 }, DEFAULT_HARNESS_THRESHOLDS, [], "ci", undefined, undefined, undefined, precision);
@@ -2160,9 +2269,9 @@ describe("evaluateCiGates() — C71/C77: mean-plies' precision applies to the PL
   });
 });
 
-describe("evaluateCiGates() — C71/C77: solved-value-reached reuses drawRate's/firstPlayerWinRate's OWN precision, never a fourth computation", () => {
+describe("evaluateCiGates() — C71/C80: solved-value-reached reuses drawRate's/firstPlayerWinRate's OWN precision, never a fourth computation", () => {
   it("a proven draw, attainment measured at 92% (reached, floor 90%) with drawRate's precision showing the floor is within 1 SE: pass, provisional", () => {
-    const solvedValue: SolvedValueClaim = { value: "draw", proof: "suites.test.ts C71/C77 fixture" };
+    const solvedValue: SolvedValueClaim = { value: "draw", proof: "suites.test.ts C71/C80 fixture" };
     const precision: GatePrecisionInputs = { drawRate: { seedCount: 5, sd: 0.0335, se: 0.015 } };
     const gates = evaluateCiGates(
       { ...HEALTHY, drawRate: 0.92 },
@@ -2184,13 +2293,13 @@ describe("evaluateCiGates() — C71/C77: solved-value-reached reuses drawRate's/
   });
 });
 
-describe("runCiSuite() — C71/C77: seedCount validation", () => {
+describe("runCiSuite() — C71/C80: seedCount validation", () => {
   it("throws NonDivisibleSeedCountError when total games does not divide evenly by seedCount, BEFORE any self-play runs", () => {
     const healthyManifest: GameManifest = {
       id: "classic-ttt-fixture-seedcount",
       title: "Healthy TTT",
       classic: "Tic-Tac-Toe",
-      ruleSentence: "suites.test.ts C71/C77 fixture.",
+      ruleSentence: "suites.test.ts C71/C80 fixture.",
       tags: [],
       estMinutes: 1,
       modes: { bot: true, hotseat: false, asyncLink: false },
@@ -2204,12 +2313,74 @@ describe("runCiSuite() — C71/C77: seedCount validation", () => {
     ).toThrow(NonDivisibleSeedCountError);
   });
 
+  it("C80 PLANT (stage-6 review): games=25, seedCount=2.5 passes the naive `games % seedCount === 0` divisibility check in JS — but MUST still be refused, since Array.from({length: 2.5}) would silently truncate to 2 seeds and drop 5 games with no error", () => {
+    const healthyManifest: GameManifest = {
+      id: "classic-ttt-fixture-fractional-seedcount",
+      title: "Healthy TTT",
+      classic: "Tic-Tac-Toe",
+      ruleSentence: "suites.test.ts C80 fixture.",
+      tags: [],
+      estMinutes: 1,
+      modes: { bot: true, hotseat: false, asyncLink: false },
+      players: { min: 2, max: 2 },
+      difficultyTiers: [
+        { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 50 }, minReplyMs: 0 },
+      ],
+    };
+    // Confirms the premise: 25 % 2.5 really is 0 in JavaScript — this is exactly why the
+    // divisibility guard alone is not sufficient and InvalidSeedCountError must run first.
+    expect(25 % 2.5).toBe(0);
+    expect(() =>
+      runCiSuite(classicTicTacToe, healthyManifest, { seed: "suites-test:c80:fractional", games: 25, seedCount: 2.5 })
+    ).toThrow(InvalidSeedCountError);
+  });
+
+  it("C80 PLANT: a negative seedCount is refused with a NAMED error, not a bare RangeError from inside Array.from later", () => {
+    const healthyManifest: GameManifest = {
+      id: "classic-ttt-fixture-negative-seedcount",
+      title: "Healthy TTT",
+      classic: "Tic-Tac-Toe",
+      ruleSentence: "suites.test.ts C80 fixture.",
+      tags: [],
+      estMinutes: 1,
+      modes: { bot: true, hotseat: false, asyncLink: false },
+      players: { min: 2, max: 2 },
+      difficultyTiers: [
+        { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 50 }, minReplyMs: 0 },
+      ],
+    };
+    // Confirms the premise: 25 % -5 also reads 0 in JavaScript.
+    expect(25 % -5).toBe(0);
+    expect(() =>
+      runCiSuite(classicTicTacToe, healthyManifest, { seed: "suites-test:c80:negative", games: 25, seedCount: -5 })
+    ).toThrow(InvalidSeedCountError);
+  });
+
+  it("C80 PLANT: seedCount=0 is refused too (games % 0 is NaN, never 0, but 0 seeds is nonsensical regardless of what the divisibility check would say)", () => {
+    const healthyManifest: GameManifest = {
+      id: "classic-ttt-fixture-zero-seedcount",
+      title: "Healthy TTT",
+      classic: "Tic-Tac-Toe",
+      ruleSentence: "suites.test.ts C80 fixture.",
+      tags: [],
+      estMinutes: 1,
+      modes: { bot: true, hotseat: false, asyncLink: false },
+      players: { min: 2, max: 2 },
+      difficultyTiers: [
+        { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 50 }, minReplyMs: 0 },
+      ],
+    };
+    expect(() =>
+      runCiSuite(classicTicTacToe, healthyManifest, { seed: "suites-test:c80:zero", games: 25, seedCount: 0 })
+    ).toThrow(InvalidSeedCountError);
+  });
+
   it("seedCount omitted (default 1): NO seedRuns/precision fields at all — the byte-identical default", () => {
     const healthyManifest: GameManifest = {
       id: "classic-ttt-fixture-seedcount-default",
       title: "Healthy TTT",
       classic: "Tic-Tac-Toe",
-      ruleSentence: "suites.test.ts C71/C77 fixture.",
+      ruleSentence: "suites.test.ts C71/C80 fixture.",
       tags: [],
       estMinutes: 1,
       modes: { bot: true, hotseat: false, asyncLink: false },
@@ -2225,12 +2396,12 @@ describe("runCiSuite() — C71/C77: seedCount validation", () => {
   });
 });
 
-describe("runCiSuite() — C71/C77: real multi-seed wiring (not a hand-built GateInputs)", () => {
+describe("runCiSuite() — C71/C80: real multi-seed wiring (not a hand-built GateInputs)", () => {
   const healthyManifest: GameManifest = {
     id: "classic-ttt-fixture-multiseed",
     title: "Healthy TTT",
     classic: "Tic-Tac-Toe",
-    ruleSentence: "suites.test.ts C71/C77 multi-seed wiring fixture.",
+    ruleSentence: "suites.test.ts C71/C80 multi-seed wiring fixture.",
     tags: [],
     estMinutes: 1,
     modes: { bot: true, hotseat: false, asyncLink: false },

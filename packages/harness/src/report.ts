@@ -80,6 +80,10 @@ const STATUS_LABEL: Record<string, string> = {
 /** platform-corrections.md C71 Part 1 / C80's provisional-qualifier note text, shared by both
  *  branches of `verdictLabel` below so the wording can never drift between an "OK (provisional
  *  — ...)" header and a "FAILED (...)" one. */
+// C80 (stage-6 review): the confidence level is named HERE, in the actual printed text, by
+// importing `PROVISIONAL_CONFIDENCE_LABEL` from suites.ts rather than repeating the string —
+// review caught an earlier draft naming the WRONG level (90%) next to the right number (1.645,
+// which is actually 95%), so the fix is one place stating it, read everywhere it is printed.
 const PROVISIONAL_NOTE =
   `one or more rate-style gates landed within their own measured seed-to-seed noise ` +
   `(${PROVISIONAL_CONFIDENCE_LABEL} confidence) of a band edge/threshold — see the [PROVISIONAL] ` +

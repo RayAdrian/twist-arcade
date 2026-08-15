@@ -459,7 +459,7 @@ describe("formatXWithAging — a real FAIL row still renders FAILED, never STALL
 // or C57's "unattained" qualifiers.
 // ---------------------------------------------------------------------------------------
 
-describe("formatCiSuiteTable() — C71/C77: 'provisional' rows are marked per-row AND noted in the header", () => {
+describe("formatCiSuiteTable() — C71/C80: 'provisional' rows are marked per-row AND noted in the header", () => {
   it("a passing report with one provisional row: header says 'OK (provisional — ...)', that row (and only that row) carries '[PROVISIONAL]'", () => {
     const output = formatCiSuiteTable(
       fakeSuiteReport([
@@ -469,14 +469,14 @@ describe("formatCiSuiteTable() — C71/C77: 'provisional' rows are marked per-ro
     );
     const lines = output.split("\n");
     expect(lines[0]).toContain("OK (provisional");
-    expect(lines[0]).toContain("[PROVISIONAL]"); // named in the header note too, per C71/C77
+    expect(lines[0]).toContain("[PROVISIONAL]"); // named in the header note too, per C71/C80
     const fpaLine = lines.find((l) => l.includes("first-player-win-rate"))!;
     const strongLine = lines.find((l) => l.includes("strong-vs-random"))!;
     expect(fpaLine).toContain("[PROVISIONAL]");
     expect(strongLine).not.toContain("[PROVISIONAL]");
   });
 
-  it("a FAILING report with a provisional row: header says 'FAILED (...)', NEVER a bare unqualified 'FAILED' — a near-edge fail is still a real fail, but the reader is told it's close to the gate's own noise floor", () => {
+  it("a FAILING report whose FAILING row is ITSELF provisional: header says 'FAILED (...)', NEVER a bare unqualified 'FAILED' — a near-edge fail is still a real fail, but the reader is told it's close to the gate's own noise floor", () => {
     const output = formatCiSuiteTable(
       fakeSuiteReport([
         { gate: "first-player-win-rate", status: "fail", detail: "70.0% (band [35%, 65%]) [seeds=5, seed-to-seed SD=12.9pp, SE=5.8pp]", provisional: true },
@@ -488,7 +488,28 @@ describe("formatCiSuiteTable() — C71/C77: 'provisional' rows are marked per-ro
     expect(lines[0]).toContain("[PROVISIONAL]");
   });
 
-  it("no gate carries 'provisional' at all: header is the bare, unqualified 'OK'/'FAILED' exactly as before C71/C77 — zero rendering change for the module's existing default", () => {
+  it("C80 (stage-6 review, minor finding): a FAILING report where the PROVISIONAL row is a DIFFERENT, PASSING row must NOT surface the provisional note in the header — an unrelated row's noise must never read as softening a genuine, unrelated hard fail", () => {
+    const output = formatCiSuiteTable(
+      fakeSuiteReport([
+        // The failing row is NOT provisional — a clean, unambiguous fail.
+        { gate: "strong-vs-random", status: "fail", detail: "85.0% (min 90.0%)" },
+        // A DIFFERENT row is provisional, but it's a PASS — irrelevant to why this suite failed.
+        { gate: "first-player-win-rate", status: "pass", detail: "36.0% (band [35%, 65%]) [seeds=5, seed-to-seed SD=6.0pp, SE=2.7pp]", provisional: true },
+      ])
+    );
+    const lines = output.split("\n");
+    // Bare, unqualified FAILED — the header must not mention provisional at all.
+    expect(lines[0]).toBe('CI suite (ci) for "report-test-fixture" — FAILED');
+    expect(lines[0]).not.toContain("provisional");
+    expect(lines[0]).not.toContain("[PROVISIONAL]");
+    // The per-row marker is still exactly where it belongs — only on the row that carries it.
+    const fpaLine = lines.find((l) => l.includes("first-player-win-rate"))!;
+    const strongLine = lines.find((l) => l.includes("strong-vs-random"))!;
+    expect(fpaLine).toContain("[PROVISIONAL]");
+    expect(strongLine).not.toContain("[PROVISIONAL]");
+  });
+
+  it("no gate carries 'provisional' at all: header is the bare, unqualified 'OK'/'FAILED' exactly as before C71/C80 — zero rendering change for the module's existing default", () => {
     const okOutput = formatCiSuiteTable(fakeSuiteReport([{ gate: "strong-vs-random", status: "pass", detail: "95.0%" }]));
     const failedOutput = formatCiSuiteTable(fakeSuiteReport([{ gate: "strong-vs-random", status: "fail", detail: "85.0%" }]));
     expect(okOutput).toMatch(/— OK$/m);

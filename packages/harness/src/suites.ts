@@ -57,9 +57,10 @@ export interface GateResult {
    *  "fail" to "warn" (plan §7.5: an exception is visible in review, never a silent pass). */
   readonly exceptionJustification?: string;
   /** Present (and `true`) iff this row was measured across multiple seeds (`GatePrecisionInputs`
-   *  supplied a `SeedPrecision` for it) AND the aggregate mean sits within `PROVISIONAL_Z`
-   *  standard errors of the nearest band edge/threshold/floor it is judged against
-   *  (platform-corrections.md C71 Part 1 / C77: "provisional within ~10 points of an edge" was a
+   *  supplied a `SeedPrecision` for it) AND the aggregate mean sits within
+   *  `provisionalMultiplier(seedCount)` (df-keyed Student's-t, one-sided 95%) standard errors of
+   *  the nearest band edge/threshold/floor it is judged against
+   *  (platform-corrections.md C71 Part 1 / C80: "provisional within ~10 points of an edge" was a
    *  human convention applied after the fact; this is that same idea, computed from the gate's
    *  OWN measured seed-to-seed spread instead of a fixed point margin). Never present for a
    *  single-seed measurement (`SeedPrecision.se === 0`) or an `"n/a"`/`"deferred"` row — omitted
@@ -71,7 +72,7 @@ export interface GateResult {
 }
 
 /** One rate/mean-style two-player gate value's cross-seed precision (platform-corrections.md
- *  C71 Part 1 / C77). `seedCount` independent seeds; `sd` the SAMPLE standard deviation
+ *  C71 Part 1 / C80). `seedCount` independent seeds; `sd` the SAMPLE standard deviation
  *  (Bessel-corrected, ddof=1) of the `seedCount` per-seed values that were averaged into the
  *  `GateInputs` field this precision describes; `se` the standard error of THAT mean
  *  (`sd / sqrt(seedCount)`). See `aggregateAcrossSeeds`'s own doc for why this is computed
@@ -111,7 +112,7 @@ export interface GatePrecisionInputs {
 }
 
 /** Pure aggregation over `seedCount` independent per-seed measurements of the SAME quantity
- *  (platform-corrections.md C71 Part 1 / C77) — exactly the by-hand computation C49 (2 seeds)
+ *  (platform-corrections.md C71 Part 1 / C80) — exactly the by-hand computation C49 (2 seeds)
  *  and C71 (5 seeds) each did to state a gate's own spread, automated here so every multi-seed
  *  `runCiSuite` call states it, not just a human replication that happened to run twice.
  *
@@ -147,30 +148,98 @@ export function aggregateAcrossSeeds(perSeedValues: readonly number[]): SeedPrec
   return { seedCount, mean, sd, se };
 }
 
-/** The z-multiple (platform-corrections.md C71 Part 1 / C77) that turns C49's post-hoc human
- *  convention ("provisional within ~10 points of a band edge") into something `evaluateCiGates`
- *  computes from the gate's OWN measured spread instead of a fixed point margin: a row is
- *  flagged provisional when the nearest relevant edge sits within `PROVISIONAL_Z` standard
- *  errors of the aggregate mean — i.e., when the data cannot rule out the true rate sitting on
- *  the far side of that edge at ~90% one-sided confidence. 1.645 is the standard one-sided 90%
- *  z critical value; chosen deliberately looser than a two-sided 95% (1.96) because C71's own
- *  caveat applies here too — an SD from a handful of seeds is itself imprecise, so this flag is
- *  built to over-flag a borderline result as provisional rather than under-flag one. */
-export const PROVISIONAL_Z = 1.645;
+/** Floors a FRACTION-valued `SeedPrecision`'s `se` at the binomial standard error a single pooled
+ *  measurement of `totalGames` trials at rate `precision.mean` would carry
+ *  (`sqrt(mean*(1-mean)/totalGames)`) — platform-corrections.md C80 (stage-6 review): at a small
+ *  per-seed game count, per-seed rates are coarsely granular (20 games/seed quantizes to 5pp
+ *  steps), so a run of chance-identical seed readings reports a cross-seed `sd`/`se` of exactly
+ *  ZERO — an unqualified verdict for a mean that could easily sit ON a band edge, the opposite of
+ *  what this module's `provisional` flag exists to catch. The binomial term is a floor, never a
+ *  replacement: it says "this measurement's precision can be no better than a single pooled
+ *  estimate over every game actually played," which is true regardless of how the cross-seed
+ *  estimate happened to land. Only ever applies to the FOUR 0-1 fraction fields
+ *  (`strongVsRandomWinRate`, `firstPlayerWinRate`, `drawRate`, `ruthlessVsStandardWinRate`) —
+ *  `meanPlies` has no binomial model (it is not a proportion of anything) and is never passed
+ *  through this function. A game whose bots reach a proven value at EXACTLY 0% or 100% every
+ *  single seed (Fadeout's real `solved-value-reached`: 100.0% at every seed, C23) is correctly
+ *  UNAFFECTED — `mean*(1-mean)` is 0 at either extreme, so the floor itself is 0 and `se` stays
+ *  whatever the (already-zero) cross-seed estimate was. */
+export function withBinomialSeFloor<T extends SeedPrecision & { readonly mean: number }>(
+  precision: T,
+  totalGames: number
+): T {
+  const binomialSe = Math.sqrt((precision.mean * (1 - precision.mean)) / totalGames);
+  if (binomialSe <= precision.se) return precision;
+  return { ...precision, se: binomialSe };
+}
 
-/** True iff `mean` sits within `PROVISIONAL_Z` standard errors of ANY of `edges` — see
- *  `PROVISIONAL_Z`'s own doc. `undefined`/`se === 0` (no multi-seed precision was supplied, or a
- *  single-seed measurement) always returns `false`: there is no spread to judge "close" against,
- *  so this never fires for the module's existing single-seed default. */
+/** ONE named confidence level, stated correctly and used everywhere in this module: **one-sided
+ *  95%** — "the data cannot rule out the true rate sitting on the far side of this edge with at
+ *  least 95% one-sided confidence." (Stage-6 review, platform-corrections.md C80: an earlier draft
+ *  of this module used the fixed z-critical value 1.645 for this — which IS the correct one-sided
+ *  95% *z* value, but the comment on it wrongly called it "one-sided 90%" (that would be 1.282),
+ *  and wrongly described a smaller multiplier as "looser… built to over-flag" — a SMALLER
+ *  multiplier narrows the window and produces FEWER flags, the opposite of the stated intent.
+ *  Both errors are corrected here by naming the one level this module actually uses and being
+ *  precise about which direction "wider" cuts.) */
+export const PROVISIONAL_CONFIDENCE_LABEL = "one-sided 95%";
+
+/** One-sided 95% Student's-t critical values, keyed by degrees of freedom (`seedCount - 1`), for
+ *  df 1-9. `se` (`SeedPrecision.se`) is an ESTIMATE of the true standard error, itself built from
+ *  only `seedCount` samples — at `seedCount = 5` (Tilt/C80's own headline number), that is 4
+ *  degrees of freedom, where the t-distribution's tail is meaningfully fatter than the normal
+ *  z=1.645 the pre-review draft used unconditionally: t(0.95,4) = 2.132, about 30% wider. Using z
+ *  there UNDER-states how far a mean can plausibly sit from the true value given only 5 seeds of
+ *  evidence, which means the provisional flag UNDER-fires — exactly the failure mode this flag
+ *  exists to prevent (a report reads as an unqualified pass/fail when the data cannot support
+ *  that confidence). Source: the standard one-tailed-0.05 Student's-t table. */
+const T_95_ONE_SIDED_BY_DF: Readonly<Record<number, number>> = {
+  1: 6.314,
+  2: 2.92,
+  3: 2.353,
+  4: 2.132,
+  5: 2.015,
+  6: 1.943,
+  7: 1.895,
+  8: 1.86,
+  9: 1.833,
+};
+
+/** The large-sample z fallback for `df >= 10` (`seedCount >= 11`) — the t-distribution converges
+ *  to the normal distribution as df grows (t(0.95,9) = 1.833 is already only ~11% wider than
+ *  1.645; the gap keeps shrinking past df=9), so this module stops carrying exact table entries
+ *  past that point and uses the asymptotic value instead. This is the module's ONLY remaining use
+ *  of a bare z-critical value, and it is the correct one-sided 95% value (see
+ *  `PROVISIONAL_CONFIDENCE_LABEL`'s own doc for why this needed saying explicitly). */
+const T_95_LARGE_SAMPLE_FALLBACK = 1.645;
+
+/** The df-keyed multiplier `isProvisional` uses in place of a single fixed constant
+ *  (platform-corrections.md C80, replacing the pre-review `PROVISIONAL_Z`). `seedCount <= 1`
+ *  (df <= 0) is unreachable in practice — `isProvisional` short-circuits on `se === 0` before this
+ *  is ever called for a single-seed measurement — but returns the large-sample fallback rather
+ *  than throwing, since a df this function has never seen a real caller produce is not worth a
+ *  refusal here. */
+export function provisionalMultiplier(seedCount: number): number {
+  const df = seedCount - 1;
+  if (df >= 10 || df <= 0) return T_95_LARGE_SAMPLE_FALLBACK;
+  return T_95_ONE_SIDED_BY_DF[df] ?? T_95_LARGE_SAMPLE_FALLBACK;
+}
+
+/** True iff `mean` sits within `provisionalMultiplier(precision.seedCount)` standard errors of
+ *  ANY of `edges` — see that function's own doc, and `PROVISIONAL_CONFIDENCE_LABEL` for the one
+ *  confidence level this is judged against. `undefined`/`se === 0` (no multi-seed precision was
+ *  supplied, or a single-seed measurement) always returns `false`: there is no spread to judge
+ *  "close" against, so this never fires for the module's existing single-seed default. */
 function isProvisional(mean: number, precision: SeedPrecision | undefined, edges: readonly number[]): boolean {
   if (!precision || precision.se === 0) return false;
-  return edges.some((edge) => Math.abs(mean - edge) <= PROVISIONAL_Z * precision.se);
+  const multiplier = provisionalMultiplier(precision.seedCount);
+  return edges.some((edge) => Math.abs(mean - edge) <= multiplier * precision.se);
 }
 
 /** The human-readable precision suffix appended to a rate-style gate's `detail` string when it
  *  was measured across multiple seeds — `""` (no change to `detail` at all) for the module's
  *  existing single-seed default, so a caller that never opts into `seedCount > 1` sees
- *  byte-identical detail text to before C71/C77. `unit: "pp"` (the default) is for the FOUR
+ *  byte-identical detail text to before C71/C80. `unit: "pp"` (the default) is for the FOUR
  *  fields that are 0-1 fractions (`strongVsRandomWinRate`, `firstPlayerWinRate`, `drawRate`,
  *  `ruthlessVsStandardWinRate`) — `sd`/`se` are scaled ×100 into percentage points, matching
  *  every other number this module already prints as a percentage. `meanPlies` is NOT a
@@ -418,7 +487,7 @@ export function applyException(
 ): GateResult {
   // `provisional` is spread in ONLY when true (never `provisional: false`) — every existing call
   // site that never passes a 5th argument keeps producing the EXACT SAME GateResult shape as
-  // before C71/C77 (no extra key at all), which is what keeps this an additive-only change.
+  // before C71/C80 (no extra key at all), which is what keeps this an additive-only change.
   const provisionalField = provisional ? { provisional: true as const } : {};
   if (raw !== "fail") return { gate, status: raw, detail, ...provisionalField };
   const exception = exceptions.find((e) => e.gate === gate);
@@ -556,11 +625,12 @@ export function evaluateCiGates(
   solvedValue?: SolvedValueClaim,
   ruthlessBudgets?: RuthlessVsStandardBudgets,
   deferral?: CiGateDeferral,
-  /** platform-corrections.md C71 Part 1 / C77: per-gate cross-seed precision, absent by default
+  /** platform-corrections.md C71 Part 1 / C80: per-gate cross-seed precision, absent by default
    *  (every existing call site keeps producing byte-identical `GateResult`s — see
    *  `GatePrecisionInputs`'s own doc). When present, the relevant rate/mean-style gate blocks
    *  below append a precision suffix to `detail` and set `provisional` when the aggregate mean
-   *  sits within `PROVISIONAL_Z` standard errors of the edge it is judged against. */
+   *  sits within `provisionalMultiplier(seedCount)` standard errors of the edge it is judged
+   *  against. */
   precision?: GatePrecisionInputs
 ): GateResult[] {
   // Validated up front, before any gate runs — an exception with a blank justification or an
@@ -611,7 +681,7 @@ export function evaluateCiGates(
   // `solvedValueAttainment`'s own doc for why this rules out any circular or order-dependent
   // outcome among the four blocks below that consult it.
   const attainment = solvedValueAttainment(solvedValue, inputs);
-  // C71 Part 1 / C77: the SAME precision object the draw-rate/first-player-win-rate blocks
+  // C71 Part 1 / C80: the SAME precision object the draw-rate/first-player-win-rate blocks
   // themselves read — see `attainmentPrecision`'s own doc for why this is a derivation, not a
   // fourth `GatePrecisionInputs` field.
   const attPrecision = attainmentPrecision(solvedValue, precision);
@@ -953,7 +1023,7 @@ export class SuiteFailedError extends Error {
 }
 
 /** The three matchups a single seed's worth of self-play produces (platform-corrections.md
- *  C71 Part 1 / C77's own factoring — see `runSeedMatchups`). */
+ *  C71 Part 1 / C80's own factoring — see `runSeedMatchups`). */
 interface SeedMatchupTriple {
   readonly strongVsRandom: MatchupReport;
   readonly strongSelfPlay: MatchupReport;
@@ -967,13 +1037,13 @@ export interface CiSuiteReport {
   readonly ok: boolean;
   readonly gates: readonly GateResult[];
   /** `null` iff `manifest.ciGateBudget.deferGatesToNightly` is active at this run (C27 — no
-   *  self-play ran at all) OR `seedCount > 1` was requested (C71 Part 1 / C77 — there is no
+   *  self-play ran at all) OR `seedCount > 1` was requested (C71 Part 1 / C80 — there is no
    *  single MatchupReport triple to report; see `seedRuns` instead). Non-null only for the
    *  single-seed (`seedCount` omitted or `1`) case, including every run before C27/C71 existed —
    *  the module's byte-identical default. */
   readonly matchups: SeedMatchupTriple | null;
   /** Present (and one entry per seed) iff `seedCount > 1` was requested — `undefined` for every
-   *  single-seed call, including every call site that predates C71/C77 (additive-only field).
+   *  single-seed call, including every call site that predates C71/C80 (additive-only field).
    *  `GateInputs`'s rate/mean fields are the MEAN across these; `precision` (below) is their
    *  cross-seed spread. */
   readonly seedRuns?: readonly (SeedMatchupTriple & { readonly seed: string })[];
@@ -999,7 +1069,7 @@ export interface RunCiSuiteOptions {
   readonly seed: string;
   readonly suite?: "ci" | "nightly"; // default "ci"
   readonly clock?: RunMatchupOptions["clock"];
-  /** platform-corrections.md C71 Part 1 / C77: the number of INDEPENDENT seeds this suite's
+  /** platform-corrections.md C71 Part 1 / C80: the number of INDEPENDENT seeds this suite's
    *  self-play-derived rows are measured across and aggregated over (`aggregateAcrossSeeds`).
    *  `games` (above) is the TOTAL games across every seed, never per-seed — raising `seedCount`
    *  does NOT raise total self-play cost; it reallocates the SAME budget from one seed's games to
@@ -1012,6 +1082,29 @@ export interface RunCiSuiteOptions {
   readonly seedCount?: number;
 }
 
+/** Thrown by `runCiSuite` when `seedCount` is not a positive integer — checked BEFORE the
+ *  divisibility guard below, because `%` on a non-integer is not the check that guard exists to
+ *  perform (platform-corrections.md C80, stage-6 review): `games: 25, seedCount: 2.5` satisfies
+ *  `25 % 2.5 === 0` in JavaScript, then `Array.from({ length: 2.5 })` silently truncates to 2
+ *  seeds of 10 games each — 5 games vanish with no error, and the returned report's own
+ *  `precision.seedCount` reads `2`, not `2.5`, so nothing about the output even hints a game was
+ *  dropped. A negative `seedCount` passes the SAME modulo check (`25 % -5 === 0`) and would only
+ *  fail later, inside `Array.from({ length: -5 })`, with a bare `RangeError` naming neither the
+ *  game nor which option was invalid. Refused here instead, loudly, before either guard or a
+ *  single game runs. */
+export class InvalidSeedCountError extends Error {
+  constructor(gameId: string, seedCount: number) {
+    super(
+      `runCiSuite: game "${gameId}"'s seedCount (${seedCount}) must be a positive integer ` +
+        "(platform-corrections.md C80) — a non-integer can satisfy the games%seedCount divisibility " +
+        "check while still silently dropping games (25 games, seedCount 2.5 => 2 seeds of 10, 5 " +
+        "games vanish with no error), and a non-positive value fails later with a misleading bare " +
+        "RangeError instead of naming the actual problem."
+    );
+    this.name = "InvalidSeedCountError";
+  }
+}
+
 /** Thrown by `runCiSuite` when `games` (the TOTAL across every seed) does not divide evenly by
  *  `seedCount` — see `RunCiSuiteOptions.seedCount`'s own doc for why this refuses rather than
  *  rounds. Never reachable for the default `seedCount: 1` (every integer is divisible by 1). */
@@ -1019,7 +1112,7 @@ export class NonDivisibleSeedCountError extends Error {
   constructor(gameId: string, games: number, seedCount: number) {
     super(
       `runCiSuite: game "${gameId}"'s total games (${games}) is not evenly divisible by ` +
-        `seedCount (${seedCount}) — platform-corrections.md C71 Part 1 / C77: an uneven split ` +
+        `seedCount (${seedCount}) — platform-corrections.md C71 Part 1 / C80: an uneven split ` +
         "would silently give some seeds more weight than others in an unweighted per-seed mean. " +
         "Choose a games/seedCount pair that divides evenly."
     );
@@ -1047,12 +1140,27 @@ export interface CompareBudgetsPoint {
  * This is exactly the comparison the C22 Fadeout sweep and the Nine Grids pilot each needed and
  * each built by hand, with a seed that varied per candidate — the confound C24 found in both,
  * independently, in one day. This helper makes the correct construction the only one available.
+ *
+ * platform-corrections.md C80 (stage-6 review): before this, `compareBudgets` had no way to opt
+ * into multi-seed measurement — every budget sweep this repo runs (C22, C73-C76) measured each
+ * candidate on exactly one seed and printed a report with no precision suffix at all, which reads
+ * as a SETTLED number rather than the single-seed measurement C71 spent this whole correction
+ * showing cannot be trusted alone. `opts.seedCount`, forwarded verbatim to every candidate's
+ * `runCiSuite` call (same as `opts.seed`/`opts.games`), closes that gap: every candidate is
+ * measured across the SAME seed count, so the comparison stays apples-to-apples and each point's
+ * own report now states its own precision when the caller asks for it. Omitted, this function's
+ * behaviour is unchanged (single-seed, byte-identical to every pre-C80 call).
  */
 export function compareBudgets<S extends WithEffects, M extends Json, V extends WithEffects>(
   engine: GameEngine<S, M, V>,
   manifest: GameManifest,
   rolloutCandidates: readonly number[],
-  opts: { readonly seed: string; readonly games?: number; readonly clock?: RunMatchupOptions["clock"] }
+  opts: {
+    readonly seed: string;
+    readonly games?: number;
+    readonly clock?: RunMatchupOptions["clock"];
+    readonly seedCount?: number;
+  }
 ): CompareBudgetsPoint[] {
   return rolloutCandidates.map((rollouts) => {
     const candidateManifest: GameManifest = {
@@ -1064,6 +1172,7 @@ export function compareBudgets<S extends WithEffects, M extends Json, V extends 
       ...(opts.games !== undefined ? { games: opts.games } : {}),
       suite: "ci",
       ...(opts.clock ? { clock: opts.clock } : {}),
+      ...(opts.seedCount !== undefined ? { seedCount: opts.seedCount } : {}),
     });
     return { rollouts, report };
   });
@@ -1178,7 +1287,7 @@ export function hasUnattainedGates(results: readonly GateResult[]): boolean {
   return results.some((r) => r.status === "unattained");
 }
 
-/** True iff any row carries `provisional: true` (platform-corrections.md C71 Part 1 / C77) — the
+/** True iff any row carries `provisional: true` (platform-corrections.md C71 Part 1 / C80) — the
  *  same "provisional, not a fully-settled claim" signal `hasDeferredGates`/`hasUnattainedGates`
  *  provide for their own qualifiers: a report can be `ok` (or genuinely FAILED) while a rate-
  *  style gate's aggregate mean sits within its own measured seed-to-seed noise of the edge it is
@@ -1276,8 +1385,8 @@ export function evaluateMirrorProbeGate(manifest: Pick<GameManifest, "id" | "mir
  *  `runCiSuite` so the single-seed path (called once, with `opts.seed`/`games` UNCHANGED) and
  *  the multi-seed path (called `seedCount` times, once per derived seed, with `games/seedCount`
  *  each) share the exact same matchup-construction logic and can never drift apart
- *  (platform-corrections.md C71 Part 1 / C77). The single-seed call site below reproduces the
- *  pre-C77 code verbatim, which is what keeps that path byte-identical. */
+ *  (platform-corrections.md C71 Part 1 / C80). The single-seed call site below reproduces the
+ *  pre-C80 code verbatim, which is what keeps that path byte-identical. */
 function runSeedMatchups<S extends WithEffects, M extends Json, V extends WithEffects>(
   engine: GameEngine<S, M, V>,
   ruthless: AgentSpec<S, M>,
@@ -1335,6 +1444,13 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
   const games = opts.games ?? 200;
   const suite = opts.suite ?? "ci";
   const seedCount = opts.seedCount ?? 1;
+  // C80 (stage-6 review): identity/shape (is this a usable seedCount AT ALL) is checked BEFORE
+  // the divisibility guard — `%` on a non-integer or negative value is not a meaningful question
+  // until this passes (see InvalidSeedCountError's own doc for the exact 2.5-seeds silent-drop
+  // this guard exists to catch).
+  if (!Number.isInteger(seedCount) || seedCount < 1) {
+    throw new InvalidSeedCountError(manifest.id, seedCount);
+  }
   if (games % seedCount !== 0) {
     throw new NonDivisibleSeedCountError(manifest.id, games, seedCount);
   }
@@ -1422,7 +1538,7 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
   const mirrorGate = evaluateMirrorProbeGate(manifest);
 
   if (seedCount === 1) {
-    // C71 Part 1 / C77's byte-identical default path: reproduces the pre-C77 code exactly (via
+    // C71 Part 1 / C80's byte-identical default path: reproduces the pre-C80 code exactly (via
     // `runSeedMatchups`, called once with `opts.seed`/`games` UNCHANGED — no `:seed0:` infix, no
     // precision object built at all), so every existing caller that never opts into
     // `seedCount > 1` sees the identical report shape and identical numbers it always has.
@@ -1454,7 +1570,7 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
     };
   }
 
-  // C71 Part 1 / C77: `seedCount` INDEPENDENT seeds, each measured over `games / seedCount`
+  // C71 Part 1 / C80: `seedCount` INDEPENDENT seeds, each measured over `games / seedCount`
   // games (the divisibility guard above already confirmed this is exact) — `games` (the caller's
   // TOTAL budget) is unchanged, so total self-play cost stays flat regardless of `seedCount`
   // (the "fewer games per seed at equal total cost" the plan calls for). Each seed's own rates
@@ -1466,15 +1582,18 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
   }));
 
   const perSeedRates = seedRuns.map((run) => seedRates(run));
-  const strongVsRandomAgg = aggregateAcrossSeeds(perSeedRates.map((r) => r.strongVsRandom));
-  const firstPlayerAgg = aggregateAcrossSeeds(perSeedRates.map((r) => r.firstPlayerWinRate));
-  const drawAgg = aggregateAcrossSeeds(perSeedRates.map((r) => r.drawRate));
+  // C80 (stage-6 review): `withBinomialSeFloor` applies ONLY to the four 0-1 FRACTION fields —
+  // never `meanPliesAgg` below, which has no binomial model. `games` (this function's own TOTAL
+  // budget, not `gamesPerSeed`) is the pooled trial count the floor is judged against.
+  const strongVsRandomAgg = withBinomialSeFloor(aggregateAcrossSeeds(perSeedRates.map((r) => r.strongVsRandom)), games);
+  const firstPlayerAgg = withBinomialSeFloor(aggregateAcrossSeeds(perSeedRates.map((r) => r.firstPlayerWinRate)), games);
+  const drawAgg = withBinomialSeFloor(aggregateAcrossSeeds(perSeedRates.map((r) => r.drawRate)), games);
   const meanPliesAgg = aggregateAcrossSeeds(perSeedRates.map((r) => r.meanPlies));
   // `standardTier` is fixed for the whole call (not per-seed), so either EVERY seed ran
   // ruthless-vs-standard or NONE did — `perSeedRates[i].ruthlessVsStandard` is `null` uniformly
   // in the "no standard tier" case, never a mix.
   const ruthlessVsStandardAgg = standardTier
-    ? aggregateAcrossSeeds(perSeedRates.map((r) => r.ruthlessVsStandard!))
+    ? withBinomialSeFloor(aggregateAcrossSeeds(perSeedRates.map((r) => r.ruthlessVsStandard!)), games)
     : null;
 
   const inputs: GateInputs = {

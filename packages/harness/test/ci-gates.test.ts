@@ -149,7 +149,7 @@ describe("runTwoPlayerCiGate", () => {
     expect(result.ok).toBe(false);
   });
 
-  it("C71 Part 1 / C77: forwards seedCount to runCiSuite for real — 5 independent seedRuns, total games conserved", () => {
+  it("C71 Part 1 / C80: forwards seedCount to runCiSuite for real — 5 independent seedRuns, total games conserved", () => {
     const report = runTwoPlayerCiGate(classicTicTacToe, sabotagedManifest, {
       seed: "ci-gates:2p:seedcount",
       games: 20,

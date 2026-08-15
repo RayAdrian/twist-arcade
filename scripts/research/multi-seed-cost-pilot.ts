@@ -1,4 +1,4 @@
-// scripts/research/multi-seed-cost-pilot.ts — C71 Part 1 / C77's own cost pilot: does splitting
+// scripts/research/multi-seed-cost-pilot.ts — C71 Part 1 / C80's own cost pilot: does splitting
 // a FIXED total-game budget across K separate seeds (K separate runCiSuite calls, each with
 // games/K) cost meaningfully more wall-clock than running the SAME total games under one seed?
 // TIMING ONLY (tilt-t3-cost-pilot.ts's own posture) — no gate verdict is drawn from this run.
