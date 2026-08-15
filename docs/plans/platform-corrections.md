@@ -4714,3 +4714,71 @@ against random.
 
 **Bid-Tac-Toe stays undecided.** Its gate table still cannot be trusted, and the user's instruction —
 fix the search first — remains the right sequence; the fix simply is not this one.
+
+## C77 — I reported a symptom, an agent invented a mechanism, and four comments recorded it as fact.
+
+The 1b homepage's cards were not rotating. I saw it, said so, and the fix that came back replaced
+runtime-built Tailwind arbitrary-value classes (`rotate-[-0.6deg]`) with hand-authored `.tilt-a`..
+`.tilt-f`, explaining that **Tailwind's JIT content scanner never generated CSS for the old strings.**
+That explanation was recorded in four separate comment sites, and I repeated it to the user as "a
+whole class of bug."
+
+**Stage-6 review refuted it empirically**, by running the repo's own Tailwind CLI against probe
+content both ways:
+
+- The old verbatim string **is** emitted — as `--tw-rotate: -0.6deg`, which is invisible to anyone
+  grepping for `rotate(-0.6deg)`. The literals lived in `home.ts`, inside the configured content
+  glob; the scanner reads raw file text and does not care that selection happens at runtime.
+- The new `.tilt-*` classes, being in `@layer utilities`, are **tree-shaken exactly the same way**.
+  They survive only because the strings `"tilt-a"`…`"tilt-f"` also appear in `home.ts`. The obvious
+  future refactor — `` `tilt-${letter}` `` — silently reproduces the very defect the fix claims to
+  have made impossible, and the existing name-cycling tests cannot catch it.
+- `.ta-float`, declared **outside** any `@layer`, survives an empty-content build. That is the
+  actually-immune pattern, and it was already in the file.
+
+**What really changed:** the old class string carried `motion-reduce:rotate-0`; the new classes do
+not. **A reduced-motion environment straightening every card is a far better explanation of what I
+observed than the scanner story** — and my browser is a candidate. So the fix silently dropped a
+reduced-motion behaviour while wearing a root-cause costume.
+
+### Why this one is on me
+
+My verification made it worse, not better. I checked that `tilt-a/b/c` reached the served CSS bundle
+and counted 18 rules — which confirms **the fix works** and says nothing about **why the old one
+didn't**. I then reported the invented mechanism upward as established. A fix that works is not
+evidence for the story attached to it, and I have spent this whole document insisting on exactly
+that distinction for other people's claims.
+
+The general rule, and it is cheap: **when a fix ships with a root-cause narrative, the narrative is
+a claim requiring its own test — separate from the test that the fix works.** Reproduce the original
+failure through the stated mechanism, or write down that you did not.
+
+### The recurrence check, which came back clean
+
+The genuinely useful half of the reported finding survives: runtime-assembled Tailwind classes are a
+real hazard. The reviewer grepped `packages`, `games` and `app` for template-built class strings and
+runtime-assembled arbitrary values — **no other instance exists.** Every other arbitrary-value class
+in this repo is a verbatim literal in a scanned file. The class of bug is real; this was not an
+instance of it.
+
+### Rulings
+
+1. **`.tilt-*` moves out of `@layer utilities`** (joining `.ta-float`, the proven-immune pattern) or
+   gets safelisted, and **all four comment narratives are corrected** to say what actually happened.
+   A comment asserting a refuted mechanism is C65's defect verbatim.
+2. **Reduced-motion behaviour is decided deliberately, not restored by accident.** A static sub-degree
+   rotation is arguably not motion, so dropping `motion-reduce:rotate-0` may be right — but it must
+   be a decision with a sentence behind it.
+3. **`classic.startsWith("N/A")` gets a case-insensitive, blank-guarded fix now**, plus the sentinel
+   convention documented on `GameManifest.classic`. Today `""` renders the dangling string
+   `"a twist on "`, and two original games sharing a placeholder would produce a shelf titled
+   *"Twists on N/A — an original twist on…"* — the same garbled copy this diff just fixed, one level
+   up.
+4. **`classic: string | null` in `GameManifest` is the right end-state and is owed as its own change.**
+   Two consumers currently pattern-match a magic string and disagree about what "no classic" means;
+   that distinction belongs in the schema. It touches five games and is cross-team, so it is
+   scheduled, not smuggled into a homepage diff.
+5. **`StreakBadge` liveness is a recorded obligation on the daily-wiring team**, not a comment-free
+   trap. The reducer only recomputes `current` at the next completion, so a dead streak would render
+   indefinitely. Unreachable today — nothing in `app/` passes `opts.daily`, so no user can have a
+   nonzero streak — which is exactly why it must be written down now rather than discovered later.
