@@ -14,6 +14,9 @@ importers:
       '@twist-arcade/engine':
         specifier: workspace:*
         version: link:packages/engine
+      '@twist-arcade/fadeout':
+        specifier: workspace:*
+        version: link:games/fadeout
       '@twist-arcade/game-spec':
         specifier: workspace:*
         version: link:packages/game-spec
