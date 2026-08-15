@@ -70,6 +70,50 @@ export const NIGHTLY_GAMES = 2000;
 export const CI_SEED_COUNT = 100;
 export const NIGHTLY_SEED_COUNT = 1000;
 
+// platform-corrections.md C71 Part 1 / C80 — the TWO-PLAYER lane's own seed count (distinct
+// from CI_SEED_COUNT/NIGHTLY_SEED_COUNT above, which are the SOLO lane's paired-seed counts —
+// same name shape, different lane, never conflate them). `CI_GAMES`/`NIGHTLY_GAMES` above are
+// now the TOTAL games across every seed (runCiSuite's own `seedCount` contract), so raising
+// these does NOT raise total self-play cost — it reallocates the SAME existing budget from one
+// seed's games to more, smaller, independent ones.
+//
+// K=5 at "ci", K=10 at "nightly" are BUDGET- and PROVENANCE-derived, not power-derived (C80,
+// stage-6 review: "matches the evidence already collected" describes where the number came from,
+// not why it is statistically sufficient — those are different claims and this repo does not get
+// to conflate them). What they actually buy, stated honestly:
+//
+// - K=5 matches evidence already collected (C71's own five-seed Tilt FPA replication,
+//   docs/research/games/tilt-fpa-replication-2026-08-12.out) rather than inventing a new number —
+//   100/5 = 20 games/seed (10 mirrored pairs), and 5 samples is the smallest count giving a
+//   non-degenerate sample-SD estimate (K=2/3 leaves 1-2 degrees of freedom).
+// - A fresh, cheap timing pilot (scripts/research/multi-seed-cost-pilot.ts,
+//   .scratch/multi-seed-cost-pilot.out) held TOTAL games fixed at 12 across K in {1,2,3,4,6,12} on
+//   Tilt and found per-game-play cost essentially FLAT through K=4 (1325ms -> 1307ms) and only
+//   ~17% higher by K=12 (1325ms -> 1548ms) — confirming per-seed call overhead is small enough
+//   that splitting a fixed budget into 5 seeds is close to free, while K=12 pays a real (if
+//   modest) tax for no evidence-grounded benefit over K=5.
+// - The MEASURED power at K=5, honestly: Tilt's real run measured a cross-seed SE around ~7pp
+//   (6.8pp, 5.5pp on Nine Grids). At df=4, `provisionalMultiplier(5)` (Student's-t, one-sided
+//   95%) is 2.132, so the provisional flag resolves — i.e. can distinguish from noise — an
+//   aggregate roughly (2.132 * 5.5pp) to (2.132 * 7pp) =~ 11-15pp away from an edge, against the
+//   [35,65] band's 15pp half-width. That is real, useful resolving power near the middle of the
+//   band's danger zone — it is NOT proof the flag resolves every case; a mean sitting closer than
+//   ~11pp to an edge with this SE genuinely cannot be told apart from noise at K=5, full stop.
+// - K=10 at "nightly" (NIGHTLY_GAMES, 2000, is 20x CI_GAMES, so 2000/10 = 200 games/seed stays
+//   generous even at double the seed count) spends nightly's larger, lower-frequency budget on
+//   seed diversity rather than games-per-seed, because C71/C49 both found seed-to-seed variance
+//   dominates naive binomial variance by ~2.6x at this game count — more games in ONE seed does
+//   not buy back that gap. CORRECTED (C80, stage-6 review): "SE shrinks with 1/sqrt(seedCount)"
+//   is FALSE as a general claim at fixed total games — `withBinomialSeFloor` (suites.ts) floors
+//   `se` at `sqrt(mean*(1-mean)/totalGames)`, and that floor depends ONLY on total games, never
+//   on K. Only the cross-seed (between-seed) term shrinks with `1/sqrt(K)`; once it drops below
+//   the binomial floor, raising K buys nothing further — the floor is what total games sets, and
+//   total games is unchanged by this option. Raising K still helps (the between-seed term is the
+//   one C71 found to dominate in practice, and it IS the term K shrinks), but a future tuner
+//   reading "SE shrinks with K" without this caveat would over-credit seed count alone.
+export const TWO_PLAYER_CI_SEED_COUNT = 5;
+export const TWO_PLAYER_NIGHTLY_SEED_COUNT = 10;
+
 export function todayUtc(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -209,10 +253,15 @@ export async function runAllGates(
       if (mirrorMove === undefined && entry.manifest.mirrorProbe === undefined && entry.manifest.tags.includes("symmetric")) {
         throw new MirrorMoveNotExportedError(gameId);
       }
+      // C71 Part 1 / C80: `games` below is the TOTAL across every seed, and `seedCount` is
+      // what turns single-seed gating (C71's own finding: this exact seed string,
+      // `` `ci:${gameId}:${opts.suite}` ``, produced Tilt's 70% FAIL — the extreme outlier of
+      // five otherwise-passing seeds) into an aggregated, precision-reporting measurement.
       const report = await runGameCiGate(engine, entry.manifest, {
         kind: "two-player",
         seed: `ci:${gameId}:${opts.suite}`,
         games: opts.suite === "nightly" ? NIGHTLY_GAMES : CI_GAMES,
+        seedCount: opts.suite === "nightly" ? TWO_PLAYER_NIGHTLY_SEED_COUNT : TWO_PLAYER_CI_SEED_COUNT,
         suite: opts.suite,
         // Type-erasure boundary matching resolveSafeMove's own posture (see that dep's own
         // comment above and defaultDeps's real import()-based resolution) — mirrorMove crosses

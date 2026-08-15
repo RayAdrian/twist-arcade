@@ -148,6 +148,28 @@ describe("runTwoPlayerCiGate", () => {
     expect(result.kind).toBe("two-player");
     expect(result.ok).toBe(false);
   });
+
+  it("C71 Part 1 / C80: forwards seedCount to runCiSuite for real — 5 independent seedRuns, total games conserved", () => {
+    const report = runTwoPlayerCiGate(classicTicTacToe, sabotagedManifest, {
+      seed: "ci-gates:2p:seedcount",
+      games: 20,
+      seedCount: 5,
+    });
+    expect(report.matchups).toBeNull();
+    expect(report.seedRuns).toHaveLength(5);
+    expect(report.seedRuns!.reduce((sum, r) => sum + r.strongVsRandom.metrics.games, 0)).toBe(20);
+    expect(report.precision).toBeDefined();
+  });
+
+  it("seedCount omitted: byte-identical single-seed default, no seedRuns/precision", () => {
+    const report = runTwoPlayerCiGate(classicTicTacToe, sabotagedManifest, {
+      seed: "ci-gates:2p:no-seedcount",
+      games: 20,
+    });
+    expect(report.matchups).not.toBeNull();
+    expect(report.seedRuns).toBeUndefined();
+    expect(report.precision).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------------------

@@ -107,6 +107,15 @@ export interface TwoPlayerCiGateOptions {
    *  `manifest.mirrorProbe` is declared, in which case it's never consulted at all). */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   readonly mirrorMove?: (state: any, lastOppMove: any, legalMoves: readonly any[]) => any;
+  /** platform-corrections.md C71 Part 1 / C80: forwarded verbatim to `runCiSuite`'s own
+   *  `seedCount` — omitted (the default) keeps this module's exact pre-C80 single-seed
+   *  behaviour. `scripts/ci-gates.ts` (the real CI entry point) is the one call site that sets
+   *  this for real. NEVER forwarded into `runProbeSuite` below — `probes-two-player.ts`'s own
+   *  `RunProbeSuiteOptions` has no `seedCount` field at all (its `games` is deliberately pinned
+   *  at 100, independent of the CI suite's own budget), so there is no seam for this option to
+   *  leak into probe matchups even by accident; the probe suite always runs single-seed,
+   *  n=100, regardless of what `seedCount` the two-player gate table itself used. */
+  readonly seedCount?: number;
 }
 
 // Re-declared narrowly rather than importing RunMatchupOptions's clock type just to forward
@@ -146,8 +155,27 @@ export function runTwoPlayerCiGate(
     games: opts.games ?? DEFAULT_CI_GATE_GAMES,
     suite,
     ...(opts.clock ? { clock: opts.clock } : {}),
+    ...(opts.seedCount !== undefined ? { seedCount: opts.seedCount } : {}),
   });
 
+  // KNOWN GAP, flagged rather than silently patched (platform-corrections.md C71 Part 1 / C80,
+  // stage-6 rebase review): `ciReport.matchups` is `null` in TWO cases — an active C27 deferral
+  // (pre-existing) AND a multi-seed run (`opts.seedCount > 1`, this correction's own addition,
+  // which reports per-seed detail via `seedRuns`/`precision` instead of one `matchups` triple).
+  // So rush's draw relief below is silently WITHHELD whenever `seedCount > 1` is used here, even
+  // if the multi-seed aggregate itself reached the proven draw (which `evaluateCiGates`'s own
+  // `solved-value-reached` row, fed from `ciReport.gates`, correctly recognizes via `precision`-
+  // aware `inputs` — this composition layer just doesn't read that same aggregate back out).
+  // This is NOT a crash and NOT a false pass/fail: rush simply measures for real instead of
+  // getting relief, which is the same safe default as "no proven solvedValue at all." But it is
+  // a real, load-bearing interaction between two corrections landing the same day that neither
+  // side's own tests exercise (probes' fixtures never set `seedCount`; this correction's own
+  // tests never call `runTwoPlayerCiGate` with both `seedCount > 1` AND a proven draw). Recorded
+  // as owed rather than fixed here — extending this to read `ciReport.precision.drawRate.mean`/
+  // `.firstPlayerWinRate.mean` when `matchups` is null is a real fix, but it is a design choice
+  // (does rush's relief want the point estimate the same way the four `evaluateCiGates` rows
+  // do, with no precision-awareness of its own?) that the two owning corrections should make
+  // together, not one side unilaterally on a rebase.
   const strongSelfPlay = ciReport.matchups?.strongSelfPlay.metrics;
   const attainment = strongSelfPlay
     ? solvedValueAttainment(manifest.solvedValue, {

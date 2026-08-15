@@ -4,7 +4,7 @@
 
 import type { SolveResult } from "./solver/solve";
 import type { MatchupReport } from "./runner";
-import type { CiSuiteReport } from "./suites";
+import { PROVISIONAL_CONFIDENCE_LABEL, type CiSuiteReport } from "./suites";
 import type { GameCiGateReport } from "./ci-gates";
 import type { GateResult as SoloGateResult } from "./solo-gates";
 import { DEFERRAL_FATAL_DAYS, DEFERRAL_MATERIAL_FRACTION, DEFERRAL_WARN_DAYS, type DeferralAgingReport } from "./deferral-ledger";
@@ -77,6 +77,18 @@ const STATUS_LABEL: Record<string, string> = {
   unattained: "NEVER",
 };
 
+/** platform-corrections.md C71 Part 1 / C80's provisional-qualifier note text, shared by both
+ *  branches of `verdictLabel` below so the wording can never drift between an "OK (provisional
+ *  — ...)" header and a "FAILED (...)" one. */
+// C80 (stage-6 review): the confidence level is named HERE, in the actual printed text, by
+// importing `PROVISIONAL_CONFIDENCE_LABEL` from suites.ts rather than repeating the string —
+// review caught an earlier draft naming the WRONG level (90%) next to the right number (1.645,
+// which is actually 95%), so the fix is one place stating it, read everywhere it is printed.
+const PROVISIONAL_NOTE =
+  `one or more rate-style gates landed within their own measured seed-to-seed noise ` +
+  `(${PROVISIONAL_CONFIDENCE_LABEL} confidence) of a band edge/threshold — see the [PROVISIONAL] ` +
+  `row(s) below (platform-corrections.md C71/C80)`;
+
 /** C27: a run can be `ok` (no `"fail"` row) while still containing `"deferred"` rows — a
  *  PROVISIONAL pass, not the same claim a fully-measured green makes. Decision (see
  *  `docs/plans/platform-corrections.md` C27 and this module's own report for the full
@@ -91,15 +103,29 @@ const STATUS_LABEL: Record<string, string> = {
  *  `hasUnattained` defaults to `false` so every existing call site (and `formatSoloGateTable`,
  *  whose lane has no `"unattained"` status at all) keeps its exact prior header text. Both
  *  qualifiers can be present on the same report at once — the header lists whichever apply,
- *  never silently drops one for the other. */
-/** `extraNote` (platform-corrections.md C70): an additional provisional-note clause, folded in
- *  alongside `hasDeferred`/`hasUnattained`'s own notes exactly the same way — used by the
- *  aging-aware formatters below to surface a NON-material stale row (visible, but not yet
- *  forcing STALLED) without duplicating this function's note-joining logic. Every EXISTING call
- *  site passes 3 args, so `extraNote` stays `undefined` and this function's output is
- *  byte-identical to before this parameter existed. */
-function verdictLabel(ok: boolean, hasDeferred: boolean, hasUnattained = false, extraNote?: string): string {
-  if (!ok) return "FAILED";
+ *  never silently drops one for the other.
+ *
+ *  `extraNote` (platform-corrections.md C70): an additional OK-branch note clause, folded in
+ *  alongside `hasDeferred`/`hasUnattained`'s own notes the same way — used by the aging-aware
+ *  formatters below to surface a NON-material stale row (visible, but not yet forcing STALLED),
+ *  and by `formatCiSuiteTable`'s own `provisional` handling (below) for its OK-branch note.
+ *  `failNote` (platform-corrections.md C71 Part 1 / C80) is a SEPARATE, FAILED-branch-only note:
+ *  unlike `extraNote`/`hasDeferred`/`hasUnattained` (never surfaced on a FAILED report — a real
+ *  fail elsewhere is not softened by an unrelated row being deferred, unattained, or stale),
+ *  `provisional` CAN accompany a FAILED verdict, but only when the FAILING row is itself the
+ *  provisional one (a near-edge fail is still a real fail — see Tilt's own C71 finding: 70%
+ *  FAIL, within its own measured seed-to-seed noise of the 65% edge — but an unrelated PASSING
+ *  row's own noise must never read as softening a different, genuinely hard fail). Every
+ *  EXISTING call site before this parameter existed passes neither, so both default to
+ *  `undefined` and this function's output stays byte-identical for them. */
+function verdictLabel(
+  ok: boolean,
+  hasDeferred: boolean,
+  hasUnattained = false,
+  extraNote?: string,
+  failNote?: string
+): string {
+  if (!ok) return failNote ? `FAILED (${failNote})` : "FAILED";
   const notes: string[] = [];
   if (hasDeferred) notes.push("deferred rows not yet measured at this tier");
   if (hasUnattained) notes.push("a solvedValue row was measured and never attained, with no baseline to regress from — see solved-value-reached");
@@ -172,7 +198,22 @@ function verdictLabelWithAging(ok: boolean, hasDeferred: boolean, hasUnattained:
 export function formatCiSuiteTable(report: CiSuiteReport): string {
   const hasDeferred = report.gates.some((g) => g.status === "deferred");
   const hasUnattained = report.gates.some((g) => g.status === "unattained");
-  const lines = [`CI suite (${report.suite}) for "${report.gameId}" — ${verdictLabel(report.ok, hasDeferred, hasUnattained)}`];
+  // C80 (stage-6 review): on a FAILED report, only a provisional row that is ITSELF failing
+  // should surface the provisional note — an unrelated passing row's noise has nothing to do
+  // with why the suite failed, and noting it there would read as softening a hard fail it did
+  // not cause. On an OK report every row is either passing or a non-fail status, so "any
+  // provisional row" is unambiguous.
+  const hasProvisionalOk = report.gates.some((g) => g.provisional === true);
+  const hasProvisionalFailure = report.gates.some((g) => g.status === "fail" && g.provisional === true);
+  const lines = [
+    `CI suite (${report.suite}) for "${report.gameId}" — ${verdictLabel(
+      report.ok,
+      hasDeferred,
+      hasUnattained,
+      hasProvisionalOk ? PROVISIONAL_NOTE : undefined,
+      hasProvisionalFailure ? PROVISIONAL_NOTE : undefined
+    )}`,
+  ];
   for (const gate of report.gates) {
     const label = STATUS_LABEL[gate.status] ?? gate.status;
     // Keyed on PRESENCE (`!== undefined`), not truthiness — an empty-string justification must
@@ -180,7 +221,8 @@ export function formatCiSuiteTable(report: CiSuiteReport): string {
     // justification outright, but this formatter stays correct in its own right regardless of
     // what validation the caller did or didn't run).
     const exception = gate.exceptionJustification !== undefined ? ` (exception: ${gate.exceptionJustification})` : "";
-    lines.push(`  [${label}] ${gate.gate}: ${gate.detail}${exception}`);
+    const provisionalNote = gate.provisional ? " [PROVISIONAL]" : "";
+    lines.push(`  [${label}] ${gate.gate}: ${gate.detail}${exception}${provisionalNote}`);
   }
   return lines.join("\n");
 }
@@ -217,7 +259,14 @@ export function formatGameCiGateReport(result: GameCiGateReport): string {
 /** `formatCiSuiteTable`, extended with deferral-discharge aging (platform-corrections.md C70).
  *  `aging === undefined` (the case for every game with no active deferral, and the ONLY case
  *  for every game before this mechanism existed) delegates straight to `formatCiSuiteTable` —
- *  byte-identical output, not merely equivalent-looking output. */
+ *  byte-identical output, not merely equivalent-looking output. This branch's own row-rendering
+ *  loop below does NOT check `gate.provisional` (platform-corrections.md C71 Part 1 / C80): a
+ *  game only reaches `aging !== undefined` by having at least one row genuinely `"deferred"`
+ *  (self-play skipped entirely for it this tier — C27), and `runCiSuite`'s multi-seed branch
+ *  never builds a `precision`/`provisional` value on that same path (deferral short-circuits
+ *  before any seed's self-play runs) — so a row cannot be both aged AND provisional under the
+ *  current implementation. If that ever changes, this loop needs the same `[PROVISIONAL]`
+ *  suffix `formatCiSuiteTable`'s does. */
 export function formatCiSuiteTableWithAging(report: CiSuiteReport, aging: DeferralAgingReport | undefined): string {
   if (!aging) return formatCiSuiteTable(report);
   const hasDeferred = report.gates.some((g) => g.status === "deferred");

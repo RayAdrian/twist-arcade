@@ -30,9 +30,12 @@ import {
   CI_SEED_COUNT,
   dayFor,
   MirrorMoveNotExportedError,
+  NIGHTLY_GAMES,
   runAllGates,
   SafeMoveNotExportedError,
   todayUtc,
+  TWO_PLAYER_CI_SEED_COUNT,
+  TWO_PLAYER_NIGHTLY_SEED_COUNT,
   UnknownGameIdError,
 } from "../ci-gates";
 
@@ -178,6 +181,13 @@ describe("runAllGates — dispatches all three kinds from one registry", () => {
     const twoPlayer = reports.find((r) => r.gameId === "classic-ttt-fixture")!;
     expect(twoPlayer.kind).toBe("two-player");
     expect(twoPlayer.ok).toBe(false); // sabotaged ruthless tier == randomPolicy
+    // C71 Part 1 / C80: runAllGates' own two-player call site now sets seedCount for real (never
+    // just the harness module's default) — TWO_PLAYER_CI_SEED_COUNT independent seedRuns, total
+    // games conserved at CI_GAMES.
+    if (twoPlayer.kind === "two-player") {
+      expect(twoPlayer.report.seedRuns).toHaveLength(TWO_PLAYER_CI_SEED_COUNT);
+      expect(twoPlayer.report.seedRuns!.reduce((sum, r) => sum + r.strongVsRandom.metrics.games, 0)).toBe(CI_GAMES);
+    }
 
     const chase = reports.find((r) => r.gameId === "bank-run-fixture")!;
     expect(chase.kind).toBe("solo-chase");
@@ -373,6 +383,11 @@ describe("CI budget constants", () => {
   it("CI_GAMES and CI_SEED_COUNT are explicitly >= 100 (G-14)", () => {
     expect(CI_GAMES).toBeGreaterThanOrEqual(100);
     expect(CI_SEED_COUNT).toBeGreaterThanOrEqual(100);
+  });
+
+  it("C71 Part 1 / C80: CI_GAMES/NIGHTLY_GAMES divide evenly by their own two-player seed counts — a production combination that would throw NonDivisibleSeedCountError is a real defect, not something a test should have to catch at runtime", () => {
+    expect(CI_GAMES % TWO_PLAYER_CI_SEED_COUNT).toBe(0);
+    expect(NIGHTLY_GAMES % TWO_PLAYER_NIGHTLY_SEED_COUNT).toBe(0);
   });
 });
 
