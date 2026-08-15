@@ -18,7 +18,7 @@
 
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -79,33 +79,74 @@ describe("scripts/check-tsconfig-coverage.mjs", () => {
     }
   }, 30_000);
 
-  it("fails the exact historical C72 defect: dropping ui/**/*.ts from games/tilt's tsconfig re-excludes ui/board-view.test.ts", () => {
-    const tiltTsconfigPath = join(repoRoot, "games/tilt/tsconfig.json");
-    const original = readFileSync(tiltTsconfigPath, "utf8");
+  it("fails the exact historical C72 defect: dropping ui/**/*.ts from a tilt-shaped tsconfig re-excludes ui/board-view.test.ts", () => {
+    // A copy under games/ (not an in-place edit of the tracked games/tilt/tsconfig.json): a
+    // killed run mid-test must never leave the real tree broken. Test 2 above already avoids
+    // mutating tracked files by working in a throwaway directory; this applies the same
+    // discipline to a scenario that needs a real, non-synthetic package shape rather than a
+    // minimal fixture, by copying the real games/tilt directory instead of editing it.
+    const probeDir = join(repoRoot, "games/__qa_c72_regression_probe__");
     try {
+      cpSync(join(repoRoot, "games/tilt"), probeDir, { recursive: true });
+      const probeTsconfigPath = join(probeDir, "tsconfig.json");
+      const original = readFileSync(probeTsconfigPath, "utf8");
       // The exact pre-fix (59e2c08) shape from C72: ["*.ts", "ui/**/*.tsx", "test/**/*.ts"].
       const broken = original.replace(
         /"include":\s*\[[^\]]*\]/s,
         '"include": ["*.ts", "ui/**/*.tsx", "test/**/*.ts"]'
       );
       expect(broken).not.toBe(original); // sanity: the replace actually matched something
-      writeFileSync(tiltTsconfigPath, broken);
+      writeFileSync(probeTsconfigPath, broken);
 
       const result = runScript();
       expect(result.status).toBe(1);
       const out = result.stdout + result.stderr;
-      // Only the leaf test file is actually flagged: games/tilt/ui/board-view.ts (the
-      // non-test module) is still pulled into the compiler's program transitively — it's
-      // imported by another file that IS in scope — so removing the glob doesn't drop it
-      // from `--listFiles`. board-view.test.ts is a leaf nothing imports, so it's reachable
-      // ONLY via the `include` glob; that's the one C72 itself names, and the only one this
-      // guard can (or should) catch by definition — matching that exactly is the proof this
+      // Only the leaf test file is actually flagged: <probe>/ui/board-view.ts (the non-test
+      // module) is still pulled into the compiler's program transitively — it's imported by
+      // another file that IS in scope — so removing the glob doesn't drop it from
+      // `--listFiles`. board-view.test.ts is a leaf nothing imports, so it's reachable ONLY
+      // via the `include` glob; that's the one C72 itself names, and the only one this guard
+      // can (or should) catch by definition — matching that exactly is the proof this
       // reproduces the real historical defect, not a broader claim about the whole file.
-      expect(out).toMatch(/games\/tilt\/ui\/board-view\.test\.ts/);
-      expect(out).toMatch(/games\/tilt/);
+      expect(out).toMatch(/games\/__qa_c72_regression_probe__\/ui\/board-view\.test\.ts/);
+      expect(out).toMatch(/games\/__qa_c72_regression_probe__/);
     } finally {
-      writeFileSync(tiltTsconfigPath, original);
+      rmSync(probeDir, { recursive: true, force: true });
     }
+  }, 30_000);
+
+  it("reports a workspace package with a package.json but NO tsconfig.json as a failure, not a silent skip", () => {
+    // Before this test's guard: discoverPackageDirs() filtered out any directory missing
+    // EITHER file, so a package with package.json but no tsconfig.json — typechecked by
+    // nothing at all — simply vanished from consideration and the guard exited 0 anyway.
+    // That is a worse gap than a glob that misses one file, and the guard must not stay
+    // quiet about it.
+    const pkgDir = join(repoRoot, "games/__qa_no_tsconfig_probe__");
+    mkdirSync(pkgDir, { recursive: true });
+    try {
+      writeFileSync(
+        join(pkgDir, "package.json"),
+        JSON.stringify({ name: "@twist-arcade/__qa_no_tsconfig_probe__", private: true, version: "0.0.0" }, null, 2)
+      );
+      writeFileSync(join(pkgDir, "orphan.ts"), "export const orphan = 1;\n");
+      // deliberately no tsconfig.json in pkgDir
+
+      const result = runScript();
+      expect(result.status).toBe(1);
+      const out = result.stdout + result.stderr;
+      expect(out).toMatch(/games\/__qa_no_tsconfig_probe__/);
+      expect(out).toMatch(/no tsconfig\.json/i);
+    } finally {
+      rmSync(pkgDir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("prints the scope boundary as a runtime artifact (C79 ruling 1), not only as a header comment", () => {
+    const result = runScript();
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/OUT OF SCOPE/);
+    expect(result.stdout).toMatch(/scripts\//);
+    expect(result.stdout).toMatch(/C79/);
   }, 30_000);
 
   it("states the vitest.config.ts allowlist explicitly by exact path (C72 Finding 2) rather than staying silent about it", () => {

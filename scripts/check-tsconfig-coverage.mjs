@@ -28,12 +28,19 @@
 // here, which is the whole reason C69/C72's manual audit was owed as automation in the
 // first place.
 //
-// Deliberately OUT of scope: scripts/, supabase/, templates/game*, and the root Next.js app
-// (tsconfig.app.json). None of those are pnpm workspace packages (pnpm-workspace.yaml only
-// lists packages/* and games/*), and C69/C72 both scoped their audit to that same package
-// set. templates/game* in particular are scaffolding copied by `pnpm new-game`, not
-// packages tsc builds today — a gap there would matter to the *next* game, not this repo's
-// current typecheck surface, and is a different check.
+// scripts/, supabase/, templates/game*, and the root Next.js app (tsconfig.app.json) are
+// NOT covered by this scope. This used to be argued here in prose ("none of those are pnpm
+// workspace packages") — C79 ruling 1 refuted that argument directly: scripts/ is real,
+// shipped, typechecked-in-part code, and this guard's own scope excluding it is exactly
+// where the mirrorMove type lie (C79) was hiding, one layer below C69/C72's original
+// finding. C79 ruling 1 also names the root Next.js app as belonging in scope. Neither is
+// added here — the addendum (c522bcf) tried it directly and found the fix is bigger than a
+// glob (project-reference/rootDir restructuring, since scripts/research/ imports
+// games/tilt/), so it is routed to task #24, not folded into this branch. Per C79's own
+// rule — "an exemption that is printed is reviewable; one that lives in a header comment is
+// not" — the actual, current OUT_OF_SCOPE list below is a runtime-printed artifact, not
+// prose: run this script and read its own output for what it did not check and why, rather
+// than trusting this comment to stay accurate.
 //
 // Run via `pnpm check:tsconfig-coverage`. Wired into .github/workflows/ci.yml for when CI
 // resumes (C68: CI has not run in 11 days as of this writing) — do not assume CI runs this;
@@ -83,6 +90,45 @@ const ALLOWLIST = new Set([
 ]);
 
 // ---------------------------------------------------------------------------------------
+// Explicitly out of scope — printed at runtime, not just asserted in a header comment.
+//
+// C79 ruling 1: "an exemption that is printed is reviewable; one that lives in a header
+// comment is not." A prior version of this script argued scripts/ and the root Next.js app
+// out of scope in prose ("none of those are pnpm workspace packages") — that argument is
+// refuted (C79): scripts/ is real, shipped, typechecked-in-part code with its own
+// tsc -b-governed tsconfig.json, and this guard's own blind spot there is exactly where
+// scripts/research/tilt-t4-gates.ts's mirrorMove type lie was hiding. These four entries are
+// a KNOWN, OPEN gap, not a settled boundary — see docs/plans/platform-corrections.md C79
+// ruling 1 and task #24 (C79 addendum, c522bcf, sized the fix: adding research/**/*.ts to
+// scripts/tsconfig.json surfaces 5 real errors plus rootDir/project-reference work, because
+// research/ imports games/tilt/ from outside scripts' rootDir — bigger than this branch).
+// ---------------------------------------------------------------------------------------
+const OUT_OF_SCOPE = [
+  {
+    path: "scripts/",
+    reason:
+      "real, shipped, typechecked-in-part code (own tsconfig.json, in the root tsc -b graph) — " +
+      "KNOWN GAP per C79 ruling 1, not a settled exemption; task #24 tracks extending scope here",
+  },
+  {
+    path: "supabase/",
+    reason:
+      "same shape as scripts/ — own tsconfig.json, in the root tsc -b graph, not a pnpm workspace " +
+      "package — not yet audited under C79's ruling; treated as the same open question, not a settled exemption",
+  },
+  {
+    path: "app/ (tsconfig.app.json)",
+    reason: "the root Next.js app project — C79 ruling 1 names this explicitly as belonging in scope; not yet done",
+  },
+  {
+    path: "templates/game/, templates/game-solo/",
+    reason:
+      "scaffolding copied by `pnpm new-game`, not built by the root tsc -b graph today — a gap here " +
+      "would affect the NEXT game created from the template, not this repo's current typecheck surface",
+  },
+];
+
+// ---------------------------------------------------------------------------------------
 // 1. Discover packages from pnpm-workspace.yaml's `packages:` glob list — not hardcoded.
 // ---------------------------------------------------------------------------------------
 function discoverWorkspaceGlobs() {
@@ -97,12 +143,14 @@ function discoverWorkspaceGlobs() {
       continue;
     }
     if (inPackages) {
+      if (/^\s*$/.test(line)) continue; // blank line inside the list — keep scanning
+      if (/^\s*#/.test(line)) continue; // full-line comment inside the list — keep scanning
       const item = line.match(/^\s*-\s*["']?([^"'\s]+)["']?\s*$/);
       if (item) {
         globs.push(item[1]);
         continue;
       }
-      break; // first non-list-item line ends the `packages:` block
+      break; // first real (non-blank, non-comment, non-list-item) line ends the `packages:` block
     }
   }
   if (globs.length === 0) {
@@ -134,19 +182,32 @@ function discoverPackageDirs() {
       candidateRelDirs.push(glob);
     }
   }
-  // A "package" for this guard is a workspace-glob-matched directory that is ALSO a real
-  // tsc-governed unit: it must own both a package.json and a tsconfig.json. A directory
-  // matching the glob but missing either isn't something `tsc -p` can be pointed at.
-  return candidateRelDirs
-    .filter((rel) => {
-      const dir = join(repoRoot, rel);
-      try {
-        return statSync(join(dir, "package.json")).isFile() && statSync(join(dir, "tsconfig.json")).isFile();
-      } catch {
-        return false;
-      }
-    })
-    .sort();
+  // A "package" this guard can point `tsc -p` at must own both a package.json and a
+  // tsconfig.json. A workspace-glob-matched directory with package.json but NO
+  // tsconfig.json is a different, worse thing than a coverage gap: it is a package
+  // typechecked by NOTHING, and silently dropping it here would make it look, from this
+  // guard's own passing exit code, like it had been checked and was fine. So it is not
+  // silently filtered out — it is reported by discoverPackageDirs() as `uncheckable` and
+  // surfaced as a failure below, same as any other uncovered file.
+  const checked = [];
+  const uncheckable = [];
+  for (const rel of new Set(candidateRelDirs)) {
+    const dir = join(repoRoot, rel);
+    const hasPackageJson = statSyncOrNull(join(dir, "package.json"))?.isFile() ?? false;
+    if (!hasPackageJson) continue; // not a real package directory at all (e.g. a stray file)
+    const hasTsconfig = statSyncOrNull(join(dir, "tsconfig.json"))?.isFile() ?? false;
+    if (hasTsconfig) checked.push(rel);
+    else uncheckable.push(rel);
+  }
+  return { checked: checked.sort(), uncheckable: uncheckable.sort() };
+}
+
+function statSyncOrNull(path) {
+  try {
+    return statSync(path);
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------------------
@@ -216,16 +277,39 @@ function compilerCoveredFiles(pkgRelDir) {
 // ---------------------------------------------------------------------------------------
 // 4. Run it.
 // ---------------------------------------------------------------------------------------
-const packageDirs = discoverPackageDirs();
+const { checked: packageDirs, uncheckable: uncheckablePackageDirs } = discoverPackageDirs();
 console.log(`Discovered ${packageDirs.length} workspace package(s) from pnpm-workspace.yaml:`);
 for (const d of packageDirs) console.log(`  - ${d}`);
 console.log();
 console.log(`Allowlisted (explicit, exact-path exclusions — C72 Finding 2, plus one this run's own audit added):`);
 for (const a of [...ALLOWLIST].sort()) console.log(`  - ${a}`);
 console.log();
+console.log(`Explicitly OUT OF SCOPE (C79 ruling 1 — printed here, not just argued in a header comment):`);
+for (const o of OUT_OF_SCOPE) console.log(`  - ${o.path} — ${o.reason}`);
+console.log();
 
-let totalGaps = 0;
-for (const pkgRelDir of packageDirs) {
+let totalUncoveredFiles = 0;
+let totalUncheckablePackages = 0;
+
+if (uncheckablePackageDirs.length > 0) {
+  for (const rel of uncheckablePackageDirs) {
+    totalUncheckablePackages += 1;
+    fail(`${rel}: has a package.json but NO tsconfig.json — this package is typechecked by NOTHING, not merely under-covered`);
+  }
+  console.error(); // separate the uncheckable-package block from the per-package results below
+}
+
+// Measures one package's gap set: every on-disk source file not in the compiler's own list
+// and not allowlisted. Two independent, unsynchronized filesystem reads (this function's fs
+// walk, and the separate `tsc` subprocess's own directory reads) taken a moment apart are
+// not atomic with respect to anything ELSE mutating the tree at the same time — irrelevant
+// for a normal solo run, but this script's own test suite runs inside `pnpm test`, where
+// OTHER test files legitimately write and remove real files inside these same package
+// directories for the length of their own run (e.g. packages/engine/test/check-engine-
+// purity.test.ts plants and removes files under packages/engine/src/). A file caught mid-
+// write by one read and not the other reads as a false gap. measurePackage() is deliberately
+// a pure, side-effect-free snapshot so it can be safely taken more than once.
+function measurePackage(pkgRelDir) {
   const pkgDir = join(repoRoot, pkgRelDir);
   const onDisk = findOnDiskSourceFiles(pkgDir);
   const covered = compilerCoveredFiles(pkgRelDir);
@@ -241,25 +325,62 @@ for (const pkgRelDir of packageDirs) {
     }
     gaps.push(rel);
   }
+  return { onDiskCount: onDisk.length, allowlistedHere, gaps: new Set(gaps) };
+}
 
-  if (gaps.length > 0) {
-    totalGaps += gaps.length;
-    fail(`${pkgRelDir}: ${gaps.length} file(s) on disk that ${pkgRelDir}/tsconfig.json never reads:`);
-    for (const g of gaps.sort()) console.error(`    ${g}`);
-  } else {
-    const suffix = allowlistedHere > 0 ? ` (${allowlistedHere} allowlisted)` : "";
-    console.log(`✓ ${pkgRelDir} — tsconfig coverage matches disk: ${onDisk.length} file(s)${suffix}`);
+// Synchronous sleep with no subprocess — Atomics.wait blocks the (single-threaded) main
+// thread on a SharedArrayBuffer that nothing will ever notify, which is exactly "sleep" with
+// no extra dependency or platform-specific binary.
+function sleepMs(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+for (const pkgRelDir of packageDirs) {
+  const first = measurePackage(pkgRelDir);
+
+  // A REAL tsconfig coverage gap is a property of committed configuration — it cannot
+  // un-happen between two reads a few hundred milliseconds apart. So an apparent gap is only
+  // reported once a second, independent measurement reproduces the SAME file(s); anything
+  // that appears in only one of the two reads is exactly the shape a concurrent write/delete
+  // elsewhere in the tree produces, not a real defect, and is silently not a finding — the
+  // second measurement is the confirmation, not a retry hiding a real result. A short pause
+  // first gives whatever transient writer caused the mismatch a chance to finish its own
+  // write/delete cycle, rather than racing it a second time immediately.
+  let confirmedGaps = first.gaps;
+  let result = first;
+  if (first.gaps.size > 0) {
+    sleepMs(250);
+    const second = measurePackage(pkgRelDir);
+    confirmedGaps = new Set([...first.gaps].filter((g) => second.gaps.has(g)));
+    result = second; // report the second read's onDisk/allowlisted counts alongside it
+    if (confirmedGaps.size === 0) {
+      console.log(
+        `~ ${pkgRelDir} — first read found ${first.gaps.size} apparent gap(s), none reproduced on a second ` +
+          "read (transient — almost certainly another concurrent process writing into this package's " +
+          "directory, e.g. this repo's own test suite; not treated as a finding)"
+      );
+    }
+  }
+
+  if (confirmedGaps.size > 0) {
+    totalUncoveredFiles += confirmedGaps.size;
+    fail(`${pkgRelDir}: ${confirmedGaps.size} file(s) on disk that ${pkgRelDir}/tsconfig.json never reads:`);
+    for (const g of [...confirmedGaps].sort()) console.error(`    ${g}`);
+  } else if (first.gaps.size === 0) {
+    const suffix = result.allowlistedHere > 0 ? ` (${result.allowlistedHere} allowlisted)` : "";
+    console.log(`✓ ${pkgRelDir} — tsconfig coverage matches disk: ${result.onDiskCount} file(s)${suffix}`);
   }
 }
 
 console.log();
 if (failed) {
   console.error(
-    `tsconfig coverage check FAILED — ${totalGaps} uncovered file(s) across the package(s) above.\n` +
+    `tsconfig coverage check FAILED — ${totalUncoveredFiles} uncovered file(s) and ${totalUncheckablePackages} ` +
+      "wholly-unchecked package(s) (no tsconfig.json at all) across the package(s) above.\n" +
       "A configuration that scopes a guard is part of the guard (C69/C72) and is never verified by reading it. " +
-      "Fix the tsconfig's include/exclude glob so it actually reaches the file, or — only if the exclusion is " +
-      "deliberate and legitimate (e.g. an unshipped config file) — add its exact path to ALLOWLIST in this " +
-      "script with a comment explaining why."
+      "Fix the tsconfig's include/exclude glob so it actually reaches the file (or add a tsconfig.json at all), " +
+      "or — only if the exclusion is deliberate and legitimate (e.g. an unshipped config file) — add its exact " +
+      "path to ALLOWLIST in this script with a comment explaining why."
   );
   process.exit(1);
 } else {
