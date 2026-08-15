@@ -111,6 +111,16 @@ export const mineRunManifest: GameManifest = {
         "Strong-dependent; ~165s/seed at soloChaseCiRollouts=750 on the real 10x10/20-mine " +
         "board (up to 83min/seed at higher search) — ~4.6h at seedCount=100 in CI — " +
         "platform-corrections.md C27",
+      // platform-corrections.md C70: the day THIS deferral (this exact reason/gate set) was
+      // declared — git-verified, not guessed: `git log -S deferGatesToNightly --format="%H %ad"
+      // -- games/mine-run/manifest.ts` finds a29772a1 "feat(harness): C27 — the 'deferred' gate
+      // status, both lanes" and c8f88609 "feat(mine-run): board UI, registration, and the
+      // config the gates actually froze", both dated 2026-08-07 — the commit that first gave
+      // this game a `deferGatesToNightly` block. Anchoring the deferral-discharge ledger here
+      // (rather than to whatever day the ledger mechanism happens to first run) is the whole
+      // point: C68 found nightly has never once completed, so this deferral has been
+      // undischarged since 2026-08-07, not since whenever this comment was added.
+      since: "2026-08-07",
     },
   },
 };

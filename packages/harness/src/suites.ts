@@ -80,7 +80,12 @@ export interface CiGateDeferral {
  *  passing, which is itself computed from self-play data. Deferral means that data was never
  *  collected this tier, so whether the proof was reached is UNMEASURED, not "known true" — those
  *  branches defer along with everything else, exactly like `solved-value-reached` itself. Named
- *  once here so the nightly abuse guard stays in lockstep with the gate blocks themselves. */
+ *  once here so the nightly abuse guard stays in lockstep with the gate blocks themselves.
+ *  NOT exported for deferral-ledger.ts's use (platform-corrections.md C81's A2 finding): a
+ *  canonical list here can disagree with what a REAL report actually contains at any given run
+ *  (`ruthless-vs-standard`/`solved-value-reached` can independently be `"n/a"` for structural
+ *  reasons), so discharge recognition derives "what was measured" from each report's own rows
+ *  instead (`measuredGateNames` in deferral-ledger.ts), never from this constant. */
 const DEFERRABLE_CI_GATES = [
   "strong-vs-random",
   "first-player-win-rate",

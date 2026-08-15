@@ -18,10 +18,13 @@ import {
   type CrackstepMove,
   type CrackstepState,
 } from "@twist-arcade/engine/testkit/fixtures/mini-crackstep";
-import { certifyDay, writeCertificate, dfsSolver } from "@twist-arcade/harness";
+import { certifyDay, writeCertificate, dfsSolver, readAllDeferralRuns } from "@twist-arcade/harness";
 import type { Json } from "@twist-arcade/engine";
 import type { SafeMoveFn } from "@twist-arcade/harness";
+import type { GameCiGateReport } from "@twist-arcade/harness";
+import type { RegistryEntry } from "@twist-arcade/game-spec";
 import {
+  applyDeferralLedger,
   CI_GAMES,
   CI_SEED_COUNT,
   dayFor,
@@ -331,5 +334,190 @@ describe("runAllGates — C13 --game filter", () => {
       }
     );
     expect(reports).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// platform-corrections.md C70/C81: applyDeferralLedger — the repo-layout wiring around
+// @twist-arcade/harness's deferral-ledger.ts. C81's stage-6 review found the FIRST version's
+// unit tests injected in-memory read/write deps, which structurally could not catch that the
+// real nightly write never survives an ephemeral GitHub Actions workspace. THIS version has no
+// such seam to hide behind: `applyDeferralLedger` takes a real `runsBaseDir` and writes real
+// `DeferralRun` files there via real filesystem I/O — every test below uses a real scratch tmp
+// dir (mkdtemp), so persistence is exercised for real, not faked.
+// ---------------------------------------------------------------------------------------
+
+function deferringChaseManifest(since: string): GameManifest {
+  return { ...chaseManifest(), ciGateBudget: { deferGatesToNightly: { reason: "unit-test fixture", since } } };
+}
+
+function fakeRegistry(manifest: GameManifest): Registry {
+  const entry: RegistryEntry = {
+    manifest,
+    loadEngine: () => Promise.reject(new Error("not called — applyDeferralLedger never loads an engine")),
+    loadPresentation: () => Promise.reject(new Error("not called")),
+  };
+  return { [manifest.id]: entry };
+}
+
+function soloChaseReport(gameId: string, ok: boolean, gates: { name: string; status: string; detail: string }[]): GameCiGateReport {
+  return {
+    kind: "solo-chase",
+    gameId,
+    ok,
+    report: { gameId, format: "score-chase", ok, gates: gates as never, metrics: {} as never, grind: { found: false } },
+  };
+}
+
+const MINE_RUN_LIKE_DEFERRED = [
+  "strongVsRandomRatio",
+  "distributionOverlap",
+  "strongVsGreedyRatio",
+  "strongScoreCV",
+  "alwaysSafeVsStrong",
+  "medianRunLength",
+  "capHitRate",
+  "ceilingPileUp",
+] as const;
+
+function deferredGatesFixture(): { name: string; status: string; detail: string }[] {
+  return [
+    ...MINE_RUN_LIKE_DEFERRED.map((name) => ({ name, status: "deferred", detail: "measured at nightly (unit-test fixture)" })),
+    { name: "greedyVsRandomRatio", status: "pass", detail: "1.8" },
+    { name: "grindProbe", status: "pass", detail: "no cycle" },
+  ];
+}
+
+/** A real nightly report for the same manifest: every previously-deferred row measured for
+ *  real, plus a two-player-lane row set ONLY partially populated — proving coverage recognition
+ *  works off whatever a report ACTUALLY contains, never a hardcoded canonical list (C81's A2). */
+function fullyMeasuredNightlyGatesFixture(): { name: string; status: string; detail: string }[] {
+  return [
+    ...MINE_RUN_LIKE_DEFERRED.map((name) => ({ name, status: "pass", detail: "measured for real" })),
+    { name: "greedyVsRandomRatio", status: "pass", detail: "1.8" },
+    { name: "grindProbe", status: "pass", detail: "no cycle" },
+  ];
+}
+
+describe("applyDeferralLedger — suite 'ci' never writes anything, only reads committed evidence (C81: no workspace write is ever load-bearing)", () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "scripts-ci-gates-runs-"));
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("with no committed DeferralRun evidence, ages from the manifest's declared `since` — undischarged, stale, forces a fail", async () => {
+    const manifest = deferringChaseManifest("2026-08-07");
+    const registry = fakeRegistry(manifest);
+    const report = soloChaseReport(manifest.id, true, deferredGatesFixture());
+
+    const gated = await applyDeferralLedger([report], registry, "ci", dir, "2026-08-15");
+
+    // 8 days undischarged (2026-08-07 -> 2026-08-15), 8/10 applicable — stale AND material.
+    expect(gated[0]!.aging?.rows[0]!.ageDays).toBe(8);
+    expect(gated[0]!.aging?.forcesFail).toBe(true);
+    expect(gated[0]!.effectiveOk).toBe(false);
+
+    // "ci" never writes — nothing was created on disk for this game.
+    expect(await readAllDeferralRuns(dir, manifest.id)).toEqual([]);
+  });
+
+  it("a game with no ciGateBudget.deferGatesToNightly declared is untouched", async () => {
+    const manifest = chaseManifest();
+    const registry = fakeRegistry(manifest);
+    const report = soloChaseReport(manifest.id, true, [{ name: "greedyVsRandomRatio", status: "pass", detail: "1.8" }]);
+
+    const gated = await applyDeferralLedger([report], registry, "ci", dir, "2026-08-15");
+
+    expect(gated[0]!.aging).toBeUndefined();
+    expect(gated[0]!.effectiveOk).toBe(true);
+  });
+});
+
+describe("applyDeferralLedger — suite 'nightly' writes a committed DeferralRun artifact; a LATER 'ci' run reads it back and recognizes the discharge (requirement 1, real filesystem I/O throughout)", () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "scripts-ci-gates-runs-"));
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("PLANTED VIOLATION, DISCHARGED: an aged, undischarged deferral is reset to age 0 once a committed nightly run covers it", async () => {
+    const manifest = deferringChaseManifest("2026-08-07");
+    const registry = fakeRegistry(manifest);
+
+    // Tonight, nightly runs for real (its own report shows every row MEASURED — never
+    // "deferred", matching solo-gates.ts's SoloDeferredGateAtNightlyError guarantee) and
+    // WRITES the resulting DeferralRun artifact — this is the file a human would commit.
+    const nightlyReport = soloChaseReport(manifest.id, true, fullyMeasuredNightlyGatesFixture());
+    const gatedNightly = await applyDeferralLedger([nightlyReport], registry, "nightly", dir, "2026-08-15");
+    expect(gatedNightly[0]!.effectiveOk).toBe(true); // nightly's own report never shows "deferred"
+
+    const runs = await readAllDeferralRuns(dir, manifest.id);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.day).toBe("2026-08-15");
+    // Recorded from the REPORT's own rows, not a hardcoded canonical list (C81's A2 fix).
+    expect(runs[0]!.measuredGates).toContain("distributionOverlap");
+    expect(runs[0]!.measuredGates).toContain("greedyVsRandomRatio");
+
+    // Tomorrow's "ci" run re-declares the same deferral (Strong is still unaffordable at "ci")
+    // — READS the committed artifact and measures age from last night's discharge, not from
+    // 2026-08-07 again. No mutable ledger, no separate "observe" write — just a read.
+    const tomorrowReport = soloChaseReport(manifest.id, true, deferredGatesFixture());
+    const gatedTomorrow = await applyDeferralLedger([tomorrowReport], registry, "ci", dir, "2026-08-16");
+    expect(gatedTomorrow[0]!.aging?.rows[0]!.ageDays).toBe(1);
+    expect(gatedTomorrow[0]!.aging?.forcesFail).toBe(false); // fresh again — 1 day, not material
+    expect(gatedTomorrow[0]!.effectiveOk).toBe(true);
+  });
+
+  it("COVERAGE, not exact equality (C81's A2 fix): a nightly run whose measured set is a PROPER SUBSET of another lane's full canonical list still discharges", async () => {
+    // A two-player-shaped manifest whose "ci" report only ever shows TWO deferrable rows
+    // (the others are independently n/a for structural reasons unrelated to deferral) —
+    // exercising exactly the asymmetry C81's review found latent in the solo-chase-only tests.
+    const manifest: GameManifest = {
+      ...twoPlayerManifest(),
+      id: "two-player-subset-fixture",
+      ciGateBudget: { deferGatesToNightly: { reason: "unit-test fixture", since: "2026-08-01" } },
+    };
+    const registry = fakeRegistry(manifest);
+
+    const twoPlayerReport = (gates: { gate: string; status: string; detail: string }[]): GameCiGateReport => ({
+      kind: "two-player",
+      gameId: manifest.id,
+      ok: true,
+      report: { gameId: manifest.id, suite: "nightly", ok: true, gates: gates as never, matchups: null },
+    });
+
+    const nightlyReport = twoPlayerReport([
+      { gate: "strong-vs-random", status: "pass", detail: "measured for real" },
+      { gate: "first-player-win-rate", status: "pass", detail: "measured for real" },
+      { gate: "ruthless-vs-standard", status: "n/a", detail: "no standard tier — structural" },
+      { gate: "solved-value-reached", status: "n/a", detail: "no solvedValue proof — structural" },
+    ]);
+    await applyDeferralLedger([nightlyReport], registry, "nightly", dir, "2026-08-15");
+
+    const ciReport = (): GameCiGateReport => ({
+      kind: "two-player",
+      gameId: manifest.id,
+      ok: true,
+      report: {
+        gameId: manifest.id,
+        suite: "ci",
+        ok: true,
+        gates: [
+          { gate: "strong-vs-random", status: "deferred", detail: "measured at nightly" },
+          { gate: "first-player-win-rate", status: "deferred", detail: "measured at nightly" },
+          { gate: "ruthless-vs-standard", status: "n/a", detail: "no standard tier — structural" },
+          { gate: "solved-value-reached", status: "n/a", detail: "no solvedValue proof — structural" },
+        ] as never,
+        matchups: null,
+      },
+    });
+    const gated = await applyDeferralLedger([ciReport()], registry, "ci", dir, "2026-08-16");
+    expect(gated[0]!.aging?.rows[0]!.ageDays).toBe(1); // discharged last night, not stuck at since=2026-08-01
+    expect(gated[0]!.effectiveOk).toBe(true);
   });
 });

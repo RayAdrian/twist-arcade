@@ -1,0 +1,22 @@
+solo-ci (score-chase) for "mine-run" — STALLED — 8/10 applicable gates (80%) undischarged past 7d — at or past the 50% materiality bar (platform-corrections.md C70)
+  [DEFER] strongVsRandomRatio: measured at nightly (Strong-dependent; ~165s/seed at soloChaseCiRollouts=750 on the real 10x10/20-mine board (up to 83min/seed at higher search) — ~4.6h at seedCount=100 in CI — platform-corrections.md C27) — undischarged 8d (STALE; warn>=7d, fatal>=30d)
+  [DEFER] distributionOverlap: measured at nightly (Strong-dependent; ~165s/seed at soloChaseCiRollouts=750 on the real 10x10/20-mine board (up to 83min/seed at higher search) — ~4.6h at seedCount=100 in CI — platform-corrections.md C27) — undischarged 8d (STALE; warn>=7d, fatal>=30d)
+  [PASS] greedyVsRandomRatio: 15.545 (fail if < 1.2)
+  [DEFER] strongVsGreedyRatio: measured at nightly (Strong-dependent; ~165s/seed at soloChaseCiRollouts=750 on the real 10x10/20-mine board (up to 83min/seed at higher search) — ~4.6h at seedCount=100 in CI — platform-corrections.md C27) — undischarged 8d (STALE; warn>=7d, fatal>=30d)
+  [DEFER] strongScoreCV: measured at nightly (Strong-dependent; ~165s/seed at soloChaseCiRollouts=750 on the real 10x10/20-mine board (up to 83min/seed at higher search) — ~4.6h at seedCount=100 in CI — platform-corrections.md C27) — undischarged 8d (STALE; warn>=7d, fatal>=30d)
+  [DEFER] alwaysSafeVsStrong: measured at nightly (Strong-dependent; ~165s/seed at soloChaseCiRollouts=750 on the real 10x10/20-mine board (up to 83min/seed at higher search) — ~4.6h at seedCount=100 in CI — platform-corrections.md C27) — undischarged 8d (STALE; warn>=7d, fatal>=30d)
+  [PASS] grindProbe: no zero-risk unbounded cycle found
+  [DEFER] medianRunLength: measured at nightly (Strong-dependent; ~165s/seed at soloChaseCiRollouts=750 on the real 10x10/20-mine board (up to 83min/seed at higher search) — ~4.6h at seedCount=100 in CI — platform-corrections.md C27) — undischarged 8d (STALE; warn>=7d, fatal>=30d)
+  [DEFER] capHitRate: measured at nightly (Strong-dependent; ~165s/seed at soloChaseCiRollouts=750 on the real 10x10/20-mine board (up to 83min/seed at higher search) — ~4.6h at seedCount=100 in CI — platform-corrections.md C27) — undischarged 8d (STALE; warn>=7d, fatal>=30d)
+  [DEFER] ceilingPileUp: measured at nightly (Strong-dependent; ~165s/seed at soloChaseCiRollouts=750 on the real 10x10/20-mine board (up to 83min/seed at higher search) — ~4.6h at seedCount=100 in CI — platform-corrections.md C27) — undischarged 8d (STALE; warn>=7d, fatal>=30d)
+  [N/A ] suicideProbe: not misère-tagged
+  [N/A ] certificatePresent: score-chase format — no daily certificate pipeline
+  [N/A ] certificatePar: score-chase format — no par to certify
+  [N/A ] randomPlayoutSolveRate: score-chase format — no single 'solve' to rate
+  [N/A ] forcedMoveFraction: score-chase format — no optimal solve path to measure
+  [N/A ] generatorRejectionRate: score-chase format — no certify-time generator
+  [N/A ] dayOverDayDrift: score-chase format — no daily difficulty band
+  [N/A ] certifiedBufferDays: score-chase format — no certificate buffer to deplete
+  [N/A ] fogDeductionOnly: score-chase format — no daily certificate, no guess-free requirement to check
+
+ci-gates: 1/1 game(s) failed their gate table (ci).

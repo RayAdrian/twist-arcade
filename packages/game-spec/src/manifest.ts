@@ -142,8 +142,24 @@ export interface GameManifest {
      *  independently by `evaluateCiGates`/`evaluateSoloGates` themselves refusing
      *  (`TwoPlayerDeferredGateAtNightlyError` / `SoloDeferredGateAtNightlyError`) if a caller
      *  ever tries to defer at "nightly" too — a row deferred at EVERY tier is a gate that never
-     *  runs, and that must be a loud failure, never a quiet status. */
-    deferGatesToNightly?: { reason: string };
+     *  runs, and that must be a loud failure, never a quiet status.
+     *
+     *  `since` (platform-corrections.md C70): the UTC day ("YYYY-MM-DD") THIS deferral — this
+     *  exact `reason`/gate set — was declared, i.e. when a team is authoring or materially
+     *  changing this field, they set `since` to that same day (git blame on this field is the
+     *  audit trail; `since` is what a machine reads without shelling out to git). This is the
+     *  anchor `@twist-arcade/harness`'s deferral-discharge ledger (`deferral-ledger.ts`) ages
+     *  an undischarged deferral FROM — a deferral is a promise about the future ("nightly will
+     *  measure this"), and C68 established nightly can go dark for arbitrarily long (billing,
+     *  not code); `since` is what lets the ledger say how long the promise has gone unkept
+     *  without trusting whatever day it happens to first be READ.
+     *
+     *  Optional only because the ledger degrades safely without it — omitting `since` makes the
+     *  ledger anchor to the day it FIRST OBSERVES this deferral, which UNDERSTATES age for any
+     *  deferral that predates the ledger's own rollout (exactly the trap this field exists to
+     *  avoid). Every real deferral should set it; test fixtures that never touch the ledger do
+     *  not need to. */
+    deferGatesToNightly?: { reason: string; since?: string };
   };
 
   /** Game-theoretic value under optimal play, WHEN PROVEN (platform-corrections.md C23).
