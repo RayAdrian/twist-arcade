@@ -32,6 +32,7 @@ function fakeMatchupReport(): MatchupReport {
       p95Plies: 5,
       meanBranchingFactor: 3,
       capHitRate: 0,
+      mirrorFallbackRate: null,
     },
     throughputGamesPerSec: 100,
     outcomes: [],

@@ -322,4 +322,61 @@ describe("mirrorAgent() wiring (mirror is per-game — the runner just has to ca
     // size 1; a real uniform draw makes that astronomically unlikely.
     expect(seenFirstMoves.size).toBeGreaterThan(1);
   });
+
+  // platform-corrections.md C81 / task #26: the null-fallback substitution above was previously
+  // invisible to the harness once it happened — nothing counted it. A mirror row scoring "0% win
+  // rate" could mean "mirrored and lost every game" or "never mirrored at all, lost to
+  // deterministic fallback play," and a report had no way to tell the two apart. `GameOutcome`
+  // now records, per game, how many of the mirror seat's own moves were real reflections vs.
+  // fallback substitutions, and `computeMatchupMetrics` aggregates that into
+  // `MatchupMetrics.mirrorFallbackRate` — the fraction of the mirror agent's own moves this
+  // matchup that were fallback, not an actual mirror.
+  it("a mirrorMove that ALWAYS returns null: every one of its own moves counts as a fallback substitution (mirrorFallbackRate === 1)", () => {
+    const alwaysNullMirror = mirrorAgent<TTTState, TTTMove>(() => null);
+    const opponent = resolveNamedAgent<TTTState, TTTMove>("random");
+    const report = runMatchup(classicTicTacToe, opponent, alwaysNullMirror, {
+      games: 10,
+      seed: "runner-test:mirror-fallback-rate-always-null",
+      mirrorSeats: false,
+    });
+    for (const outcome of report.outcomes) {
+      expect(outcome.mirrorFallbackCount).toBe(outcome.mirrorMoveCount);
+      expect(outcome.mirrorMoveCount).toBeGreaterThan(0);
+    }
+    expect(report.metrics.mirrorFallbackRate).toBe(1);
+  });
+
+  it("a mirrorMove that ALWAYS reflects successfully (never falls back): mirrorFallbackRate === 0", () => {
+    // classic-ttt's own point-reflection, always legal on an empty-ish opening (worst case it
+    // isn't, but center-first openings on this board always have their reflection free) — using
+    // a policy that always finds a legal reflection would be state-dependent to construct exactly,
+    // so instead this fakes an agent that reports "no fallback" by mirroring corridor's single-
+    // legal-move-per-ply shape, where the reflected target coincides with the only legal move by
+    // construction (the fixture's own "always play right" policy, reused as a mirror).
+    const alwaysSucceedsMirror = mirrorAgent<CorridorState, CorridorMove>((_state, _lastOppMove, legal) => legal[0]!);
+    const rusher = resolveNamedAgent<CorridorState, CorridorMove>("rush");
+    const report = runMatchup(corridor, alwaysSucceedsMirror, rusher, {
+      games: 5,
+      seed: "runner-test:mirror-fallback-rate-always-succeeds",
+      mirrorSeats: false,
+    });
+    for (const outcome of report.outcomes) {
+      expect(outcome.mirrorFallbackCount).toBe(0);
+      expect(outcome.mirrorMoveCount).toBeGreaterThan(0);
+    }
+    expect(report.metrics.mirrorFallbackRate).toBe(0);
+  });
+
+  it("a matchup with NO mirror agent at all reports mirrorFallbackRate: null (never 0 — 0 would falsely claim perfect mirror content)", () => {
+    const random = resolveNamedAgent<TTTState, TTTMove>("random");
+    const report = runMatchup(classicTicTacToe, random, resolveNamedAgent<TTTState, TTTMove>("greedy"), {
+      games: 5,
+      seed: "runner-test:mirror-fallback-rate-no-mirror",
+    });
+    expect(report.metrics.mirrorFallbackRate).toBeNull();
+    for (const outcome of report.outcomes) {
+      expect(outcome.mirrorMoveCount).toBe(0);
+      expect(outcome.mirrorFallbackCount).toBe(0);
+    }
+  });
 });

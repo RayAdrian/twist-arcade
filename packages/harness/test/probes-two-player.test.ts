@@ -40,7 +40,7 @@ function tttMirrorMove(_state: TTTState, lastOppMove: TTTMove | null, legalMoves
 // from a clone of this and perturbs exactly one field, so a test failure always isolates to the
 // one threshold it claims to be testing (mirrors suites.test.ts's own HEALTHY convention).
 const HEALTHY: ProbeGateInputs = {
-  mirror: { kind: "available", winRate: 0.1, drawRate: 0.1 },
+  mirror: { kind: "available", winRate: 0.1, drawRate: 0.1, mirrorFallbackRate: 0 },
   stallCapHitRate: 0,
   stallWinRate: 0.05,
   rushScore: 0.2,
@@ -89,7 +89,7 @@ describe("evaluateProbeGates() — mirror-probe exclusivity (plan §4.3)", () =>
     for (const mirror of [
       { kind: "suppressed" as const },
       { kind: "unavailable" as const, reason: "x" },
-      { kind: "available" as const, winRate: 0.1, drawRate: 0.1 },
+      { kind: "available" as const, winRate: 0.1, drawRate: 0.1, mirrorFallbackRate: 0 },
     ]) {
       const gates = evaluateProbeGates({ ...HEALTHY, mirror }, DEFAULT_HARNESS_THRESHOLDS, [], "ci");
       const rows = gates.filter((g) => g.gate === "mirror-probe");
@@ -101,17 +101,17 @@ describe("evaluateProbeGates() — mirror-probe exclusivity (plan §4.3)", () =>
 describe("evaluateProbeGates() — planted violations, one gate at a time", () => {
   it("mirror-probe: win rate < 40% passes", () => {
     expect(statusOf(HEALTHY, "mirror-probe")).toBe("pass"); // control
-    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.39, drawRate: 0.1 } }, "mirror-probe")).toBe("pass");
+    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.39, drawRate: 0.1, mirrorFallbackRate: 0 } }, "mirror-probe")).toBe("pass");
   });
 
   it("mirror-probe: win rate in [40%, 50%) warns", () => {
-    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.4, drawRate: 0.1 } }, "mirror-probe")).toBe("warn"); // boundary inclusive
-    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.49, drawRate: 0.1 } }, "mirror-probe")).toBe("warn");
+    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.4, drawRate: 0.1, mirrorFallbackRate: 0 } }, "mirror-probe")).toBe("warn"); // boundary inclusive
+    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.49, drawRate: 0.1, mirrorFallbackRate: 0 } }, "mirror-probe")).toBe("warn");
   });
 
   it("mirror-probe: win rate >= 50% fails at nightly, but WARNS at ci (severity split, plan §1.4)", () => {
-    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.5, drawRate: 0.1 } }, "mirror-probe", "nightly")).toBe("fail");
-    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.5, drawRate: 0.1 } }, "mirror-probe", "ci")).toBe("warn");
+    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.5, drawRate: 0.1, mirrorFallbackRate: 0 } }, "mirror-probe", "nightly")).toBe("fail");
+    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.5, drawRate: 0.1, mirrorFallbackRate: 0 } }, "mirror-probe", "ci")).toBe("warn");
   });
 
   // STAGE-6 FINDING (recorded, not fixed in-branch — see MirrorProbeInput's own doc): the
@@ -121,7 +121,7 @@ describe("evaluateProbeGates() — planted violations, one gate at a time", () =
   // is recorded in the detail (not gated on).
   it("KNOWN GAP: a mirror that draws 100% of its games (the exact pathology game-theory-lens §5.4 names) still PASSES — wins/games cannot see it; the draw rate is recorded in the detail only", () => {
     const gates = evaluateProbeGates(
-      { ...HEALTHY, mirror: { kind: "available", winRate: 0, drawRate: 1.0 } },
+      { ...HEALTHY, mirror: { kind: "available", winRate: 0, drawRate: 1.0, mirrorFallbackRate: 0 } },
       DEFAULT_HARNESS_THRESHOLDS,
       [],
       "ci"
@@ -129,6 +129,35 @@ describe("evaluateProbeGates() — planted violations, one gate at a time", () =
     const mirror = gates.find((g) => g.gate === "mirror-probe")!;
     expect(mirror.status).toBe("pass"); // the gap: this SHOULD be actionable and isn't, today
     expect(mirror.detail).toContain("100.0%"); // the draw rate is at least visible in the report
+  });
+
+  // platform-corrections.md C81 / task #26: the Nine Grids finding — a mirror row that scores
+  // "0% win rate" gave no way to tell "mirrored and lost every game" apart from "never mirrored
+  // at all, lost to deterministic first-legal-move fallback play" (measured 85.7% fallback for
+  // Nine Grids through the real matchup shape, entirely invisible to the report before this).
+  // `mirrorFallbackRate` closes that — recorded in the detail, NOT gated on (same posture as
+  // `drawRate` above: this is disclosure, not a new pass/fail condition).
+  it("mirror-probe detail discloses mirror content vs. fallback rate (recorded only, never gated on)", () => {
+    const mostlyFallback = evaluateProbeGates(
+      { ...HEALTHY, mirror: { kind: "available", winRate: 0.05, drawRate: 0.1, mirrorFallbackRate: 0.857 } },
+      DEFAULT_HARNESS_THRESHOLDS,
+      [],
+      "ci"
+    );
+    const mirror = mostlyFallback.find((g) => g.gate === "mirror-probe")!;
+    // Still governed entirely by winRate (5% < 40% warn threshold) — mirrorFallbackRate never
+    // changes the verdict, only the detail text.
+    expect(mirror.status).toBe("pass");
+    expect(mirror.detail).toContain("mirror content 14.3%");
+    expect(mirror.detail).toContain("85.7% of this agent's own moves were the harness's null-target fallback");
+
+    const allMirroring = evaluateProbeGates(
+      { ...HEALTHY, mirror: { kind: "available", winRate: 0.05, drawRate: 0.1, mirrorFallbackRate: 0 } },
+      DEFAULT_HARNESS_THRESHOLDS,
+      [],
+      "ci"
+    );
+    expect(allMirroring.find((g) => g.gate === "mirror-probe")!.detail).toContain("mirror content 100.0%");
   });
 
   it("stall-probe: any nonzero cap-hit rate warns, even with a healthy win rate", () => {
@@ -359,6 +388,24 @@ describe("runProbeSuite() — real self-play wiring", () => {
     const mirror = report.gates.find((g) => g.gate === "mirror-probe")!;
     expect(["pass", "warn", "fail"]).toContain(mirror.status);
     expect(report.matchups!.mirror).not.toBeNull();
+  });
+
+  // platform-corrections.md C81 / task #26: a REAL mirrorFallbackRate, wired end to end from
+  // runner.ts's own per-ply counting through MatchupMetrics into the gate detail — never a
+  // hand-built number. classic-ttt's own tttMirrorMove fixture returns null whenever the
+  // reflected cell isn't currently legal (its own doc comment above), so a real run against a
+  // real ruthless opponent genuinely produces SOME fallback substitutions to measure.
+  it("mirrorFallbackRate is wired end to end from a REAL matchup's own fallback substitutions, matching MatchupReport's own count exactly", () => {
+    const report = runProbeSuite(classicTicTacToe, baseManifest(), {
+      seed: "probes-two-player:mirror-fallback-real",
+      games: 30,
+      mirrorMove: tttMirrorMove,
+    });
+    const mirrorMatchup = report.matchups!.mirror!;
+    const expectedRate = mirrorMatchup.metrics.mirrorFallbackRate;
+    expect(expectedRate).not.toBeNull();
+    const mirror = report.gates.find((g) => g.gate === "mirror-probe")!;
+    expect(mirror.detail).toContain(`mirror content ${((1 - expectedRate!) * 100).toFixed(1)}%`);
   });
 
   it("omitting mirrorMove (undeclared manifest) reports mirror-probe n/a and runs NO mirror matchup", () => {
