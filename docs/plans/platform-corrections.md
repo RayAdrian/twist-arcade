@@ -4782,3 +4782,79 @@ instance of it.
    trap. The reducer only recomputes `current` at the next completion, so a dead streak would render
    indefinitely. Unreachable today — nothing in `app/` passes `opts.daily`, so no user can have a
    nonzero streak — which is exactly why it must be written down now rather than discovered later.
+
+## C78 — The gradient is real, and it points the wrong way. 6.6 seconds, nothing built.
+
+The C73 remedy plan recommended heuristic leaf evaluation and pre-registered R1: the recommendation
+is refuted if `tanh(heuristic)`'s own-bid ordering disagrees with the exact oracle at the root, or at
+more than 20% of sampled reachable auction states. **R1 fired**, at a cost of one oracle solve and
+microseconds of arithmetic. Raw output:
+`docs/research/games/bid-tac-toe-rollout-evaluation-exp1.out`.
+
+| | root | sampled (n=4,003) |
+|---|---|---|
+| seat 0 | top = **{0}**, optimal = **{3}** — disagree | **35.97%** disagreement |
+| seat 1 | top = **{0}**, optimal = **{2\*, 3, 3\*}** — disagree | **37.97%** disagreement |
+
+### The mechanism claim was half right, which is the useful part
+
+The plan asserted a monotone gradient over payment. **That half is confirmed:** the −2p reading was
+verified against the code (`heuristic.ts:28` is the chip difference; `engine.ts:291–293` transfers the
+payment from winner to loser), and the value spreads are genuinely nonzero — median 0.538 and 1.462,
+max 2.0. This is **not** the pre-fix "every bid ≈ 0" flatness. A gradient exists where none did.
+
+**It just points at the wrong bids.** Both seats' top-ranked bid is 0; the exact answer is 3.
+
+### Why, and it is visible by reading the heuristic
+
+```
+score  = budgets[seat] - budgets[opponent]   // ±8 scale, and ∓2p per auction
+score += star ? 0.5 : -0.5                   // ±0.5
+for each line: +1 / -1                       // ±1 per live line
+```
+
+**The chip term outweighs the positional term by roughly an order of magnitude in early play.** Bidding
+0 maximises the dominant term directly. So the heuristic does not price the auction — **it prices
+chips**, and treats the board as a rounding error.
+
+That reframes C73's headline. It is not that *rollouts* cannot price an auction; it is that **this
+game's evaluation function values the wrong thing, and nothing ever noticed because nothing ever
+invoked it.** Same species as C64's uncalled probe: code that exists, looks wired, and has never once
+been executed against ground truth.
+
+### The escalation path in the plan is now doubtful too
+
+The plan's R1 escalation named candidate B — a heuristic-*guided* rollout policy. **B uses the same
+heuristic.** A greedy rollout steered by a function that prefers hoarding chips will prefer hoarding
+chips. B plausibly inherits the entire defect while costing a refactor of `rolloutToHorizon` — shared
+by every shipped game's Strong — and forfeiting the byte-identity guarantee. **Do not escalate to B on
+autopilot.**
+
+The plan's *third* listed option is now the indicated one: **an oracle-informed revision of
+`heuristic()` itself.**
+
+**This is not C55-banned tuning, and the distinction matters.** C55 bans moving a *threshold or gate*
+so a result passes — changing the yardstick to fit the measurement. Correcting a game's evaluation
+function against an exact oracle is the opposite: fixing code against ground truth, in an unshipped
+game, judged by a proof rather than by a gate. The rule that keeps it honest is that it is **never**
+judged against the gate table.
+
+### What this experiment bought
+
+A **static, exact, 6.6-second fitness function for the heuristic.** `createExactOracle` plus this
+check gives ordering agreement against 4,003 reachable states with no search at all. Any revision can
+be scored before a single game is played — and, per C76, still has to clear the head-to-head before
+it means anything.
+
+**Stated honestly about the sample:** 4,003 distinct bid-phase states from 746 seeded random
+trajectories, depth-stratified 0–8 marks. That is biased toward typical random play rather than
+uniform over the ~1.37M reachable states — which is exactly why R1 was pre-registered as a 20%
+threshold over a large sample rather than a single-state check. At 36–38% it is not close to the line.
+
+### The process point
+
+This is what the discipline is for. The plan named its own refutation condition, the cheapest possible
+test of it, and the threshold — all before any code existed. The test ran in **6.6 seconds** and
+killed the recommendation. Compare C73→C76, where a selection-rule remedy consumed an implementation,
+four measurement rounds and two corrections before losing 300–89 head-to-head. **The order in which
+you test candidates is worth more than which candidate you pick first.**
