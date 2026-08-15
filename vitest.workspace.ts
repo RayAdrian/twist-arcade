@@ -10,4 +10,7 @@ export default defineWorkspace([
   "games/*/",
   "scripts/",
   "supabase/",
+  // Riso Zine home direction (design 1b): the home page's one client island (StreakBadge.tsx)
+  // needed a real test project — app/** had none before this. See app/vitest.config.ts.
+  "app/",
 ]);

@@ -48,6 +48,58 @@
   .edge-hand {
     border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
   }
+
+  /* Riso Zine home direction (design 1b) — the masthead wordmark's rust text-shadow offset
+   * ("overprint" misregistration on the type itself, distinct from Move 2's box-shadow offset
+   * on cards/buttons). Tailwind has no built-in text-shadow utility in this project's v3
+   * config, so this follows the same "@layer utilities, hand-authored" pattern as
+   * `.font-texture`/`.edge-hand` above rather than an inline style (inline styles can't
+   * participate in the `motion-reduce`/print-shadow token system and would hardcode the
+   * literal color outside tokens.css). Decorative only — the wordmark's actual text color
+   * carries 100% of its own contrast requirement on its own (verified in
+   * tokens.contrast.test.ts); this shadow is never load-bearing for legibility.
+   */
+  .text-shadow-overprint {
+    text-shadow: 2px 2px 0 var(--accent-p2);
+  }
+
+  /* Riso Zine home direction (design 1b) — the squiggle divider between home sections
+   * (ui-direction.md §1.2 Move 6: "an inline SVG hand-wavering horizontal path... replacing
+   * straight <hr>s"). A tiled SVG background (like `.bg-grain` above) rather than a literal
+   * inline <path>, so it's one small utility class usable from a plain `<hr>`-like element with
+   * no per-instance markup; ink-muted stroke at hairline weight, matching the token spec. */
+  .divider-squiggle {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='8' viewBox='0 0 48 8'%3E%3Cpath d='M0 4 Q6 0 12 4 T24 4 T36 4 T48 4' fill='none' stroke='%235b5347' stroke-width='1'/%3E%3C/svg%3E");
+    background-repeat: repeat-x;
+    background-size: 48px 8px;
+  }
+
+  :root.dark .divider-squiggle {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='8' viewBox='0 0 48 8'%3E%3Cpath d='M0 4 Q6 0 12 4 T24 4 T36 4 T48 4' fill='none' stroke='%23b7ae9c' stroke-width='1'/%3E%3C/svg%3E");
+  }
+}
+
+/* Riso Zine home direction (design 1b) — the hero panel's floating tile-grid motif
+ * (ui-direction.md-style "hand moment", decorative only, `aria-hidden`). A gentle bob, never a
+ * spin or a large translation — restates nothing about game state (there is no live board on
+ * this page's hero; see app/page.tsx's module doc), so it is pure atmosphere and safe to run
+ * indefinitely. Declared OUTSIDE `@layer utilities` (matching the reduced-motion blanket below
+ * it) so its keyframe percentages aren't subject to Tailwind's layer-ordering; the blanket
+ * media query below is what actually gates it for `prefers-reduced-motion: reduce` (collapses
+ * `animation-duration` to 0.01ms), so no separate `motion-safe:` gate is needed on `.ta-float`
+ * itself. */
+@keyframes ta-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.ta-float {
+  animation: ta-float 4s var(--ease) infinite;
 }
 
 /* UI direction §5.3, R3 — Motion One does NOT respect `prefers-reduced-motion` on its own (its

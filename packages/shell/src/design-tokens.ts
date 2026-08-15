@@ -34,6 +34,10 @@ export interface ThemeTokens {
    *  contrast math runs against (it never sits behind text), so it is intentionally excluded
    *  from every contrastRatio() assertion below. */
   shadowPrint: string;
+  /** Riso Zine home direction (design 1b) — the home page's cream body wash, distinct from
+   *  `paper` (see tokens.css's own comment on this token for the full rationale). Chrome-only,
+   *  home-page-only; never used behind board cells. */
+  paperZine: string;
 }
 
 export const LIGHT: ThemeTokens = {
@@ -47,6 +51,7 @@ export const LIGHT: ThemeTokens = {
   paperShade: "#f1ead9",
   marker: "#f6e7b0",
   shadowPrint: "#262019",
+  paperZine: "#f4efe2",
 };
 
 export const DARK: ThemeTokens = {
@@ -60,6 +65,7 @@ export const DARK: ThemeTokens = {
   paperShade: "#100d09",
   marker: "#3a3120",
   shadowPrint: "rgba(242, 236, 223, 0.25)",
+  paperZine: "#191510",
 };
 
 /** Print-shop stroke scale (UI direction §1.3, Move 4) — replaces the old uniform 1px border.

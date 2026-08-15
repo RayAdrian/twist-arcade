@@ -82,6 +82,7 @@ export {
 } from "./share-frame";
 export { pickNextTwist } from "./next-twist";
 export { buildShelves, type Shelf } from "./shelves";
+export { cardTiltClass, pickFeaturedManifest, shouldShowStreakFlame } from "./home";
 export { applyDailyCompletion, INITIAL_STREAK, readStreak, recordDailyCompletion, writeStreak, type StreakRecord } from "./streak";
 export { vibrate, type HapticPattern } from "./haptics";
 export { dailyKey, firstsKey, gameKey, readVersioned, removeVersioned, writeVersioned, SETTINGS_KEY } from "./persistence";
