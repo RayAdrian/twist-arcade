@@ -27,6 +27,8 @@ const config: Config = {
         "paper-lift": "var(--paper-lift)",
         "paper-shade": "var(--paper-shade)",
         marker: "var(--marker)",
+        // Riso Zine home direction (design 1b) — cream body wash, home-page-only.
+        "paper-zine": "var(--paper-zine)",
       },
       opacity: {
         "age-1": "var(--age-1)",

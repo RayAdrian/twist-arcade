@@ -50,6 +50,14 @@
   --marker: #f6e7b0;
   --shadow-print: #262019;
 
+  /* Riso Zine home direction (design 1b) — the page-level "cream body" wash behind the
+   * masthead/hero/shelves, DISTINCT from `--paper` (used elsewhere as the default app
+   * background AND, on this page, as the text color laid over the accent-filled masthead/hero
+   * bands — see app/page.tsx). Chrome-only, home-page-only; never used behind board cells.
+   * MUST byte-match design-tokens.ts's `paperZine`; test/tokens.contrast.test.ts cross-checks
+   * this the same way it does every other token here. */
+  --paper-zine: #f4efe2;
+
   /* Print-shop stroke scale (Move 4) — theme-invariant, declared once here, never overridden
    * inside :root.dark below. */
   --stroke-hairline: 1px;
@@ -83,6 +91,12 @@
   --paper-shade: #100d09;
   --marker: #3a3120;
   --shadow-print: rgba(242, 236, 223, 0.25);
+
+  /* Riso Zine home direction (design 1b) — dark counterpart to --paper-zine above. A hair
+   * lighter/warmer than the base dark --paper (#17140f) so the home page's body wash reads as
+   * a distinct surface, without colliding with --paper-lift (#201b13, the RAISED-sheet tier)
+   * — this is a recessed-adjacent body tone, not a raised one. */
+  --paper-zine: #191510;
 
   color-scheme: dark;
 }

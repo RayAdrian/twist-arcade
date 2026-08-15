@@ -48,6 +48,12 @@ importers:
       '@size-limit/file':
         specifier: ^13.0.3
         version: 13.0.3(size-limit@13.0.3)
+      '@testing-library/jest-dom':
+        specifier: ^6.6.3
+        version: 6.10.0(@testing-library/dom@10.4.1)
+      '@testing-library/react':
+        specifier: ^16.1.0
+        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@twist-arcade/crackstep':
         specifier: workspace:*
         version: link:games/crackstep
@@ -84,6 +90,9 @@ importers:
       fast-check:
         specifier: ^3.22.0
         version: 3.23.2
+      jsdom:
+        specifier: ^25.0.1
+        version: 25.0.1(supports-color@7.2.0)
       pg:
         specifier: ^8.22.0
         version: 8.22.0

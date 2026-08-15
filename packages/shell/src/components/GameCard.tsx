@@ -6,10 +6,16 @@
 // play affordance. Only the material dressing changes here — paper-lift surface, the print-
 // shop stroke/shadow scale, and the three type faces (§1.1) — nothing about what's rendered or
 // its accessible structure moved.
+//
+// "a twist on {classic}" is derived via classicAttributionLine (../manifest-copy), not a raw
+// template string: Crackstep's `classic` is an explanatory placeholder
+// ("N/A — an original twist on a floor-coverage path puzzle"), and prefixing it directly
+// produced a garbled line on its card — see manifest-copy.ts's own doc for the full story.
 
 import type { ReactNode } from "react";
 import Link from "next/link";
 import type { GameManifest } from "@twist-arcade/game-spec";
+import { classicAttributionLine } from "../manifest-copy";
 
 export interface GameCardProps {
   manifest: GameManifest;
@@ -18,6 +24,7 @@ export interface GameCardProps {
 }
 
 export function GameCard({ manifest, glyph, featured }: GameCardProps) {
+  const attribution = classicAttributionLine(manifest.classic);
   return (
     <Link
       href={`/play/${manifest.id}`}
@@ -34,7 +41,7 @@ export function GameCard({ manifest, glyph, featured }: GameCardProps) {
         {glyph ?? "◇"}
       </div>
       <h3 className="font-display text-xl font-semibold text-ink">{manifest.title}</h3>
-      <p className="text-sm text-ink-muted">a twist on {manifest.classic}</p>
+      {attribution && <p className="text-sm text-ink-muted">{attribution}</p>}
       <p className="mt-2 font-texture text-ink-muted line-clamp-3">{manifest.ruleSentence}</p>
       <ul className="mt-2 flex flex-wrap gap-2 font-mono text-[0.7rem] uppercase tracking-wide text-ink-muted">
         {manifest.tags.map((tag) => (

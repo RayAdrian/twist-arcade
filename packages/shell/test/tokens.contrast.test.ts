@@ -62,6 +62,11 @@ describe("tokens.css matches design-tokens.ts (no silent drift)", () => {
       expect(cssVars["marker"]).toBe(ts.marker);
       expect(cssVars["shadow-print"]).toBe(ts.shadowPrint);
     });
+
+    // Riso Zine home direction (design 1b) — the new cream-body token.
+    it(`${name} theme: paperZine matches`, () => {
+      expect(cssVars["paper-zine"]).toBe(ts.paperZine);
+    });
   }
 
   it("age-1/age-2 opacity tokens are present and match AGE_OPACITY", () => {
@@ -107,6 +112,20 @@ describe("WCAG contrast (plan §9.1 / ux-lens §2, §8) — both themes", () => 
       expect(contrastRatio(t.accentP2, t.paper)).toBeGreaterThanOrEqual(3);
     });
 
+    // Riso Zine home direction (design 1b): the masthead (bg-accent-p1) and hero panel
+    // (bg-accent-p2) are solid full-bleed chrome bands with `paper` set as their TEXT color
+    // (app/page.tsx) — a genuine text/background pair, held to the 4.5:1 TEXT floor (stricter
+    // than the 3:1 non-text floor already asserted above for the same two colors in their
+    // board-material role). This is the one place this build intentionally uses an accent hue
+    // as a decorative fill rather than a player signal (ui-direction.md §0's "accent = player,
+    // everywhere" rule) — scoped to page-level chrome that never sits near an actual board cell
+    // or piece, so it can't be misread as game state; see app/page.tsx's own module doc for the
+    // full reasoning. This assertion is what makes that call empirically safe, not just argued.
+    it(`${name}: paper vs accentP1/accentP2 >= 4.5:1 (masthead/hero band text, design 1b)`, () => {
+      expect(contrastRatio(t.paper, t.accentP1)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(t.paper, t.accentP2)).toBeGreaterThanOrEqual(4.5);
+    });
+
     it(`${name}: the age-2 (faintest) floor keeps ink AND both accents >= 3:1 against paper`, () => {
       // This is the governing rule from plan §9.1: "if an accent value can't [hit 3:1 at the
       // floor], the accent changes, not the floor" — here it was the FLOOR PERCENTAGE that
@@ -149,6 +168,11 @@ describe("UI direction §1.3 (Move 5) — paper tiers + marker are decorative-on
     // never to the non-text 3:1 floor accents are held to elsewhere.
     it(`${name}: ink vs marker >= 4.5:1 (highlighter tint: daily hero band, aha-callout, "Copied" pill)`, () => {
       expect(contrastRatio(t.ink, t.marker)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    // Riso Zine home direction (design 1b) — the home page's cream body wash.
+    it(`${name}: ink vs paperZine >= 4.5:1 (home page body wash)`, () => {
+      expect(contrastRatio(t.ink, t.paperZine)).toBeGreaterThanOrEqual(4.5);
     });
   }
 });
