@@ -56,6 +56,9 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 
 | probes (C64: wire the two-player degeneracy probe suite — mirror, stall, rush — into CI; all three are implemented and roster-resolvable but none is computed for any game, `docs/plans/platform-corrections.md` C64) | `../claude-project-probes` | `feature/degeneracy-probes` | `twistarcade_probes` | 56621–56629 | not started (no DB) — harness/CI wiring only, no game code touches Postgres | ACTIVE — verified free with BOTH `lsof -nP -iTCP:<port> -sTCP:LISTEN` (all silent) AND `docker ps` (no container publishes a 566xx port), per C62 |
 
+| deferrals (C70: make an undischarged gate deferral visible and eventually fatal — Mine Run defers 8/10 gates to a nightly that has never run, `docs/plans/platform-corrections.md` C68/C70) | `../claude-project-deferrals` | `feature/deferral-discharge` | `twistarcade_deferrals` | 56821–56829 | not started (no DB) — harness/gate-table work only | ACTIVE — verified free with `lsof` AND `docker ps` per C62 |
+| tsconfig (C72: automate the tsconfig-coverage audit — two packages silently excluded real source from typecheck, `docs/plans/platform-corrections.md` C69/C72) | `../claude-project-tsconfig` | `feature/tsconfig-guard` | `twistarcade_tsconfig` | 56921–56929 | not started (no DB) — build-tooling only | ACTIVE — verified free with `lsof` AND `docker ps` per C62 |
+
 ## Port blocks
 
 | Block | Team | Status |
@@ -97,3 +100,5 @@ it is worth repeating whenever a team closes: **the registry is not the source o
 what is running — the filesystem is.** A row that says CLOSED next to a directory that still
 exists is exactly the leak §6 exists to prevent.
 | 56621–56629 (team 23) | probes | CLAIMED 2026-08-12 — verified free with `lsof` AND `docker ps` before claiming (C62's lesson) |
+| 56821–56829 (team 24) | deferrals | CLAIMED 2026-08-15 — verified free with `lsof` AND `docker ps` |
+| 56921–56929 (team 25) | tsconfig | CLAIMED 2026-08-15 — verified free with `lsof` AND `docker ps` |
