@@ -44,19 +44,22 @@ describe("GameCard", () => {
     expect(await axe(container)).toHaveNoViolations();
   });
 
-  // Regression (orchestrator review of design 1b): Crackstep's real `classic` field is
-  // "N/A — an original twist on a floor-coverage path puzzle" (games/crackstep/manifest.ts) —
-  // an explanatory placeholder, not a classic-game name. Prefixing "a twist on " onto it
-  // rendered garbled copy on the card. Never render an "a twist on N/A..." line.
-  it("omits the attribution line for a classic starting with 'N/A' (e.g. Crackstep)", () => {
+  // Regression (orchestrator review of design 1b): Crackstep has no classic-game ancestor to
+  // attribute — an original design, not a twist on anything. Prefixing "a twist on " onto a
+  // placeholder string used to render garbled copy on the card. platform-corrections.md C77
+  // item 4 / task #23 replaced that string-sentinel convention with a real
+  // `classic: string | null` type — Crackstep's real manifest (games/crackstep/manifest.ts) now
+  // sets `classic: null`, so this test exercises `null` directly rather than an "N/A"-shaped
+  // string. The pinned behavior is unchanged: Crackstep shows no attribution line at all.
+  it("omits the attribution line when classic is null (e.g. Crackstep, no classic-game ancestor)", () => {
     const soloPuzzle: GameManifest = {
       ...manifest,
       id: "crackstep",
       title: "Crackstep",
-      classic: "N/A — an original twist on a floor-coverage path puzzle",
+      classic: null,
     };
     render(<GameCard manifest={soloPuzzle} />);
     expect(screen.queryByText(/a twist on/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/N\/A/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/null/i)).not.toBeInTheDocument();
   });
 });

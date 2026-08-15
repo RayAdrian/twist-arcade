@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { GameManifest } from "@twist-arcade/game-spec";
 import { buildShelves } from "../src/shelves";
 
-function manifest(id: string, classic: string): GameManifest {
+function manifest(id: string, classic: string | null): GameManifest {
   return {
     id,
     title: id,
@@ -89,5 +89,33 @@ describe("buildShelves — plan §8.2, scales 6 -> 40+ without rewrite", () => {
 
   it("an empty manifest list produces no shelves", () => {
     expect(buildShelves([])).toEqual([]);
+  });
+
+  // The case that motivated GameManifest.classic: string | null (platform-corrections.md C77
+  // item 4 / task #23): two ORIGINAL games (no classic-game ancestor, classic: null) must both
+  // land in "All games" and must NEVER be grouped into a shelf together, even though they share
+  // the same classic value. Under the old string-sentinel convention this only worked by
+  // accident — two distinct placeholder strings never collided in the grouping Map. `null` is a
+  // single shared value, so `null === null` would silently group them (and title the shelf
+  // "Twists on null") without the explicit routing buildShelves now does.
+  it("two original games sharing classic: null both land in 'All games' — never grouped into a shelf together", () => {
+    const manifests = [manifest("crackstep", null), manifest("some-other-original", null)];
+    const shelves = buildShelves(manifests);
+    expect(shelves).toHaveLength(1);
+    expect(shelves[0]!.title).toBe("All games");
+    expect(shelves[0]!.games.map((g) => g.id).sort()).toEqual([
+      "crackstep",
+      "some-other-original",
+    ]);
+    // No shelf keyed on the shared null value, garbled title or otherwise.
+    expect(shelves.some((s) => s.title.includes("null"))).toBe(false);
+  });
+
+  it("a single classic: null game lands in 'All games', same as any other singleton classic", () => {
+    const manifests = [manifest("crackstep", null), manifest("fadeout", "Tic-Tac-Toe")];
+    const shelves = buildShelves(manifests);
+    expect(shelves).toHaveLength(1);
+    expect(shelves[0]!.title).toBe("All games");
+    expect(shelves[0]!.games.map((g) => g.id).sort()).toEqual(["crackstep", "fadeout"]);
   });
 });

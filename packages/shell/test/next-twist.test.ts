@@ -69,6 +69,21 @@ describe("pickNextTwist — §8.3, the end-screen loop", () => {
     expect(result?.id).toBe("a-game");
   });
 
+  // The case that motivated GameManifest.classic: string | null (platform-corrections.md C77
+  // item 4 / task #23): two ORIGINAL games (classic: null) must never be ranked as "the same
+  // classic" just because null === null. Without the explicit guard in next-twist.ts's rank(),
+  // this would incorrectly rank 0 (highest priority) for two unrelated originals, the same
+  // species of accidental-grouping bug buildShelves guards against.
+  it("classic: null never counts as a same-classic match, even against another classic: null game", () => {
+    const current = manifest({ id: "crackstep", classic: null, tags: ["decay", "path"] });
+    const otherOriginal = manifest({ id: "some-other-original", classic: null, tags: ["puzzle"] });
+    const sharedTag = manifest({ id: "mine-run", classic: "Minesweeper", tags: ["decay"] });
+    const result = pickNextTwist("crackstep", [current, otherOriginal, sharedTag]);
+    // mine-run shares a tag (rank 1); otherOriginal shares nothing but classic (would be rank 0
+    // if null incorrectly matched null) — the fix means it falls to rank 2, so mine-run wins.
+    expect(result?.id).toBe("mine-run");
+  });
+
   it("is a pure function: same inputs always produce the same output", () => {
     const manifests = [
       manifest({ id: "fadeout", classic: "Tic-Tac-Toe" }),
