@@ -277,14 +277,16 @@ describe("mirrorAgent() wiring (mirror is per-game — the runner just has to ca
     }
   });
 
-  // C64 finding (docs/plans/degeneracy-probes.md): every shipped game's own mirrorMove
-  // (Fadeout/Tilt/Nine Grids probes.ts) is documented, verbatim, to return `null` when there is
-  // no opponent move yet to mirror or the reflected target is no longer legal, with "the
-  // harness's mirror-bot policy falls back to a random legal move in either case" — a fallback
-  // that was documented in three separate game packages but never actually implemented here.
-  // The only pre-existing exercise of a real mirrorMove (scripts/research/tilt-t4-gates.ts) sits
-  // outside scripts/tsconfig.json's own `include`, so this gap was never even typechecked, let
-  // alone tested. PLANTED VIOLATION: a mirrorMove that ALWAYS returns null must never crash the
+  // C64 finding (docs/plans/degeneracy-probes.md): Fadeout's and Tilt's own mirrorMove
+  // (probes.ts) are documented, verbatim, to return `null` when there is no opponent move yet
+  // to mirror or the reflected target is no longer legal, with "the harness's mirror-bot policy
+  // falls back to a random legal move in either case" — a fallback that was documented in two
+  // game packages but never actually implemented here (Nine Grids' own mirrorMove never returns
+  // null at all — it falls back INTERNALLY to `legalMoves[0]`, a corrected claim; see
+  // roster.ts's MirrorAgentSpec.mirrorMove doc for the full stage-6 note). The only pre-existing
+  // exercise of a real mirrorMove (scripts/research/tilt-t4-gates.ts) sits outside
+  // scripts/tsconfig.json's own `include`, so this gap was never even typechecked, let alone
+  // tested. PLANTED VIOLATION: a mirrorMove that ALWAYS returns null must never crash the
   // engine with an illegal/absent move — the runner must substitute a real legal move every time.
   it("a mirrorMove that ALWAYS returns null never crashes the engine — the runner substitutes a real legal move every ply (the documented, previously-unimplemented 'null -> fallback random' convention)", () => {
     const alwaysNullMirror = mirrorAgent<TTTState, TTTMove>(() => null);

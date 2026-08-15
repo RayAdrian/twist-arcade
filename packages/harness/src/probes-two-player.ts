@@ -66,12 +66,27 @@ import {
  *      posture `ruthless-vs-standard`'s "no standard tier" branch takes ahead of deferral in
  *      suites.ts).
  *    - `"available"`: not declared, a `mirrorMove` WAS resolved — `winRate` is the measured P2
- *      win rate (draws excluded) once self-play actually ran; NaN-poisoned (C4) when unreachable
- *      (deferred). */
+ *      win rate (wins/all games — see the gate's own detail-string comment for why "draws
+ *      excluded" is the wrong way to say this), `drawRate` is the SAME matchup's draw rate,
+ *      recorded (not gated on) per the stage-6 finding below. Both NaN-poisoned (C4) when
+ *      unreachable (deferred).
+ *
+ *  STAGE-6 FINDING, RECORDED NOT FIXED HERE: `game-theory-lens` §5.4 names the canonical mirror
+ *  degeneracy as "P2 copying P1's move through the center can force a draw (or worse)" — but
+ *  wins/games scores a mirror that draws 100% of its games as a 0% win rate, i.e. a clean PASS,
+ *  so this metric cannot fire on the exact pathology its own source document most emphasizes
+ *  (and strong-self-play's draw-rate gate does not catch it either, since that measures a
+ *  DIFFERENT matchup). The threshold NUMBERS (`mirrorProbeWinRateWarn`/`Fail`) are RECOVERED
+ *  (roadmap.md:258, game-theory-lens §2.7/§3.4); the METRIC BINDING — using wins/games at all,
+ *  rather than a parity-style score with the same proven-draw relief rush-probe has — is
+ *  PROPOSED, a plan amendment the coordinator is recording, not an in-branch redesign (a
+ *  parity-style metric would false-fire on Fadeout, where a drawing mirror is health, without
+ *  the SAME relief rush-probe gets). `drawRate` is recorded in the gate detail below so a future
+ *  S5 baseline captures this even though today's gate cannot act on it. */
 export type MirrorProbeInput =
   | { readonly kind: "suppressed" }
   | { readonly kind: "unavailable"; readonly reason: string }
-  | { readonly kind: "available"; readonly winRate: number };
+  | { readonly kind: "available"; readonly winRate: number; readonly drawRate: number };
 
 /** The already-computed numbers `evaluateProbeGates` gates on — kept separate from real
  *  `MatchupReport`s so the pure evaluator can be tested with hand-built values, no real self-play
@@ -80,9 +95,10 @@ export interface ProbeGateInputs {
   readonly mirror: MirrorProbeInput;
   /** Stall-probe assertion A (plan §1.2): cap-hit rate ACROSS the stall matchup. */
   readonly stallCapHitRate: number;
-  /** Stall-probe assertion B: stall's win rate as P2, draws EXCLUDED (plan §1.2: "in a
-   *  proven-draw game like Fadeout, stall drawing against correct play is the correct outcome,
-   *  and a win+draw metric would fire on health"). */
+  /** Stall-probe assertion B: stall's win rate as P2 — wins/all games (a draw counts as a
+   *  non-win, but stays IN the denominator; this is deliberately NOT a win+draw metric, plan
+   *  §1.2: "in a proven-draw game like Fadeout, stall drawing against correct play is the
+   *  correct outcome, and a win+draw metric would fire on health"). */
   readonly stallWinRate: number;
   /** Rush-probe's parity score, (wins + 0.5*draws)/games (plan §1.3) — see
    *  `metrics.ts`'s `agentParityScore`, the metric this field is built from. */
@@ -99,12 +115,46 @@ export interface RushDrawAttainment {
   readonly proof: string;
 }
 
+/** The three probe gate names — named once here so the nightly abuse guard below stays in
+ *  lockstep with the gate blocks themselves (mirrors `DEFERRABLE_CI_GATES`'s own doc in
+ *  suites.ts, the sibling this class is modeled on). */
+const PROBE_GATE_NAMES = ["mirror-probe", "stall-probe", "rush-probe"] as const;
+
+/** Thrown by `evaluateProbeGates` when suite `"nightly"` is given an active `CiGateDeferral`
+ *  (platform-corrections.md C27's abuse guard, same posture as suites.ts's
+ *  `TwoPlayerDeferredGateAtNightlyError` and solo-gates.ts's `SoloDeferredGateAtNightlyError`).
+ *
+ *  STAGE-6 FINDING (fixed here): this refusal is named explicitly in the plan (§3, §5 S2, and
+ *  "done means" #3's own planted violation) but was never built — `runProbeSuite` structurally
+ *  never constructs an active deferral at suite "nightly" (it only ever consults
+ *  `manifest.ciGateBudget.deferGatesToNightly` when `suite === "ci"`), so the gap was
+ *  unreachable through the wrapper and the existing test suite only ever exercised that
+ *  wrapper's own construction, never this evaluator's own seam. `evaluateProbeGates` is a public
+ *  export precisely so it CAN be called standalone — a caller that does, and hands it
+ *  `(suite: "nightly", deferral: {active: true})`, would otherwise get three silent `"deferred"`
+ *  rows: a gate deferred at every tier, C27's exact abuse case, and precisely the "a documented
+ *  protection that was never built" shape this whole module exists to close (C64) — recurring
+ *  one seam over, inside the very change that closes it. */
+export class ProbeDeferredGateAtNightlyError extends Error {
+  constructor(reason: string) {
+    super(
+      `evaluateProbeGates: suite "nightly" was given an ACTIVE deferral (reason: "${reason}") ` +
+        `for [${PROBE_GATE_NAMES.join(", ")}] (platform-corrections.md C27). A gate deferred at ` +
+        "EVERY tier never runs — nightly must measure the full probe suite for real, never " +
+        "defer again."
+    );
+    this.name = "ProbeDeferredGateAtNightlyError";
+  }
+}
+
 /**
  * Pure gate evaluation (see module doc for why this is split from `runProbeSuite`). Validates
  * its OWN `exceptions` standalone (`validateExceptions`, suites.ts) — a pure evaluator tested in
  * isolation (as this one is meant to be) must never silently accept a dead exception just
  * because no caller happened to run `evaluateCiGates` first with the same list; that would be
  * exactly the quiet-gap shape this codebase's other validators exist to rule out everywhere.
+ * Refuses (`ProbeDeferredGateAtNightlyError`) the identical abuse shape immediately after, for
+ * the identical reason.
  */
 export function evaluateProbeGates(
   inputs: ProbeGateInputs,
@@ -115,6 +165,14 @@ export function evaluateProbeGates(
   rushDrawAttainment?: RushDrawAttainment
 ): GateResult[] {
   validateExceptions(exceptions);
+
+  // C27's abuse guard (stage-6 finding — see ProbeDeferredGateAtNightlyError's own doc): nightly
+  // is the ONLY tier allowed to report these three rows as anything other than "deferred" — a
+  // caller that hands nightly an active deferral gets refused here, loudly, rather than shipping
+  // a "nightly: OK" report where the probe suite never actually ran.
+  if (suite === "nightly" && deferral?.active) {
+    throw new ProbeDeferredGateAtNightlyError(deferral.reason);
+  }
 
   const results: GateResult[] = [];
 
@@ -149,9 +207,13 @@ export function evaluateProbeGates(
   } else {
     const wr = inputs.mirror.winRate;
     const raw: GateStatus = wr >= thresholds.mirrorProbeWinRateFail ? "fail" : wr >= thresholds.mirrorProbeWinRateWarn ? "warn" : "pass";
+    // STAGE-6 FINDING: `drawRate` is recorded here — NOT gated on (see MirrorProbeInput's own
+    // doc for why this metric cannot fire on the canonical "mirror forces a draw" pathology
+    // today) — so a future S5 baseline captures it even though this gate cannot act on it yet.
     const detail =
-      `${(wr * 100).toFixed(1)}% win rate as P2, draws excluded (warn >= ${(thresholds.mirrorProbeWinRateWarn * 100).toFixed(0)}%, ` +
-      `fail >= ${(thresholds.mirrorProbeWinRateFail * 100).toFixed(0)}%, ${suite})`;
+      `${(wr * 100).toFixed(1)}% win rate as P2 (wins/all games; draws count as non-wins, not excluded from the denominator), ` +
+      `mirror draw rate ${(inputs.mirror.drawRate * 100).toFixed(1)}% (recorded only — see the metric-binding note on MirrorProbeInput), ` +
+      `(warn >= ${(thresholds.mirrorProbeWinRateWarn * 100).toFixed(0)}%, fail >= ${(thresholds.mirrorProbeWinRateFail * 100).toFixed(0)}%, ${suite})`;
     pushSeverityAdjusted("mirror-probe", raw, detail);
   }
 
@@ -170,8 +232,8 @@ export function evaluateProbeGates(
     const raw: GateStatus = capHitFail || winRateFail ? "fail" : capHitWarn || winRateWarn ? "warn" : "pass";
     const detail =
       `cap-hit rate ${(inputs.stallCapHitRate * 100).toFixed(2)}% (fail > ${(thresholds.stallProbeCapHitFail * 100).toFixed(0)}%, warn > 0%), ` +
-      `win rate ${(inputs.stallWinRate * 100).toFixed(1)}% as P2, draws excluded (warn >= ${(thresholds.stallProbeWinRateWarn * 100).toFixed(0)}%, ` +
-      `fail >= ${(thresholds.stallProbeWinRateFail * 100).toFixed(0)}%, ${suite})`;
+      `win rate ${(inputs.stallWinRate * 100).toFixed(1)}% as P2 (wins/all games; draws count as non-wins, not excluded from the denominator) ` +
+      `(warn >= ${(thresholds.stallProbeWinRateWarn * 100).toFixed(0)}%, fail >= ${(thresholds.stallProbeWinRateFail * 100).toFixed(0)}%, ${suite})`;
     pushSeverityAdjusted("stall-probe", raw, detail);
   }
 
@@ -265,7 +327,7 @@ export function runProbeSuite<S extends WithEffects, M extends Json, V extends W
   const mirrorUnavailableInput: MirrorProbeInput = mirrorSuppressed
     ? { kind: "suppressed" }
     : opts.mirrorMove
-      ? { kind: "available", winRate: Number.NaN } // placeholder — overwritten once self-play actually runs, below
+      ? { kind: "available", winRate: Number.NaN, drawRate: Number.NaN } // placeholder — overwritten once self-play actually runs, below
       : { kind: "unavailable", reason: "no mirrorMove was supplied to runProbeSuite for this game" };
 
   const shippedRuthlessTier = findTier(manifest, "ruthless");
@@ -321,7 +383,13 @@ export function runProbeSuite<S extends WithEffects, M extends Json, V extends W
       mirrorSeats: false,
       ...(opts.clock ? { clock: opts.clock } : {}),
     });
-    mirrorInput = { kind: "available", winRate: agentWinRate(mirrorMatchup.outcomes, "mirror") };
+    mirrorInput = {
+      kind: "available",
+      winRate: agentWinRate(mirrorMatchup.outcomes, "mirror"),
+      // Stage-6 finding: recorded so the gate detail (and a future S5 baseline) captures it,
+      // even though the gate itself does not act on it yet — see MirrorProbeInput's own doc.
+      drawRate: mirrorMatchup.metrics.drawRate,
+    };
   }
 
   const stallAgent = resolveNamedAgent<S, M>("stall");

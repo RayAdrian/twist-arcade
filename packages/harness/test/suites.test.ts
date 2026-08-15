@@ -276,7 +276,7 @@ describe("evaluateCiGates() — UnknownExceptionGateError: an exception naming a
     ).not.toThrow();
   });
 
-  it("does NOT throw for any of the six real exceptionable gate names", () => {
+  it("does NOT throw for any of the nine real exceptionable gate names (widened from six under C64 — mirror-probe/stall-probe/rush-probe joined)", () => {
     for (const gate of KNOWN_EXCEPTIONABLE_GATES) {
       expect(() =>
         evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [{ gate, justification: "real gate, real reason" }], "ci")

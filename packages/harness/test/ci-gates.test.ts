@@ -20,6 +20,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { classicTicTacToe } from "@twist-arcade/engine/testkit/fixtures/classic-ttt";
 import type { TTTMove, TTTState } from "@twist-arcade/engine/testkit/fixtures/classic-ttt";
+import type { ActiveSpec, GameEngine, Json, PlayerId, Status, WithEffects } from "@twist-arcade/engine";
 import { bankRun, createBankRun, type BankRunMove, type BankRunState } from "@twist-arcade/engine/testkit/fixtures/bank-run";
 import { safeMove as mineRunSafeMove } from "@twist-arcade/mine-run";
 import type { GameManifest } from "@twist-arcade/game-spec";
@@ -288,6 +289,89 @@ describe("runTwoPlayerCiGate — C64: composes the two-player degeneracy probe s
       }
       expect(gate.status, `gate ${gate.gate}`).toBe("deferred");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// STAGE-6 FINDING: rush-probe's proven-draw relief fired on ANY reached solvedValue, not only
+// a draw — the guard never checked `solvedValue.value === "draw"` — while the relief's own
+// detail text hardcodes "a proven, reached draw". A reached p0-win/p1-win claim would have
+// gotten UNEARNED relief (rush measures nothing) plus a report sentence asserting a draw that
+// was never proven. Proven with a REAL, deterministically-reached (not hand-built) p0-win claim
+// below — a tiny local fixture engine where seat 0 wins on its own first move, every game,
+// regardless of policy, so self-play genuinely reaches firstPlayerWinRate 100% (>= the 90%
+// floor) without depending on any real game's actual balance.
+// ---------------------------------------------------------------------------------------
+
+interface P0AlwaysWinsState extends WithEffects {
+  readonly turn: PlayerId;
+}
+interface P0AlwaysWinsMove {
+  readonly [key: string]: Json;
+}
+
+/** Seat 0 has exactly one legal move, which ends the game with seat 0 the winner — deterministic
+ *  regardless of which policy occupies either seat. Exists ONLY so a `solvedValue: {value:
+ *  "p0-win"}` claim is genuinely, reliably REACHED by real self-play in a test, without needing
+ *  a real game whose actual balance happens to favor P1 90%+ of the time. */
+const p0AlwaysWins: GameEngine<P0AlwaysWinsState, P0AlwaysWinsMove, P0AlwaysWinsState> = {
+  meta: {
+    id: "p0-always-wins-fixture",
+    name: "P0 Always Wins (ci-gates.test.ts stage-6 fixture)",
+    minPlayers: 2,
+    maxPlayers: 2,
+    hiddenInformation: false,
+    simultaneous: false,
+    stochastic: false,
+    version: 1,
+  },
+  setup: () => ({ turn: 0, lastEffects: [] }),
+  legalMoves: (state, player) => (player === state.turn ? [{}] : []),
+  isLegal: (state, player) => player === state.turn,
+  active: (state): ActiveSpec => ({ mode: "sequential", player: state.turn }),
+  apply: (state) => ({ turn: state.turn === 0 ? 1 : 0, lastEffects: [] }),
+  status: (state): Status => (state.turn === 1 ? { kind: "won", winner: 0 } : { kind: "ongoing" }),
+  playerView: (state) => state,
+  encode: (state) => JSON.stringify(state),
+  decode: (s) => JSON.parse(s) as P0AlwaysWinsState,
+};
+
+describe("runTwoPlayerCiGate — C64 stage-6: rush-probe's proven-draw relief must NOT fire on a non-draw solvedValue", () => {
+  const p0WinManifest: GameManifest = {
+    id: "p0-always-wins-fixture",
+    title: "P0 Always Wins",
+    classic: "n/a",
+    ruleSentence: "ci-gates.test.ts stage-6 fixture: seat 0 always wins on its own first move.",
+    tags: [],
+    estMinutes: 1,
+    modes: { bot: true, hotseat: false, asyncLink: false },
+    players: { min: 2, max: 2 },
+    difficultyTiers: [
+      { id: "ruthless", policy: { kind: "random" }, budget: { kind: "rollouts", n: 1 }, minReplyMs: 0 },
+    ],
+    solvedValue: { value: "p0-win", proof: "ci-gates.test.ts: seat 0 wins on its own first move by construction" },
+  };
+
+  it("self-play genuinely REACHES the proven p0-win claim (sanity: the fixture does what it claims)", () => {
+    const report = runTwoPlayerCiGate(p0AlwaysWins, p0WinManifest, { seed: "ci-gates:c64:p0win-sanity", games: 20 });
+    const solvedValueReached = report.gates.find((g) => g.gate === "solved-value-reached")!;
+    expect(solvedValueReached.status).toBe("pass");
+    expect(solvedValueReached.detail).toContain("100.0%");
+  });
+
+  it("PLANTED VIOLATION (regression): rush-probe measures for REAL — never n/a — despite the reached p0-win claim, and never asserts a draw that was never proven", () => {
+    const report = runTwoPlayerCiGate(p0AlwaysWins, p0WinManifest, { seed: "ci-gates:c64:p0win-rush", games: 20 });
+    const rush = report.gates.find((g) => g.gate === "rush-probe")!;
+    // The bug: this used to be "n/a" citing "a proven, reached draw" — false on both counts for
+    // a p0-win claim. Fixed: rush-probe must be a REAL measurement (this engine always ends
+    // after one ply either way, so rush's parity score is deterministic and well above the fail
+    // threshold — mirrorSeats:true means rush plays each seat every pair, winning as seat 0 and
+    // losing as seat 1, landing near a 50% parity score, comfortably >= rushProbeScoreFail).
+    expect(rush.status).not.toBe("n/a");
+    expect(["warn", "fail"]).toContain(rush.status);
+    // Specifically the n/a relief's own phrase — NOT a bare "draw" substring check, which would
+    // false-positive on the real measured detail's own "(wins + 0.5*draws)/games" formula text.
+    expect(rush.detail).not.toContain("proven, reached draw");
   });
 });
 

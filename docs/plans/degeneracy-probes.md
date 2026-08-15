@@ -50,11 +50,29 @@ Provenance is marked **RECOVERED** (traceable to a document or measurement) or *
 
 Gate rows: `mirror-probe`, `stall-probe`, `rush-probe`.
 
-### 1.1 Mirror — RECOVERED
+### 1.1 Mirror — threshold NUMBERS recovered; the METRIC BINDING is PROPOSED
+**CORRECTED (stage-6 review, post-implementation):** re-checking roadmap.md:258 and
+game-theory-lens.md:200 confirms the threshold **numbers** below are genuinely RECOVERED — that
+stands. What does **not** stand is calling the whole gate RECOVERED: **which metric** those
+numbers are bound to (wins/games, rather than a parity-style score) is planner judgment wearing
+a RECOVERED label, so the metric binding is now marked **PROPOSED**.
+
 Matchup: the game's own `mirrorMove` as P2 (seat 1), `mirrorSeats: false`, vs `ruthless` at the
-suite's effective budget. Assertion: mirror's **win rate** (draws excluded) as P2.
+suite's effective budget. Assertion: mirror's **win rate** (wins/all games) as P2.
 Thresholds: pass `< 40%`; warn `40–50%`; fail `≥ 50%` — RECOVERED from roadmap.md:258,
 game-theory-lens §3.4:254 and §2.7 ("≥50% as P2 in a symmetric game, the game is broken").
+
+**Known gap (PROPOSED metric binding), not fixed in this branch:** game-theory-lens §5.4 states
+the canonical mirror degeneracy as *"P2 copying P1's move through the center can force a draw
+(or worse)."* Wins/games cannot fire on that: a mirror that draws 100% of its games scores a 0%
+win rate — a clean pass on the exact pathology the source document most emphasizes — and
+strong-self-play's own draw-rate gate does not catch it either, since that measures a different
+matchup entirely. The mirror matchup's own draw rate is now recorded in the gate's detail string
+(`probes-two-player.ts`) so a future S5 baseline captures it even though the gate cannot act on
+it yet. **Not redesigned here**: a parity-style metric needs the SAME proven-draw relief
+rush-probe already has (§1.3's "Proven-draw relief"), or it would false-fire on Fadeout, where a
+drawing mirror is health, not a defect — that is a plan amendment for a future pass, not an
+in-branch patch.
 
 ### 1.2 Stall — half recovered, half proposed
 Matchup: roster `"stall"` as P2, `mirrorSeats: false`, vs `ruthless`.
@@ -62,9 +80,11 @@ Matchup: roster `"stall"` as P2, `mirrorSeats: false`, vs `ruthless`.
   PROPOSED (T4's stricter `=== 0`, softened so one noisy cap hit is visible without hard-failing).
 - **Assertion B (stalling pays):** stall's win rate. The documented gate ("beats its ladder Elo
   peers'") is **not recoverable as a CI number** — it needs a round-robin Elo no CI tier runs.
-  PROPOSED: warn `≥ 20%`, fail `≥ 40%`, **win rate only, draws excluded** — in a proven-draw game
-  like Fadeout, stall drawing against correct play is the correct outcome, and a win+draw metric
-  would fire on health.
+  PROPOSED: warn `≥ 20%`, fail `≥ 40%`, **win rate only (wins/all games; not a win+draw metric)**
+  — in a proven-draw game like Fadeout, stall drawing against correct play is the correct
+  outcome, and a win+draw metric would fire on health. (Reworded post-implementation, stage-6
+  review: "draws excluded" reads as wins/decisive — wins/(wins+losses) — a different number in a
+  draw-heavy game; the actual metric is wins/all-games, with draws staying in the denominator.)
 
 ### 1.3 Rush — PROPOSED by stated analogy
 Matchup: roster `"rush"` vs roster `"mcts1k"`, `mirrorSeats: true`. Opponent identity is **RECOVERED**

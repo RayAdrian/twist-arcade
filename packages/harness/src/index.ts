@@ -56,7 +56,7 @@ export type {
   RunProbeSuiteOptions,
   RushDrawAttainment,
 } from "./probes-two-player";
-export { evaluateProbeGates, runProbeSuite } from "./probes-two-player";
+export { evaluateProbeGates, ProbeDeferredGateAtNightlyError, runProbeSuite } from "./probes-two-player";
 
 export type { GameOutcome, MatchupMetrics } from "./metrics";
 export { agentParityScore, agentWinRate, computeMatchupMetrics, percentile } from "./metrics";

@@ -21,6 +21,7 @@ import {
 } from "../src/suites";
 import {
   evaluateProbeGates,
+  ProbeDeferredGateAtNightlyError,
   runProbeSuite,
   type ProbeGateInputs,
 } from "../src/probes-two-player";
@@ -39,7 +40,7 @@ function tttMirrorMove(_state: TTTState, lastOppMove: TTTMove | null, legalMoves
 // from a clone of this and perturbs exactly one field, so a test failure always isolates to the
 // one threshold it claims to be testing (mirrors suites.test.ts's own HEALTHY convention).
 const HEALTHY: ProbeGateInputs = {
-  mirror: { kind: "available", winRate: 0.1 },
+  mirror: { kind: "available", winRate: 0.1, drawRate: 0.1 },
   stallCapHitRate: 0,
   stallWinRate: 0.05,
   rushScore: 0.2,
@@ -88,7 +89,7 @@ describe("evaluateProbeGates() — mirror-probe exclusivity (plan §4.3)", () =>
     for (const mirror of [
       { kind: "suppressed" as const },
       { kind: "unavailable" as const, reason: "x" },
-      { kind: "available" as const, winRate: 0.1 },
+      { kind: "available" as const, winRate: 0.1, drawRate: 0.1 },
     ]) {
       const gates = evaluateProbeGates({ ...HEALTHY, mirror }, DEFAULT_HARNESS_THRESHOLDS, [], "ci");
       const rows = gates.filter((g) => g.gate === "mirror-probe");
@@ -100,17 +101,34 @@ describe("evaluateProbeGates() — mirror-probe exclusivity (plan §4.3)", () =>
 describe("evaluateProbeGates() — planted violations, one gate at a time", () => {
   it("mirror-probe: win rate < 40% passes", () => {
     expect(statusOf(HEALTHY, "mirror-probe")).toBe("pass"); // control
-    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.39 } }, "mirror-probe")).toBe("pass");
+    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.39, drawRate: 0.1 } }, "mirror-probe")).toBe("pass");
   });
 
   it("mirror-probe: win rate in [40%, 50%) warns", () => {
-    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.4 } }, "mirror-probe")).toBe("warn"); // boundary inclusive
-    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.49 } }, "mirror-probe")).toBe("warn");
+    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.4, drawRate: 0.1 } }, "mirror-probe")).toBe("warn"); // boundary inclusive
+    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.49, drawRate: 0.1 } }, "mirror-probe")).toBe("warn");
   });
 
   it("mirror-probe: win rate >= 50% fails at nightly, but WARNS at ci (severity split, plan §1.4)", () => {
-    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.5 } }, "mirror-probe", "nightly")).toBe("fail");
-    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.5 } }, "mirror-probe", "ci")).toBe("warn");
+    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.5, drawRate: 0.1 } }, "mirror-probe", "nightly")).toBe("fail");
+    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.5, drawRate: 0.1 } }, "mirror-probe", "ci")).toBe("warn");
+  });
+
+  // STAGE-6 FINDING (recorded, not fixed in-branch — see MirrorProbeInput's own doc): the
+  // canonical mirror pathology (game-theory-lens §5.4: "P2 copying P1's move through the center
+  // can force a draw") is invisible to wins/games. Pinned here as an executable, honest
+  // "known gap" — a mirror that draws EVERY game still reports a clean PASS, and the draw rate
+  // is recorded in the detail (not gated on).
+  it("KNOWN GAP: a mirror that draws 100% of its games (the exact pathology game-theory-lens §5.4 names) still PASSES — wins/games cannot see it; the draw rate is recorded in the detail only", () => {
+    const gates = evaluateProbeGates(
+      { ...HEALTHY, mirror: { kind: "available", winRate: 0, drawRate: 1.0 } },
+      DEFAULT_HARNESS_THRESHOLDS,
+      [],
+      "ci"
+    );
+    const mirror = gates.find((g) => g.gate === "mirror-probe")!;
+    expect(mirror.status).toBe("pass"); // the gap: this SHOULD be actionable and isn't, today
+    expect(mirror.detail).toContain("100.0%"); // the draw rate is at least visible in the report
   });
 
   it("stall-probe: any nonzero cap-hit rate warns, even with a healthy win rate", () => {
@@ -211,6 +229,53 @@ describe("evaluateProbeGates() — C27 deferral reused, not duplicated (plan §3
   it("mirror-probe stays SUPPRESSED (no row) under deferral too — the declared branch takes priority over deferral (matches suites.ts's own C48/C62 precedent)", () => {
     const gates = evaluateProbeGates({ ...HEALTHY, mirror: { kind: "suppressed" } }, DEFAULT_HARNESS_THRESHOLDS, [], "ci", DEFER);
     expect(gates.find((g) => g.gate === "mirror-probe")).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// STAGE-6 CRITICAL FINDING: C27's nightly-active-deferral abuse guard is named explicitly by
+// the plan (§3, §5 S2, "done means" #3's own planted violation) — mirroring suites.ts's
+// TwoPlayerDeferredGateAtNightlyError and solo-gates.ts's SoloDeferredGateAtNightlyError — but
+// was never built. `runProbeSuite` structurally never constructs an active deferral at suite
+// "nightly" (only ever consults `deferGatesToNightly` when `suite === "ci"`), so the gap was
+// UNREACHABLE through that wrapper, and every existing deferral test above exercises the
+// wrapper's own construction, never this evaluator's own seam directly. `evaluateProbeGates` is
+// a public export precisely so it CAN be called standalone — this is the planted violation at
+// THAT seam, with hand-built inputs, the exact case that was missing.
+// ---------------------------------------------------------------------------------------
+
+describe("evaluateProbeGates() — C27's nightly abuse guard (stage-6 CRITICAL finding, fixed)", () => {
+  it("PLANTED VIOLATION: suite 'nightly' handed an ACTIVE deferral throws ProbeDeferredGateAtNightlyError — a gate deferred at every tier never runs, C27's exact abuse case", () => {
+    const activeDeferral: CiGateDeferral = { active: true, reason: "stage-6 planted violation — must refuse" };
+    expect(() => evaluateProbeGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [], "nightly", activeDeferral)).toThrow(
+      ProbeDeferredGateAtNightlyError
+    );
+  });
+
+  it("the reason is folded into the thrown error's message", () => {
+    const activeDeferral: CiGateDeferral = { active: true, reason: "a specific, citable reason" };
+    let thrown: unknown;
+    try {
+      evaluateProbeGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [], "nightly", activeDeferral);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(ProbeDeferredGateAtNightlyError);
+    expect((thrown as Error).message).toContain("a specific, citable reason");
+  });
+
+  it("does NOT throw for suite 'ci' with the same active deferral — the guard is nightly-only, matching every sibling C27 guard in this codebase", () => {
+    const activeDeferral: CiGateDeferral = { active: true, reason: "fine at ci" };
+    expect(() => evaluateProbeGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [], "ci", activeDeferral)).not.toThrow();
+  });
+
+  it("does NOT throw for suite 'nightly' with NO deferral (the normal, real-measurement case)", () => {
+    expect(() => evaluateProbeGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [], "nightly")).not.toThrow();
+  });
+
+  it("does NOT throw for suite 'nightly' with a deferral object present but active: false", () => {
+    const inactiveDeferral: CiGateDeferral = { active: false, reason: "not active" };
+    expect(() => evaluateProbeGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [], "nightly", inactiveDeferral)).not.toThrow();
   });
 });
 

@@ -125,8 +125,14 @@ type RunMatchupClock = RunCiSuiteOptions["clock"];
  * Rush's proven-draw relief (`probes-two-player.ts`'s `RushDrawAttainment`) is computed HERE,
  * once, from `runCiSuite`'s own strong-self-play numbers via `solvedValueAttainment` — the
  * SAME shared computation `evaluateCiGates` itself consults, never re-derived (the plan's own
- * named C55-shape risk). `null` (no self-play ran — an active C27 deferral) or no proven
- * `solvedValue` both simply omit the option, granting no relief by default.
+ * named C55-shape risk). `null` (no self-play ran — an active C27 deferral), no proven
+ * `solvedValue`, OR a proven value that is NOT `"draw"` all omit the option, granting no relief
+ * by default — `RushDrawAttainment`'s own n/a detail text asserts "a proven, reached draw"
+ * verbatim (plan §1.3: "a parity score is evidence of nothing once neither side can win", which
+ * is specifically a DRAW property), so a `p0-win`/`p1-win` claim must never reach it (stage-6
+ * finding: the prior version checked `attainment.reached` alone, with no `value === "draw"`
+ * guard — a reached p0-win/p1-win claim would have gotten unearned relief AND a report sentence
+ * asserting a draw that was never proven).
  */
 export function runTwoPlayerCiGate(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -153,8 +159,21 @@ export function runTwoPlayerCiGate(
   // do its OWN job, shared with three other evaluateCiGates blocks that already have
   // `manifest.solvedValue!.proof` in scope). `RushDrawAttainment` names the artifact for its own
   // n/a detail string, so it's paired back in here, at the one seam that needs both.
+  //
+  // `solvedValue.value === "draw"` is REQUIRED, not optional (stage-6 finding) — rush's relief
+  // detail text is hardcoded to assert "a proven, reached draw"; granting it off ANY reached
+  // value (including p0-win/p1-win) would make that sentence false for a decisive game.
+  //
+  // `manifest.solvedValue.proof!`: NOT `?? ""` (stage-6 finding — an empty string would let this
+  // cite a nonexistent artifact). C23's own invariant already guarantees this is safe: `ciReport`
+  // above only exists because `runCiSuite` -> `evaluateCiGates` already ran and did NOT throw
+  // `MissingSolvedValueProofError`, which refuses any `solvedValue.value !== "unknown"` with an
+  // empty/absent `proof` before any gate evaluates — reaching this line with `value === "draw"`
+  // (checked immediately above) therefore already proves `proof` is a real, non-empty string.
   const rushDrawAttainment: RushDrawAttainment | undefined =
-    attainment && manifest.solvedValue ? { reached: attainment.reached, proof: manifest.solvedValue.proof ?? "" } : undefined;
+    attainment && manifest.solvedValue?.value === "draw"
+      ? { reached: attainment.reached, proof: manifest.solvedValue.proof! }
+      : undefined;
 
   // probes-two-player.ts's own doc: `games` is deliberately NEVER forwarded here — the probe
   // suite always defaults to 100, at both suite tiers (plan §3: "deliberately not
