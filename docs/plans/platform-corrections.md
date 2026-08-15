@@ -5030,6 +5030,59 @@ failed exactly the six provisional-specific tests and nothing else.
 **Tilt's result stands: 70.0% FAIL → 64.0% PASS, provisional.** The game was never broken. Under the t
 correction the row stays provisional, so the finding survives its own fix.
 
+### C80 addendum — the fifth stage-6 finding, two report.ts fixes, and a floor that changed a real verdict
+
+The four findings above are implemented. Two more from the same review pass, not yet recorded:
+
+**5. `seedCount` accepted non-integers and non-positive values.** `games: 25, seedCount: 2.5`
+satisfies `25 % 2.5 === 0` in JavaScript, then `Array.from({ length: 2.5 })` silently truncates to 2
+seeds of 10 games — 5 games vanish with no error, and the returned report's own `precision.seedCount`
+reads `2`, never hinting anything was dropped. A negative `seedCount` passes the same modulo check and
+dies later inside `Array.from` with a bare `RangeError` naming neither the game nor the actual problem.
+`InvalidSeedCountError` now refuses `!Number.isInteger(seedCount) || seedCount < 1` before the
+divisibility guard even runs. Planted: `25 % 2.5`, `25 % -5`, and `25 % 0` all read `0` in JavaScript
+— confirmed in the test itself, so the plant is checking the real trap and not an imagined one.
+
+**6. The FAILED header could read as softening an unrelated hard fail.** `hasProvisional` was "any row
+provisional," applied to both the OK and FAILED branches — so a report with a clean, non-provisional
+`strong-vs-random` FAIL and a completely unrelated, provisional-but-PASSING `first-player-win-rate`
+row would print `FAILED (one or more rate-style gates landed within their own measured seed-to-seed
+noise...)`, reading as if the fail itself were in question. Fixed: on a FAILED report, the header note
+now fires only when a FAILING row is itself provisional; the OK branch is unaffected (every passing row
+still counts, since there is no "unrelated" failure to protect there). The remaining minor item —
+nothing yet consumes `provisional` beyond the formatter — is left as owed work: the principled
+follow-up is "provisional at ci ⇒ re-measure at nightly K=10," and PASS is the correct action in the
+meantime, since the verdict itself never moved.
+
+### The binomial floor changed a real verdict, not just a fixture
+
+Re-running the corrected code against real games rather than trusting the arithmetic: **Nine Grids'
+own `first-player-win-rate` flips from un-flagged to `[PROVISIONAL]`.** Before the floor, its cross-seed
+SE read 2.4pp (20 games/seed, coarse per-seed granularity, a genuinely small sample-SD by chance) —
+comfortably clear of the band edges at 1.645× or 2.132×. The binomial floor at its own mean (44.0%,
+100 total games) is `sqrt(0.44×0.56/100) ≈ 4.96pp`, which is LARGER than the naive cross-seed estimate,
+so it now governs: SE reads 5.0pp, and `t(0.95,4)×5.0pp ≈ 10.7pp` reaches the 9pp gap to the 35% edge.
+**The verdict itself does not change (44.0% is still comfortably PASS) — but the report now honestly
+says this measurement is close enough to its own noise floor to be worth a second look, which the
+pre-floor code was silently NOT saying.** Draw-rate's SE rises the same way (2.4pp → 4.4pp, matching
+its own floor of `sqrt(0.26×0.74/100) ≈ 4.39pp`) but stays far from its 60% ceiling, so it is unaffected
+in practice — exactly the "not every gate needs this" distinction C71 Part 1 asked for, now visible in
+one game's own report rather than argued in the abstract.
+
+Tilt and Fadeout are unaffected, checked both ways: Tilt's real cross-seed SEs (6.8pp FPA, 3.2pp
+draw-rate) already exceed their own binomial floors (4.8pp, 3.0pp) at their measured means, so the
+floor changes nothing — re-run against the real game to confirm rather than trusted from the earlier
+measurement, and the numbers are identical (64.0% PASS, provisional; 10.0% draw-rate, not provisional).
+Fadeout's `se` is exactly 0 at `p=1` every seed, where the floor is also exactly 0 by construction
+(`mean×(1-mean) = 0`) — the case the review named explicitly, confirmed rather than assumed.
+
+Full scoped suite green post-fix and post-rebase: 266 tests across `suites.test.ts` (157),
+`ci-gates.test.ts` (33 + 10), `report.test.ts` (21), `cli.test.ts` (20),
+`index-importable.test.ts` (6), and three `scripts/test` files — typecheck and lint clean. The
+worktree's own stale local draft of this entry (written before the collision was known, still
+numbered C77) is dropped rather than merged; this addendum and the C80 entry above are the complete
+record.
+
 ## C81 — A mechanism to catch unkept promises, in which a kept promise cannot discharge.
 
 Three stage-6 reviews landed together. Two found the same species of defect in two different branches,
