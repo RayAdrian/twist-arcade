@@ -34,7 +34,7 @@ import {
   type SoloGateChaseInputsFull,
   type SoloGatePuzzleInputs,
 } from "./solo-gates";
-import { runCiSuite, type CiSuiteReport, type RunCiSuiteOptions } from "./suites";
+import { runCiSuite, solvedValueAttainment, type CiSuiteReport, type RunCiSuiteOptions } from "./suites";
 import { runProbeSuite, type RushDrawAttainment } from "./probes-two-player";
 
 // ---------------------------------------------------------------------------------------
@@ -132,21 +132,16 @@ type RunMatchupClock = RunCiSuiteOptions["clock"];
  * already established at C48/C62.
  *
  * Rush's proven-draw relief (`probes-two-player.ts`'s `RushDrawAttainment`) is computed HERE,
- * once, by reading `ciReport.gates`'s own `"solved-value-reached"` row (platform-corrections.md
- * C81 / task #27) — the SAME row `evaluateCiGates` (suites.ts) already computes from its shared
- * `attainment`, never re-derived a second time off `ciReport.matchups` directly (the plan's own
- * named C55-shape risk: two independent computations of the same fact can disagree; reading the
- * gate's own verdict instead of `matchups` is also what keeps this correct under `seedCount > 1`,
- * where `matchups` is `null` but the gate row is still computed from the aggregate mean — see
- * this function's own inline doc at the read site). A missing gate row, no proven `solvedValue`,
- * a status other than `"pass"` (deferred/n/a/fail/unattained), OR a proven value that is NOT
- * `"draw"` all omit the option, granting no relief by default — `RushDrawAttainment`'s own n/a
- * detail text asserts "a proven, reached draw" verbatim (plan §1.3: "a parity score is evidence
- * of nothing once neither side can win", which is specifically a DRAW property), so a
- * `p0-win`/`p1-win` claim must never reach it (stage-6 finding: an earlier version checked
- * `attainment.reached` alone, with no `value === "draw"` guard — a reached p0-win/p1-win claim
- * would have gotten unearned relief AND a report sentence asserting a draw that was never
- * proven).
+ * once, from `runCiSuite`'s own strong-self-play numbers via `solvedValueAttainment` — the
+ * SAME shared computation `evaluateCiGates` itself consults, never re-derived (the plan's own
+ * named C55-shape risk). `null` (no self-play ran — an active C27 deferral), no proven
+ * `solvedValue`, OR a proven value that is NOT `"draw"` all omit the option, granting no relief
+ * by default — `RushDrawAttainment`'s own n/a detail text asserts "a proven, reached draw"
+ * verbatim (plan §1.3: "a parity score is evidence of nothing once neither side can win", which
+ * is specifically a DRAW property), so a `p0-win`/`p1-win` claim must never reach it (stage-6
+ * finding: the prior version checked `attainment.reached` alone, with no `value === "draw"`
+ * guard — a reached p0-win/p1-win claim would have gotten unearned relief AND a report sentence
+ * asserting a draw that was never proven).
  */
 export function runTwoPlayerCiGate(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -163,35 +158,39 @@ export function runTwoPlayerCiGate(
     ...(opts.seedCount !== undefined ? { seedCount: opts.seedCount } : {}),
   });
 
-  // FIXED (platform-corrections.md C81 / task #27): this used to read
-  // `ciReport.matchups?.strongSelfPlay.metrics`, which is `null` in TWO cases — an active C27
-  // deferral AND a multi-seed run (`opts.seedCount > 1`, C71 Part 1 / C80, which reports per-seed
-  // detail via `seedRuns`/`precision` instead of one `matchups` triple) — so rush's draw relief
-  // was silently WITHHELD on every multi-seed run, even when the aggregate genuinely reached the
-  // proven draw. Ruling: read the SAME source `solved-value-reached` itself reads, rather than
-  // re-deriving a second, independently-computed attainment off `ciReport.matchups` directly —
-  // `evaluateCiGates` (suites.ts) already computes `attainment` from `inputs.drawRate`/
-  // `firstPlayerWinRate`, which are the AGGREGATE mean under multi-seed (not `matchups`-derived
-  // at all in that path) and the single measured value under single-seed — correct in both cases,
-  // and correct under deferral too (the row reports "deferred", never "pass", so `status ===
-  // "pass"` below is `false` and relief stays withheld — self-play never ran, so a claim about
-  // attainment would be fabricated). Reading the gate `status` rather than re-computing
-  // `attainment` locally is also what keeps this and `solved-value-reached` from ever disagreeing
-  // about whether the proof was reached — the exact C55-shape drift risk the plan named for this
-  // seam ("re-deriving instead of sharing it lets the probe relief and solved-value-reached
-  // drift").
+  // KNOWN GAP, flagged rather than silently patched (platform-corrections.md C71 Part 1 / C80,
+  // stage-6 rebase review): `ciReport.matchups` is `null` in TWO cases — an active C27 deferral
+  // (pre-existing) AND a multi-seed run (`opts.seedCount > 1`, this correction's own addition,
+  // which reports per-seed detail via `seedRuns`/`precision` instead of one `matchups` triple).
+  // So rush's draw relief below is silently WITHHELD whenever `seedCount > 1` is used here, even
+  // if the multi-seed aggregate itself reached the proven draw (which `evaluateCiGates`'s own
+  // `solved-value-reached` row, fed from `ciReport.gates`, correctly recognizes via `precision`-
+  // aware `inputs` — this composition layer just doesn't read that same aggregate back out).
+  // This is NOT a crash and NOT a false pass/fail: rush simply measures for real instead of
+  // getting relief, which is the same safe default as "no proven solvedValue at all." But it is
+  // a real, load-bearing interaction between two corrections landing the same day that neither
+  // side's own tests exercise (probes' fixtures never set `seedCount`; this correction's own
+  // tests never call `runTwoPlayerCiGate` with both `seedCount > 1` AND a proven draw). Recorded
+  // as owed rather than fixed here — extending this to read `ciReport.precision.drawRate.mean`/
+  // `.firstPlayerWinRate.mean` when `matchups` is null is a real fix, but it is a design choice
+  // (does rush's relief want the point estimate the same way the four `evaluateCiGates` rows
+  // do, with no precision-awareness of its own?) that the two owning corrections should make
+  // together, not one side unilaterally on a rebase.
+  const strongSelfPlay = ciReport.matchups?.strongSelfPlay.metrics;
+  const attainment = strongSelfPlay
+    ? solvedValueAttainment(manifest.solvedValue, {
+        drawRate: strongSelfPlay.drawRate,
+        firstPlayerWinRate: strongSelfPlay.firstPlayerWinRate,
+      })
+    : null;
+  // `solvedValueAttainment` reports `{achieved, reached}` — no `proof` (it does not need one to
+  // do its OWN job, shared with three other evaluateCiGates blocks that already have
+  // `manifest.solvedValue!.proof` in scope). `RushDrawAttainment` names the artifact for its own
+  // n/a detail string, so it's paired back in here, at the one seam that needs both.
   //
-  // `solved-value-reached`'s `"pass"` status is ONLY ever pushed when `attainment.reached` is true
-  // (suites.ts: the `!attainment` branch pushes "n/a", `deferral?.active` pushes "deferred",
-  // `attainment.reached` pushes "pass", the floor-missed branches push "fail"/"unattained") — so
-  // `status === "pass"` here is exactly "self-play reached whatever value was proven," the same
-  // fact `attainment.reached` used to name directly.
-  const solvedValueReachedGate = ciReport.gates.find((g) => g.gate === "solved-value-reached");
   // `solvedValue.value === "draw"` is REQUIRED, not optional (stage-6 finding) — rush's relief
   // detail text is hardcoded to assert "a proven, reached draw"; granting it off ANY reached
   // value (including p0-win/p1-win) would make that sentence false for a decisive game.
-  // `solved-value-reached`'s own "pass" status does not distinguish WHICH value was reached
-  // (draw vs. p0-win vs. p1-win), so this check still does the work that guard was added for.
   //
   // `manifest.solvedValue.proof!`: NOT `?? ""` (stage-6 finding — an empty string would let this
   // cite a nonexistent artifact). C23's own invariant already guarantees this is safe: `ciReport`
@@ -200,8 +199,8 @@ export function runTwoPlayerCiGate(
   // empty/absent `proof` before any gate evaluates — reaching this line with `value === "draw"`
   // (checked immediately above) therefore already proves `proof` is a real, non-empty string.
   const rushDrawAttainment: RushDrawAttainment | undefined =
-    solvedValueReachedGate?.status === "pass" && manifest.solvedValue?.value === "draw"
-      ? { reached: true, proof: manifest.solvedValue.proof! }
+    attainment && manifest.solvedValue?.value === "draw"
+      ? { reached: attainment.reached, proof: manifest.solvedValue.proof! }
       : undefined;
 
   // probes-two-player.ts's own doc: `games` is deliberately NEVER forwarded here — the probe

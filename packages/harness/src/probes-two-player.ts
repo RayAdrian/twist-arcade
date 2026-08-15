@@ -68,13 +68,8 @@ import {
  *    - `"available"`: not declared, a `mirrorMove` WAS resolved — `winRate` is the measured P2
  *      win rate (wins/all games — see the gate's own detail-string comment for why "draws
  *      excluded" is the wrong way to say this), `drawRate` is the SAME matchup's draw rate,
- *      recorded (not gated on) per the stage-6 finding below. `mirrorFallbackRate` (platform-
- *      corrections.md C81 / task #26) is the SAME matchup's `MatchupMetrics.mirrorFallbackRate`
- *      — the fraction of the mirror agent's own moves that were the harness's null-target
- *      fallback substitution rather than an actual reflection (runner.ts's `playOneGame`), always
- *      a real number here (never `null`) because `kind: "available"` only exists once a mirror
- *      matchup genuinely ran, so `mirrorMoveCount` is always > 0. All three NaN-poisoned (C4)
- *      when unreachable (deferred).
+ *      recorded (not gated on) per the stage-6 finding below. Both NaN-poisoned (C4) when
+ *      unreachable (deferred).
  *
  *  STAGE-6 FINDING, RECORDED NOT FIXED HERE: `game-theory-lens` §5.4 names the canonical mirror
  *  degeneracy as "P2 copying P1's move through the center can force a draw (or worse)" — but
@@ -87,14 +82,11 @@ import {
  *  PROPOSED, a plan amendment the coordinator is recording, not an in-branch redesign (a
  *  parity-style metric would false-fire on Fadeout, where a drawing mirror is health, without
  *  the SAME relief rush-probe gets). `drawRate` is recorded in the gate detail below so a future
- *  S5 baseline captures this even though today's gate cannot act on it. `mirrorFallbackRate`
- *  is a SEPARATE finding from this one (C81, not this stage-6 metric-binding gap) — it says how
- *  much of the row is real mirror content at all, not whether wins/games can see a forced draw;
- *  fixing one does not fix the other. */
+ *  S5 baseline captures this even though today's gate cannot act on it. */
 export type MirrorProbeInput =
   | { readonly kind: "suppressed" }
   | { readonly kind: "unavailable"; readonly reason: string }
-  | { readonly kind: "available"; readonly winRate: number; readonly drawRate: number; readonly mirrorFallbackRate: number };
+  | { readonly kind: "available"; readonly winRate: number; readonly drawRate: number };
 
 /** The already-computed numbers `evaluateProbeGates` gates on — kept separate from real
  *  `MatchupReport`s so the pure evaluator can be tested with hand-built values, no real self-play
@@ -218,18 +210,9 @@ export function evaluateProbeGates(
     // STAGE-6 FINDING: `drawRate` is recorded here — NOT gated on (see MirrorProbeInput's own
     // doc for why this metric cannot fire on the canonical "mirror forces a draw" pathology
     // today) — so a future S5 baseline captures it even though this gate cannot act on it yet.
-    //
-    // C81 / task #26: `mirrorFallbackRate` is recorded here too — NOT gated on, same posture —
-    // so the detail can finally say how much of this row is actual mirror content vs. the
-    // harness's own null-target fallback substitution (Nine Grids measured 85.7% fallback
-    // through the real matchup shape before games/nine-grids/probes.ts was aligned to the null
-    // convention; this is the number that would have disclosed it).
-    const mirrorContentPct = ((1 - inputs.mirror.mirrorFallbackRate) * 100).toFixed(1);
-    const fallbackPct = (inputs.mirror.mirrorFallbackRate * 100).toFixed(1);
     const detail =
       `${(wr * 100).toFixed(1)}% win rate as P2 (wins/all games; draws count as non-wins, not excluded from the denominator), ` +
       `mirror draw rate ${(inputs.mirror.drawRate * 100).toFixed(1)}% (recorded only — see the metric-binding note on MirrorProbeInput), ` +
-      `mirror content ${mirrorContentPct}% (${fallbackPct}% of this agent's own moves were the harness's null-target fallback, not an actual reflection — platform-corrections.md C81), ` +
       `(warn >= ${(thresholds.mirrorProbeWinRateWarn * 100).toFixed(0)}%, fail >= ${(thresholds.mirrorProbeWinRateFail * 100).toFixed(0)}%, ${suite})`;
     pushSeverityAdjusted("mirror-probe", raw, detail);
   }
@@ -344,7 +327,7 @@ export function runProbeSuite<S extends WithEffects, M extends Json, V extends W
   const mirrorUnavailableInput: MirrorProbeInput = mirrorSuppressed
     ? { kind: "suppressed" }
     : opts.mirrorMove
-      ? { kind: "available", winRate: Number.NaN, drawRate: Number.NaN, mirrorFallbackRate: Number.NaN } // placeholder — overwritten once self-play actually runs, below
+      ? { kind: "available", winRate: Number.NaN, drawRate: Number.NaN } // placeholder — overwritten once self-play actually runs, below
       : { kind: "unavailable", reason: "no mirrorMove was supplied to runProbeSuite for this game" };
 
   const shippedRuthlessTier = findTier(manifest, "ruthless");
@@ -406,12 +389,6 @@ export function runProbeSuite<S extends WithEffects, M extends Json, V extends W
       // Stage-6 finding: recorded so the gate detail (and a future S5 baseline) captures it,
       // even though the gate itself does not act on it yet — see MirrorProbeInput's own doc.
       drawRate: mirrorMatchup.metrics.drawRate,
-      // C81 / task #26: `?? 0` only ever guards the pathological "mirror seat never moved in any
-      // game this matchup" case (MatchupMetrics.mirrorFallbackRate is `null` there — see its own
-      // doc) — every real shipped game moves the mirror seat at least once per game, so this is a
-      // defensive default, not an expected path; `MirrorProbeInput`'s own doc documents this
-      // field as always real once `kind: "available"`.
-      mirrorFallbackRate: mirrorMatchup.metrics.mirrorFallbackRate ?? 0,
     };
   }
 

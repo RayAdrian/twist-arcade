@@ -36,20 +36,6 @@ export interface GameOutcome {
    *  (see runner.ts's own doc on Note 8's retrofit cost — the same reasoning applies to its own
    *  shape). */
   readonly moves: readonly StepRecord[];
-  /** How many of THIS game's plies were made by a `kind: "mirror"` agent (platform-
-   *  corrections.md C81 / task #26) — 0 for a game with no mirror agent in either seat.
-   *  `mirrorFallbackCount` (below) is always <= this. Recorded per-game (not just aggregated
-   *  into `MatchupMetrics` directly) so a future consumer that wants per-game granularity — a
-   *  comeback curve, an opening-move breakdown — has the raw counts, the same reasoning
-   *  `branchingSamples`/`moves` above are already recorded per-game for. */
-  readonly mirrorMoveCount: number;
-  /** How many of `mirrorMoveCount`'s moves were the harness's own null-target fallback (a
-   *  random legal move substituted because the game's own `mirrorMove` returned `null` — see
-   *  `runner.ts`'s `playOneGame`) rather than an actual mirror reflection. The Nine Grids finding
-   *  this exists to fix: before C81/#26, a "mirror" row that lost 0% of its games as a fallback-
-   *  playing P2 was indistinguishable from one that genuinely mirrored and lost — this field (via
-   *  `MatchupMetrics.mirrorFallbackRate`) is what a gate detail now reads to tell the two apart. */
-  readonly mirrorFallbackCount: number;
 }
 
 export interface MatchupMetrics {
@@ -62,15 +48,6 @@ export interface MatchupMetrics {
   p95Plies: number;
   meanBranchingFactor: number;
   capHitRate: number;
-  /** `mirrorFallbackCount / mirrorMoveCount`, summed across every outcome in this matchup — the
-   *  fraction of a mirror agent's OWN moves that were the harness's fallback substitution, not an
-   *  actual mirror reflection (platform-corrections.md C81 / task #26). `null` when no outcome in
-   *  this matchup involved a mirror agent at all (`mirrorMoveCount` sums to 0) — deliberately NOT
-   *  `0` in that case, which would misread as "measured, and it mirrored perfectly": a matchup
-   *  with no mirror agent has nothing to report a fallback rate ABOUT, the same "structural n/a,
-   *  not a real zero" distinction `ruthlessVsStandardWinRate: number | null` already draws
-   *  elsewhere in this codebase (suites.ts). */
-  mirrorFallbackRate: number | null;
 }
 
 /** Nearest-rank percentile over an ALREADY-ASCENDING-SORTED array. `p` in [0, 100]. Throws on
@@ -118,9 +95,6 @@ export function computeMatchupMetrics(outcomes: readonly GameOutcome[]): Matchup
   const sortedPlies = plies.slice().sort((a, b) => a - b);
   const branching = outcomes.flatMap((o) => o.branchingSamples);
 
-  const mirrorMoveCount = outcomes.reduce((sum, o) => sum + o.mirrorMoveCount, 0);
-  const mirrorFallbackCount = outcomes.reduce((sum, o) => sum + o.mirrorFallbackCount, 0);
-
   return {
     games,
     firstPlayerWinRate: seat0Wins / games,
@@ -131,7 +105,6 @@ export function computeMatchupMetrics(outcomes: readonly GameOutcome[]): Matchup
     p95Plies: percentile(sortedPlies, 95),
     meanBranchingFactor: branching.length > 0 ? mean(branching) : 0,
     capHitRate: capHits / games,
-    mirrorFallbackRate: mirrorMoveCount > 0 ? mirrorFallbackCount / mirrorMoveCount : null,
   };
 }
 
