@@ -4929,3 +4929,30 @@ A real bug surfaced during that work and is worth keeping: `precisionSuffix` lab
 spread as **"118.2pp"** — percentage points — when it was ~1.18 plies. A unit-blind formatter reporting
 a hundredfold-wrong number in a precision annotation is precisely the kind of thing this whole
 correction thread exists to catch.
+
+### C79 addendum — the missing glob, tested rather than argued
+
+I tried C79's ruling 2 directly: add `research/**/*.ts` to `scripts/tsconfig.json` and typecheck.
+**It surfaces five real errors immediately**, and the first one is C79's layer 2 caught automatically:
+
+```
+scripts/research/tilt-t4-gates.ts(68,51): error TS2345:
+  Argument of type '(_state, lastOppMove, legalMoves) => TiltMove | null' is not
+  assignable to parameter of type '(state, lastOppMove, legalMoves) => TiltMove'.
+    Type 'null' is not assignable to type 'TiltMove'.
+```
+
+**That is the `mirrorMove` type lie, found by the compiler the instant the file entered scope.** The
+probes team found it by hand while wiring; this proves the tooling would have found it for free, and
+that the only thing standing between the repo and that diagnosis was one missing glob entry.
+
+Also surfaced: a genuine `TS4104` (a `readonly StepRecord[]` assigned to a mutable `StepRecord[]` in
+`tilt-kill-sweep.ts` — the script that produced Tilt's kill-sweep evidence), and several
+`TS6059`/`TS6307` project-structure errors because the research scripts import from `games/tilt/`,
+which sits outside `scripts`' `rootDir` and is not listed in that project.
+
+**The fix is therefore larger than a glob**: the project-reference structure has to accommodate
+scripts that legitimately import game code, which is a real design question about how research code
+relates to the build graph. **Reverted rather than left red**, and routed to task #24 with this
+evidence attached — a half-applied fix that turns the tree red is worse than the gap it closes, and
+the point of testing the ruling was to size it, which it did.
