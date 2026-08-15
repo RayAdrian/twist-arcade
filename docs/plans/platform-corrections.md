@@ -5029,3 +5029,85 @@ failed exactly the six provisional-specific tests and nothing else.
 
 **Tilt's result stands: 70.0% FAIL → 64.0% PASS, provisional.** The game was never broken. Under the t
 correction the row stays provisional, so the finding survives its own fix.
+
+## C81 — A mechanism to catch unkept promises, in which a kept promise cannot discharge.
+
+Three stage-6 reviews landed together. Two found the same species of defect in two different branches,
+and one of them is the sharpest instance yet.
+
+### C70's deferral mechanism cannot be discharged
+
+`recordDischarge` writes `lastDischargedAt` into `data/deferral-ledger.json` when the **nightly** suite
+runs. `nightly.yml` runs in an **ephemeral GitHub Actions workspace with no commit-back step.** The
+write is discarded every night.
+
+So: merge it, and every PR correctly goes red — Mine Run is past materiality — and then **a perfectly
+green nightly can never clear it.** The only escape is a human running the ~4.6-hour suite locally and
+committing the ledger, a procedure documented nowhere, or hand-editing the date, which is the
+unvalidated tamper path the same review found separately.
+
+**C70's mandate is that a kept promise discharges. As built, a kept promise cannot.** The mechanism
+would have converted "nightly never runs" into "CI is permanently red and no one can fix it" — a
+self-inflicted outage, shipped by the correction whose entire purpose was to stop a gate from lying.
+
+The unit tests inject in-memory read/write dependencies, so persistence is the one property they
+structurally could not check. That is not a lapse; it is the seam. **Anything whose correctness
+depends on a side effect surviving the process cannot be verified by a test that fakes the side
+effect.**
+
+**Ruling: do not make CI depend on a write CI cannot persist.** Discharge must be derived from a
+**committed artifact**, not a workspace write. That makes discharge tamper-evident by construction,
+avoids granting CI `contents: write` and a bot identity for what is a reporting fix, and works today
+while billing blocks nightly entirely (C68). A documented manual path is required alongside it,
+because the automated one is blocked on something no code change fixes.
+
+### The same shape, in the probe branch: a refusal that was never built
+
+`evaluateProbeGates` was specified — in the plan's §3, in its S2 step list, and in its own done-means
+list — to refuse an active deferral at nightly, the way both sibling evaluators already do
+(`suites.ts:449`, `solo-gates.ts:434`). **It has no refusal at all.** Handed a nightly suite with an
+active deferral it emits three `deferred` rows: a gate deferred at every tier, which is C27's exact
+abuse case.
+
+**That is C64's shape — a documented protection that was never built — inside the change that closes
+C64.** The commit reported S0–S4 complete; this S2 deliverable was silently absent, and the existing
+test exercised the wrapper's construction rather than the evaluator's seam.
+
+### And the probe cannot detect its own headline pathology
+
+The mirror gate scores `wins / games`. `game-theory-lens` §5.4 states the canonical mirror degeneracy
+as *"P2 copying P1's move through the center can **force a draw** (or worse)."* **A mirror that draws
+100% of games as P2 scores 0% and passes.** The draw-rate gate does not catch it either, since that
+measures strong self-play, which can be decisive while a trivial mirror forces draws.
+
+The thresholds are genuinely RECOVERED — both source lines re-verified. The **metric binding** is
+planner judgment wearing the RECOVERED label, which is C64's provenance defect in miniature. This is a
+**plan** defect faithfully implemented, so it routes here rather than to a code patch: a parity-style
+metric needs the same proven-draw relief rush already has, or it false-fires on Fadeout where a
+drawing mirror is health. Recorded as an amendment owed **before S5 runs**, because enshrining a
+baseline from a probe that cannot detect its headline pathology would make the defect permanent.
+
+### What the review measured that nobody had
+
+The diff asserted, in three comment sites, that "every shipped game's `mirrorMove` returns null." It is
+**false for Nine Grids**, which returns `legalMoves[0]` internally. Measured fallback rates through the
+real matchup shape: **tilt 0/80 (0.0%), fadeout 17/61 (27.9%), nine-grids 221/258 (85.7%)**.
+
+So Nine Grids' mirror row is roughly **14% mirror content and 86% deterministic first-legal play**,
+served by the game's own fallback — which the harness **cannot observe**. The gate direction is safe
+(high fallback occurs exactly where mirroring is not executable, so a low win rate is the true answer),
+but the report cannot distinguish *"mirror lost"* from *"mirror never mirrored"*, and that distinction
+becomes load-bearing the moment S5 records these rows as a baseline.
+
+### The scope finding, recurring for the third time in a day
+
+The S0/S1 evidence scripts committed in the probe branch **sit outside every tsconfig** — C79's exact
+shape, inside the branch whose review surfaced C79. And the tsconfig-guard review correctly refused to
+approve its own deliverable, on the grounds that **C79 ruling 1 — which I wrote — already rules its
+scope wrong.**
+
+That is the right outcome and worth stating plainly: **a reviewer citing my own ruling against a branch
+I approved the design of is the process working.** Ruling: C79 ruling 1 is satisfied by task #24 rather
+than in that branch, because the honest extension goes red on `scripts/research`'s five real errors
+(C79 addendum) — but the header comment asserting the now-refuted rationale must go **now**, and every
+exemption must become a printed runtime artifact rather than prose.
