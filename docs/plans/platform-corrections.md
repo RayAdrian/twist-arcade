@@ -4858,3 +4858,74 @@ test of it, and the threshold — all before any code existed. The test ran in *
 killed the recommendation. Compare C73→C76, where a selection-rule remedy consumed an implementation,
 four measurement rounds and two corrections before losing 300–89 head-to-head. **The order in which
 you test candidates is worth more than which candidate you pick first.**
+
+## C79 — Four layers of the same defect, and the bottom one is the guard I shipped today.
+
+Wiring the degeneracy probes (C64) turned up a stack that is worth reading as a single object.
+
+1. **The mirror probe is not computed by CI for any game.** That is C64, already recorded.
+2. **Every shipped game's `mirrorMove` documents a fallback that was never implemented.** Fadeout,
+   Nine Grids and Tilt all return `null` when there is no opponent move yet, or when the reflected
+   target is no longer legal, and each says in its own comment that *"the harness falls back to a
+   random legal move."* **`runner.ts` never implemented that fallback**, and `roster.ts`'s type
+   declared `=> M`, not `=> M | null`. A `null` return would have reached `apply()` and crashed with
+   *"apply() called without a move."*
+3. **The one script that would have exercised it was never typechecked.**
+   `scripts/research/tilt-t4-gates.ts` is the only real `mirrorMove` call site in the repository, and
+   `scripts/tsconfig.json`'s `include` is `["*.ts", "test/**/*.ts"]` — **it does not cover
+   `research/`.** So the type lie was invisible.
+4. **My own C72 guard would never have caught layer 3.** `check-tsconfig-coverage.mjs` scopes itself
+   to `packages/*` and `games/*`, and its header calls `scripts/` *"deliberately out of scope"*
+   because those are not pnpm workspace packages. I shipped that guard hours ago, verified it, and
+   wrote that its method — ask the compiler, do not read the glob — was the transferable lesson.
+   **The method was right and the scope was wrong**, and the scope is exactly where the next instance
+   was hiding.
+
+### The shape
+
+C64 was a probe nobody called. C69 and C72 were code the typechecker never read. This is **both at
+once, stacked**, plus a documented behaviour that never existed — and then a guard whose declared
+scope excludes the place it happened. Each layer independently hid the one above it. Nothing here
+required anyone to be careless; it required four reasonable local decisions to compose.
+
+The general form, which this document has now hit from four directions: **every guard has a scope,
+the scope is itself an untested claim, and defects migrate to wherever the scope ends.** C72 stated
+that a configuration scoping a guard is part of the guard. It did not follow through: I wrote that
+sentence about `include` globs and then shipped a guard with an `include` glob of its own that I
+never questioned.
+
+### Rulings
+
+1. **Extend the tsconfig coverage guard past workspace packages.** `scripts/` is real, shipped,
+   typechecked-in-part code and belongs in scope; so does the root Next.js app. If a directory is
+   genuinely exempt, the guard should say which and why, in the same visible way its `vitest.config`
+   allowlist already does — an exemption that is printed is reviewable; one that lives in a header
+   comment is not.
+2. **`scripts/tsconfig.json` gains `research/**/*.ts`.** Those scripts produced the Tilt kill-sweep,
+   the T4 gate table and the double-line check — three artifacts this document cites as evidence.
+   Evidence-producing code is not scratch.
+3. **The `mirrorMove` fallback fix stands** — `M | null` in the type, the random-legal-move fallback
+   implemented in `playOneGame`, confirmed red first with the real crash and then green.
+4. **Tilt's probe cost is ~55% above the plan's estimate** (188s extrapolated vs ~121s), while Nine
+   Grids — the game the plan flagged as carrying the widest error bars — came in fine. Recorded
+   before S5 runs at full budget, so the surprise is on the record rather than discovered mid-sweep.
+
+### And the other item that landed with it: C71 is fixed, and Tilt was innocent
+
+Multi-seed gating shipped. `seedCount` defaults to `1`, so every existing caller is byte-identical;
+production uses **K=5 at ci and K=10 at nightly with total games held flat** — the timing pilot showed
+per-game cost is essentially unchanged through K=4 and only ~17% higher at K=12, so splitting a fixed
+budget across seeds is close to free. Cross-seed SD is computed **across seeds**, never as a binomial
+over `seedCount × gamesPerSeed`, because C71's whole finding is that games within a seed are
+correlated.
+
+**Tilt's `first-player-win-rate` went from 70.0% FAIL to 64.0% PASS, flagged `[PROVISIONAL]`.** That
+is C71's prediction confirmed end to end: the game was never broken, the instrument was, and the fix
+reports its own uncertainty rather than asserting a verdict it cannot support. C49's "provisional
+within ~10 points of an edge" is now computed (one-sided 90%, z=1.645) instead of eyeballed — and
+pass/fail is still decided against the **unmoved** band.
+
+A real bug surfaced during that work and is worth keeping: `precisionSuffix` labelled `meanPlies`'s
+spread as **"118.2pp"** — percentage points — when it was ~1.18 plies. A unit-blind formatter reporting
+a hundredfold-wrong number in a precision annotation is precisely the kind of thing this whole
+correction thread exists to catch.
