@@ -42,22 +42,25 @@ export interface MirrorAgentSpec<S extends WithEffects, M extends Json> {
    *  `null` on the mirror seat's very first move of a game (there is nothing to mirror yet —
    *  the game-local `mirrorMove` must handle that case, e.g. by playing center/any opening).
    *
-   *  RETURN TYPE IS `M | null` (docs/plans/degeneracy-probes.md, C64 finding): Fadeout's and
-   *  Tilt's own `mirrorMove` (`probes.ts`) are documented to return `null` when there is no
-   *  opponent move yet to mirror, or the reflected target is no longer legal — "the harness's
-   *  mirror-bot policy falls back to a random legal move in either case" (each game's own doc
-   *  comment states this convention verbatim). `runner.ts`'s `playOneGame` is what actually
-   *  implements that fallback.
+   *  RETURN TYPE IS `M | null` (docs/plans/degeneracy-probes.md, C64 finding): every shipped
+   *  game's `mirrorMove` (`probes.ts`) is documented to return `null` when there is no opponent
+   *  move yet to mirror, or the reflected target is no longer legal — "the harness's mirror-bot
+   *  policy falls back to a random legal move in either case" (each game's own doc comment
+   *  states this convention verbatim). `runner.ts`'s `playOneGame` is what actually implements
+   *  that fallback.
    *
-   *  CORRECTED (stage-6 review): this is NOT universal — Nine Grids' own `mirrorMove` never
-   *  returns `null` at all; it falls back INTERNALLY to `legalMoves[0]` (its own module doc:
-   *  "Fallback... play the first legal move. Never throws, never returns an illegal move").
-   *  That fallback is invisible to the harness (it never sees a `null`, so `runner.ts`'s own
-   *  random-legal-move substitution never fires for Nine Grids) and substantially more frequent
-   *  in practice than Fadeout's or Tilt's — aligning Nine Grids' own `mirrorMove` to the same
-   *  null-and-harness-fallback convention, and counting fallback substitutions into
-   *  `MatchupReport` so a reader can tell how much of a "mirror" row is actually mirroring, are
-   *  both recorded as cross-team follow-ups, not fixed here. */
+   *  FIXED (platform-corrections.md C81 / task #26): this was NOT universal until now — Nine
+   *  Grids' own `mirrorMove` used to never return `null` at all; it fell back INTERNALLY to
+   *  `legalMoves[0]`. That fallback was invisible to the harness (it never saw a `null`, so
+   *  `runner.ts`'s own random-legal-move substitution never fired for Nine Grids) and
+   *  substantially more frequent in practice than Fadeout's or Tilt's — measured fallback rates
+   *  through the real matchup shape: tilt 0/80 (0.0%), fadeout 17/61 (27.9%), nine-grids 221/258
+   *  (85.7%). Nine Grids' own `mirrorMove` is now aligned to the same null-and-harness-fallback
+   *  convention every other game uses (games/nine-grids/probes.ts), and `runner.ts` now counts
+   *  every fallback substitution into `GameOutcome.mirrorMoveCount`/`mirrorFallbackCount`,
+   *  aggregated into `MatchupReport.metrics.mirrorFallbackRate` (metrics.ts) — a mirror-probe
+   *  gate detail (probes-two-player.ts) reads that to disclose how much of a "mirror" row is
+   *  actually mirroring vs. deterministic fallback play. */
   readonly mirrorMove: (state: S, lastOppMove: M | null, legalMoves: readonly M[]) => M | null;
 }
 
