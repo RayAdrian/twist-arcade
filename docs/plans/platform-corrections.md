@@ -4647,3 +4647,70 @@ made: the head-to-head discriminator above, and a judgement on whether `strong-v
 right acceptance metric for a change to the opponent model at all.
 
 Bid-Tac-Toe remains undecided, which is unchanged and now doubly justified.
+
+## C76 — The head-to-head: DUCT loses to the defect it replaced, and the gap widens with budget.
+
+C75 reopened the remedy choice and named the missing evidence: every comparison so far measured each
+search *separately*, against random or against an oracle. Nobody had asked which search **beats** the
+other. Raw output: `docs/research/games/duct-vs-legacy-head-to-head.out`.
+
+### The faithfulness gate, passed before any number was read
+
+A head-to-head against a reconstructed opponent proves nothing. `mctsPolicyLegacy` was taken wholesale
+from `git show dabc6a2:packages/bots/src/mcts.ts`, then required to **reproduce the pre-fix
+byte-identity baselines for fadeout, nine-grids and tilt** — the dumps captured before `mcts.ts` was
+ever edited. **All three identical.** The legacy arm is provably the old algorithm, not an
+approximation of it.
+
+### Bid-Tac-Toe — the game DUCT was built to fix
+
+| budget | DUCT | draws | Legacy (max-max) |
+|---|---|---|---|
+| 1,000 | 154W (38.5%) | 5 (1.3%) | **241W (60.3%)** |
+| **10,000** (shipped) | 89W (22.3%) | 11 (2.8%) | **300W (75.0%)** |
+
+n=400 per budget, two seeds each, both seeds agreeing closely (72.5%/77.5% at 10k).
+
+**At the shipped budget max-max beats DUCT better than 3:1.** And the contrast cell did its job: the
+gap is +21.8 points at 1k and **+52.7 points at 10k** — DUCT gets *relatively worse the more it
+searches*. That is the same "more search, worse play" signature C55 opened this whole thread with,
+now belonging to the fix rather than to the defect.
+
+### Why this is coherent rather than surprising
+
+E-A already showed it and I did not draw the line. DUCT made the **value estimate** honest
+(rootValue ~0 on a proven draw, where max-max climbed to +0.21) and the **move choice** worse
+(`P(chosen ∈ optimal)` 0.350 → 0.000 at 10k). **Games are won by move choice, not by value honesty.**
+Max-max's bias happened to push bids toward the 0–2 region the solve report says genuinely wins —
+right moves, wrong reasoning. Remove the bias and the moves get worse, because C73 established there
+was no true signal underneath: uniform-random rollouts cannot price an auction.
+
+### The convenient hypothesis, now tested — and half of it was right
+
+C75 recorded a hypothesis and explicitly refused to lean on it: that `strong-vs-random` may penalise
+an adversarial model, since a random opponent really does not block. **Duel Draft's head-to-head
+tests it: DUCT 5W / 195D / Legacy 0W at 10k.** DUCT loses *nothing* there.
+
+So the C75 Duel Draft "degradation" (88% → 77% against random) **did not survive contact with a real
+opponent** — it was substantially a metric artifact, exactly as suspected. Refutation condition 3
+fired on a measurement that head-to-head does not reproduce.
+
+**That vindication does not rescue DUCT**, and it is worth being explicit about why: losing 300–89 on
+Bid-Tac-Toe is not a metric artifact. One arm of the case against DUCT dissolved; the other got much
+stronger.
+
+### Ruling — DUCT does not ship
+
+It is not merged and nothing depends on it. `feature/sim-search-residue` is retained, not reverted:
+the DUCT implementation, the pure-saddle fixture, `createExactOracle`, the E-A instrument and the
+faithful legacy policy are all real assets, and the branch is the record of a hypothesis that was
+correctly formed, correctly tested, and **correctly rejected on evidence.**
+
+C73 → C74 → C75 → C76 are one argument: **the defect is the evaluation, not the selection rule.**
+C74 showed the pathology moving between metrics, C75 between games, and C76 shows that changing the
+selection rule alone makes play *worse* at the budget that ships. Work continues on #22 — a rollout
+policy that can price an auction — and any future selection-rule change is judged head-to-head, not
+against random.
+
+**Bid-Tac-Toe stays undecided.** Its gate table still cannot be trusted, and the user's instruction —
+fix the search first — remains the right sequence; the fix simply is not this one.
