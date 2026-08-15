@@ -50,29 +50,87 @@ Provenance is marked **RECOVERED** (traceable to a document or measurement) or *
 
 Gate rows: `mirror-probe`, `stall-probe`, `rush-probe`.
 
-### 1.1 Mirror — threshold NUMBERS recovered; the METRIC BINDING is PROPOSED
-**CORRECTED (stage-6 review, post-implementation):** re-checking roadmap.md:258 and
-game-theory-lens.md:200 confirms the threshold **numbers** below are genuinely RECOVERED — that
-stands. What does **not** stand is calling the whole gate RECOVERED: **which metric** those
-numbers are bound to (wins/games, rather than a parity-style score) is planner judgment wearing
-a RECOVERED label, so the metric binding is now marked **PROPOSED**.
+### 1.1 Mirror — parity score, with proven-draw relief (AMENDED 2026-08-16, closing C81)
 
-Matchup: the game's own `mirrorMove` as P2 (seat 1), `mirrorSeats: false`, vs `ruthless` at the
-suite's effective budget. Assertion: mirror's **win rate** (wins/all games) as P2.
-Thresholds: pass `< 40%`; warn `40–50%`; fail `≥ 50%` — RECOVERED from roadmap.md:258,
-game-theory-lens §3.4:254 and §2.7 ("≥50% as P2 in a symmetric game, the game is broken").
+**History.** The original binding gated mirror's **win rate** (wins/all games). C81 found that
+binding cannot fire on the pathology its own source most emphasises: game-theory-lens §5.4 states
+the canonical mirror degeneracy as *"P2 copying P1's move through the center can force a draw (or
+worse)"*, and a mirror that draws 100% of its games as P2 scores 0% — a clean pass. Strong-self-play's
+draw-rate gate does not catch it either (different matchup).
 
-**Known gap (PROPOSED metric binding), not fixed in this branch:** game-theory-lens §5.4 states
-the canonical mirror degeneracy as *"P2 copying P1's move through the center can force a draw
-(or worse)."* Wins/games cannot fire on that: a mirror that draws 100% of its games scores a 0%
-win rate — a clean pass on the exact pathology the source document most emphasizes — and
-strong-self-play's own draw-rate gate does not catch it either, since that measures a different
-matchup entirely. The mirror matchup's own draw rate is now recorded in the gate's detail string
-(`probes-two-player.ts`) so a future S5 baseline captures it even though the gate cannot act on
-it yet. **Not redesigned here**: a parity-style metric needs the SAME proven-draw relief
-rush-probe already has (§1.3's "Proven-draw relief"), or it would false-fire on Fadeout, where a
-drawing mirror is health, not a defect — that is a plan amendment for a future pass, not an
-in-branch patch.
+**Matchup: unchanged.** The game's own `mirrorMove` as P2, `mirrorSeats: false`, vs `ruthless` at the
+suite's effective budget, n=100. The implementing branch must show matchup outcomes byte-identical
+under fixed seeds — only the gate evaluation and detail string change.
+
+**Metric (two branches, one gate row):**
+
+- **Default: parity score** — `(wins + 0.5·draws)/games` via `agentParityScore`, the SAME function
+  rush's input is built from — never a hand-recomposed `winRate + 0.5·drawRate` (algebraically
+  identical, but a second derivation is C55's drift shape). A mirror forcing a draw every game now
+  scores exactly 50% and fails.
+- **Proven-draw relief branch:** when `manifest.solvedValue` is a proven **draw** AND attainment
+  reached it, the gate scores **win rate** against the same bands. Deliberately **not** `n/a`: in a
+  proven-reached-draw game a mirror that *draws* is health, but a mirror that outright *wins* means
+  the strong bot is exploitable by copying — still degeneracy — so the win signal stays live and only
+  the draw half-credit is relieved.
+- The detail always prints win rate, draw rate, parity, which branch gated, and why.
+
+**Thresholds: same numbers, renamed fields.** `mirrorProbeScoreWarn: 0.40`, `mirrorProbeScoreFail:
+0.50`. Verified 2026-08-16: no manifest overrides these fields, so nothing migrates. **This amendment
+introduces zero new numeric values.**
+
+**Band provenance, stated honestly:**
+- **The numbers 0.40 / 0.50 — RECOVERED** (roadmap.md:258; lens §2.7:200; §3.4:254, all re-verified).
+  **Neither source states which metric the numbers bind to.** The old win-rate binding was therefore
+  PROPOSED, and so is this one — the recovered label covers the numbers, never the binding.
+- **Binding 0.50 to parity — PROPOSED, with derivation:** §2.7's "≥50% → broken" cites §5.4, whose
+  pathology is a *forced draw*. Only a draw-inclusive score lets that pathology reach the threshold.
+  Strong reasoning, still planner reasoning — calling it RECOVERED would repeat C64.
+- **Binding 0.40 to parity — PROPOSED.** The transfer is not derivable; the *direction* is: parity ≥
+  win rate always, so this is **monotone-stricter — nothing that passes today can newly pass, and
+  nothing failing today can newly pass.** In a healthy symmetric game the shift equals half the
+  mirror matchup's draw rate, and a high mirror draw rate in a symmetric game *is* the §5.4
+  pathology — the shift is signal, not recalibration.
+
+**Applicability by tag: unchanged** (§4.4 stands). The sources' "broken" claim is scoped to
+**symmetric** games; applying the bands to a non-symmetric exporter like Fadeout is
+**PROPOSED-by-extension**. Today this forks no behaviour — Fadeout takes the relief branch. A future
+non-symmetric game tripping the parity branch is a finding, never a quiet band adjustment (C55).
+
+**Relief mechanism — one source, two consumers (C55).** `runTwoPlayerCiGate` already computes
+attainment ONCE via `solvedValueAttainment` and threads it to rush. Mirror consumes **that same
+value** — never a second derivation. Task #27 is moving rush's relief source to survive multi-seed
+runs; **the invariant pinned here is "one attainment source, both probes read it", whichever source
+#27 lands.** Either order is safe; two sources is not.
+
+**Interaction with task #26 — metric lands now, S5 waits.** Nine Grids' mirror row is ~86%
+game-internal fallback (221/258, C81), invisible to the harness until #26. Until then its parity
+number mostly measures first-legal-vs-ruthless play and its row must carry that caveat. The metric
+change does not wait (pure evaluator, monotone-conservative, warn-only at ci). **S5 does wait**:
+#26 changes the very distribution that row measures, so a pre-#26 baseline would be enshrined and
+immediately invalidated.
+
+**Verification (C77 — the mechanism, separately from the fix):** planted evaluator tests, one per
+claim — `(win 0, draw 1.0)` → parity 0.5 → fires; same input with relief → passes; `(win 0.55,
+relief)` → fails, proving the win signal survives relief; boundary at exactly 0.40 → warn. Plus a
+real-wiring test where a sabotaged threshold trips off a real matchup through the parity path, and
+fixed-seed byte-identity on stall/rush rows.
+
+**Honest caveat: "parity without relief false-fires on Fadeout" is a PREDICTION, not a measurement.**
+Fadeout's mirror-vs-ruthless draw share has never been run. If Fadeout's mirror mostly *loses* rather
+than draws, relief remains correct but "mandatory" downgrades honestly to "cheap insurance."
+
+**Pre-implementation experiment (cheapest refutation).** Mirror matchup ONLY, n=100, two seeds, ci
+budgets, tilt/fadeout/nine-grids, printing win rate, draw rate and parity from the SAME outcomes;
+~10–20 min locally. **Refutes this recommendation if** healthy symmetric Tilt lands at ≥40% parity —
+a false warn on a healthy game means the band transfer is wrong, and the amendment goes back for new
+PROPOSED bands, recorded as a finding rather than tuned quietly.
+
+**Recorded, not actioned:** the lens binds the STALL probe to "win/draw rate" (§2.7:181) while §1.2
+chose wins/all-games citing the same Fadeout-health concern this amendment solves with relief. The
+parity+relief shape would reconcile stall with its source too. Noted so the discrepancy is on the
+record rather than rediscovered.
+
 
 ### 1.2 Stall — half recovered, half proposed
 Matchup: roster `"stall"` as P2, `mirrorSeats: false`, vs `ruthless`.
@@ -215,7 +273,16 @@ it does not. See C68 — nightly has never once run.)*
 - **S3 — `runProbeSuite`** + a real-wiring test (sabotaged threshold trips off a real matchup).
 - **S4 — Composition:** harness `ci-gates.ts`, `scripts/ci-gates.ts`, `index.ts` re-exports,
   `MirrorMoveNotExportedError` (planted: a symmetric-tagged fixture without the export).
-- **S5 — The measurement, which is the point of the work.** Full probe suite against Fadeout, Nine
+- **S5 — The measurement, which is the point of the work. BLOCKED until (a) §1.1's amendment is
+  implemented, (b) task #26 (Nine Grids null convention + fallback counting) is merged — a baseline
+  recorded before #26 would enshrine a Nine Grids mirror row that #26 immediately invalidates — and
+  (c) task #27's relief-source fix has landed OR S5 runs its two seeds as two separate single-seed
+  invocations (the `seedCount > 1` relief-withholding gap).** Per game×probe cell record mirror's win
+  rate, draw rate AND parity plus which branch gated and the relief state; stall's win rate and
+  cap-hit rate; rush's parity and relief state; harness-observed fallback counts (#26); every gate
+  status. **Pin the metric version into the baseline document itself** — formulae, threshold field
+  names and values, seeds, budgets, and the git SHA — so a future metric change starts a NEW table
+  rather than silently reinterpreting this one underneath its readers. Original text: Full probe suite against Fadeout, Nine
   Grids, Tilt at ci budgets, n=100, **two independent seeds**. Record verbatim in
   `docs/research/games/two-player-probe-baseline.md` plus a platform-corrections entry, **whatever the
   numbers say.** A probe firing on a shipped game is the purpose, not an obstacle.
