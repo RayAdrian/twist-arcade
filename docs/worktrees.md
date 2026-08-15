@@ -59,7 +59,7 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 | deferrals (C70: make an undischarged gate deferral visible and eventually fatal — Mine Run defers 8/10 gates to a nightly that has never run, `docs/plans/platform-corrections.md` C68/C70) | `../claude-project-deferrals` | `feature/deferral-discharge` | `twistarcade_deferrals` | 56821–56829 | not started (no DB) — harness/gate-table work only | ACTIVE — verified free with `lsof` AND `docker ps` per C62 |
 | tsconfig (C72: automate the tsconfig-coverage audit — two packages silently excluded real source from typecheck, `docs/plans/platform-corrections.md` C69/C72) | `../claude-project-tsconfig` | `feature/tsconfig-guard` | `twistarcade_tsconfig` | 56921–56929 | not started (no DB) — build-tooling only | ACTIVE — verified free with `lsof` AND `docker ps` per C62 |
 
-| home1b (design direction 1b "Riso Zine" — the library home rebuilt from the user's Claude Design project, replacing Phase 0's placeholder `app/page.tsx`) | `../claude-project-home1b` | `feature/home-riso-zine` | `twistarcade_home1b` | 57021–57029 | not started (no DB) — app/shell UI only | ACTIVE — verified free with `lsof` AND `docker ps` per C62 |
+| home1b (design direction 1b "Riso Zine" — the library home rebuilt from the user's Claude Design project, replacing Phase 0's placeholder `app/page.tsx`) | `../claude-project-home1b` | `feature/home-riso-zine` | `twistarcade_home1b` | 57021–57029 (RELEASED) | never started (no DB) | **CLOSED 2026-08-15** — merged at a8b7f9f; the 1b home is live on `main`. Worktree removed, branch deleted, no containers ever created. |
 | seedgate (C71: single hardcoded gate seed makes borderline verdicts coin flips — 12.9pp across-seed SD against a 30-point band, `docs/plans/platform-corrections.md` C49/C71) | `../claude-project-seedgate` | `feature/multi-seed-gates` | `twistarcade_seedgate` | 57121–57129 | not started (no DB) — harness/gate-table work only | ACTIVE — verified free with `lsof` AND `docker ps` per C62 |
 
 ## Port blocks
@@ -105,5 +105,5 @@ exists is exactly the leak §6 exists to prevent.
 | 56621–56629 (team 23) | probes | CLAIMED 2026-08-12 — verified free with `lsof` AND `docker ps` before claiming (C62's lesson) |
 | 56821–56829 (team 24) | deferrals | CLAIMED 2026-08-15 — verified free with `lsof` AND `docker ps` |
 | 56921–56929 (team 25) | tsconfig | CLAIMED 2026-08-15 — verified free with `lsof` AND `docker ps` |
-| 57021–57029 (team 26) | home1b | CLAIMED 2026-08-15 — verified free with `lsof` AND `docker ps` |
+| 57021–57029 (team 26) | — | **FREE** — released 2026-08-15 when home1b merged at a8b7f9f. Never bound: no Supabase stack. |
 | 57121–57129 (team 27) | seedgate | CLAIMED 2026-08-15 — verified free with `lsof` AND `docker ps` |
