@@ -111,6 +111,12 @@ function playOneGame<S extends WithEffects, M extends Json, V extends WithEffect
   // Tracks the most recent move made BY each seat — the "lastOppMove" a mirror agent (roster.ts)
   // needs, from the perspective of whichever seat is asking. null until that seat has moved.
   const lastMoveBySeat: [M | null, M | null] = [null, null];
+  // platform-corrections.md C81 / task #26: counts, for THIS game, how many of a mirror agent's
+  // own moves were real reflections vs. the null-target fallback substitution below — see
+  // GameOutcome.mirrorMoveCount/mirrorFallbackCount's own doc in metrics.ts for why this is
+  // recorded per-game rather than only at the MatchupMetrics aggregate.
+  let mirrorMoveCount = 0;
+  let mirrorFallbackCount = 0;
 
   while (status.kind === "ongoing" && plies < maxPlies) {
     const active = engine.active(state);
@@ -142,12 +148,18 @@ function playOneGame<S extends WithEffects, M extends Json, V extends WithEffect
       // domain-separated bot-randomness stream (`policyRng`) policy agents already draw from
       // this ply — no new rng stream, same convention this module's own doc already establishes.
       //
-      // CORRECTED (stage-6 review): Nine Grids' own mirrorMove never returns `null` — it falls
-      // back INTERNALLY to `legalMoves[0]` (see roster.ts's MirrorAgentSpec.mirrorMove doc for
-      // the full note) — so this substitution never fires for Nine Grids at all; its own
-      // fallback is invisible to the harness. Aligning Nine Grids and counting fallback
-      // substitutions are recorded cross-team follow-ups, not fixed here.
+      // FIXED (platform-corrections.md C81 / task #26): Nine Grids' own mirrorMove used to never
+      // return `null` — it fell back INTERNALLY to `legalMoves[0]` (see roster.ts's
+      // MirrorAgentSpec.mirrorMove doc for the full history) — so this substitution never fired
+      // for Nine Grids at all; its own fallback was invisible to the harness. Aligned now
+      // (games/nine-grids/probes.ts), and the substitution below is counted per-game
+      // (`mirrorMoveCount`/`mirrorFallbackCount`, GameOutcome) so a mirror row can finally
+      // disclose how much of itself was actual mirroring vs. deterministic fallback play.
       const mirrorMove = agent.kind === "mirror" ? agent.mirrorMove(state, lastMoveBySeat[opponentSeat] ?? null, legal) : null;
+      if (agent.kind === "mirror") {
+        mirrorMoveCount += 1;
+        if (mirrorMove === null) mirrorFallbackCount += 1;
+      }
       const move: M =
         agent.kind === "mirror"
           ? (mirrorMove ?? legal[policyRng.int(legal.length)]!)
@@ -181,6 +193,8 @@ function playOneGame<S extends WithEffects, M extends Json, V extends WithEffect
     capHit,
     branchingSamples,
     moves,
+    mirrorMoveCount,
+    mirrorFallbackCount,
   };
 }
 

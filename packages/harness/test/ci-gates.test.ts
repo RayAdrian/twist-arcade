@@ -398,6 +398,92 @@ describe("runTwoPlayerCiGate — C64 stage-6: rush-probe's proven-draw relief mu
 });
 
 // ---------------------------------------------------------------------------------------
+// KNOWN GAP, now fixed (platform-corrections.md C81 / task #27): rush's proven-draw relief used
+// to read `ciReport.matchups?.strongSelfPlay.metrics`, which is `null` under TWO conditions — an
+// active C27 deferral (already covered above) AND a multi-seed run (`seedCount > 1`, which
+// reports via `seedRuns`/`precision` instead of a single `matchups` triple). So relief was
+// silently WITHHELD on every multi-seed run, even when the aggregate genuinely reached the
+// proven draw. Ruling: read the SAME source `solved-value-reached` itself reads (`ciReport.gates`,
+// via `evaluateCiGates`) — that row is correct under multi-seed, deferral, and single-seed alike,
+// because it is computed from the aggregate mean either way (suites.ts's `attainment`), never
+// from `ciReport.matchups` directly. Neither C71/C80 (multi-seed) nor C64 (rush relief)'s own
+// tests planted this combination — multi-seed fixtures never set a proven draw, and the proven-
+// draw fixtures never set seedCount — which is why it survived.
+// ---------------------------------------------------------------------------------------
+describe("runTwoPlayerCiGate — C81 / task #27: rush-probe's proven-draw relief under seedCount > 1", () => {
+  const provenDrawManifest: GameManifest = {
+    id: "classic-ttt-fixture",
+    title: "Classic TTT (proven draw, multi-seed fixture)",
+    classic: "Tic-Tac-Toe",
+    ruleSentence: "ci-gates.test.ts C81/#27 fixture — a real, known proven draw, measured across seeds.",
+    tags: [],
+    estMinutes: 1,
+    modes: { bot: true, hotseat: false, asyncLink: false },
+    players: { min: 2, max: 2 },
+    difficultyTiers: [
+      { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 2000 }, minReplyMs: 0 },
+    ],
+    solvedValue: { value: "draw", proof: "ci-gates.test.ts: classic tic-tac-toe is a textbook proven draw under optimal play" },
+  };
+
+  it("PLANTED (the combination neither correction's own tests exercised): seedCount > 1 + a genuinely reached proven draw still grants rush-probe relief, even though ciReport.matchups is null", () => {
+    const report = runTwoPlayerCiGate(classicTicTacToe, provenDrawManifest, {
+      seed: "ci-gates:c81:multiseed-draw-relief",
+      games: 40,
+      seedCount: 4,
+    });
+
+    // Sanity: this really is the multi-seed path (matchups null, seedRuns present) — otherwise
+    // this test would not be exercising the KNOWN GAP at all.
+    expect(report.matchups).toBeNull();
+    expect(report.seedRuns).toHaveLength(4);
+
+    // Sanity: the proof really was reached — solved-value-reached is the SAME source the fix now
+    // reads, so if this isn't "pass" the test proves nothing about the fix.
+    const solvedValueReached = report.gates.find((g) => g.gate === "solved-value-reached")!;
+    expect(solvedValueReached.status).toBe("pass");
+
+    // The fix: rush-probe gets the proven-draw relief (n/a, citing the proof), not a real
+    // measurement — the pre-fix code would have measured rush for real here, silently, because
+    // `ciReport.matchups` is null under seedCount > 1.
+    const rush = report.gates.find((g) => g.gate === "rush-probe")!;
+    expect(rush.status).toBe("n/a");
+    expect(rush.detail).toContain("proven, reached draw");
+  });
+
+  it("single-seed control: the SAME manifest, seedCount omitted, grants the identical relief through the pre-existing `matchups` path — the fix must not change the already-working case", () => {
+    const report = runTwoPlayerCiGate(classicTicTacToe, provenDrawManifest, {
+      seed: "ci-gates:c81:singleseed-draw-relief-control",
+      games: 40,
+    });
+    expect(report.matchups).not.toBeNull();
+    const rush = report.gates.find((g) => g.gate === "rush-probe")!;
+    expect(rush.status).toBe("n/a");
+    expect(rush.detail).toContain("proven, reached draw");
+  });
+
+  it("deferral still withholds relief even under seedCount > 1 (an active C27 deferral means self-play never ran at all this tier, at any seed count — a claim about attainment would be fabricated)", () => {
+    const deferredDrawManifest: GameManifest = {
+      ...provenDrawManifest,
+      ciGateBudget: { deferGatesToNightly: { reason: "ci-gates.test.ts C81/#27 deferral+multi-seed fixture" } },
+    };
+    const report = runTwoPlayerCiGate(classicTicTacToe, deferredDrawManifest, {
+      seed: "ci-gates:c81:multiseed-draw-deferred",
+      seedCount: 4,
+    });
+    // Deferred: no self-play ran at all, at any seed count — matchups/seedRuns/precision all
+    // absent, exactly like the single-seed deferral case.
+    expect(report.matchups).toBeNull();
+    expect(report.seedRuns).toBeUndefined();
+    expect(report.gates.find((g) => g.gate === "solved-value-reached")!.status).toBe("deferred");
+    // rush-probe must defer too — never fabricate "n/a, proven draw" off an unmeasured claim.
+    const rush = report.gates.find((g) => g.gate === "rush-probe")!;
+    expect(rush.status).toBe("deferred");
+    expect(rush.detail).not.toContain("proven, reached draw");
+  });
+});
+
+// ---------------------------------------------------------------------------------------
 // Solo score-chase lane — real roster, real probes, against bank-run.
 // ---------------------------------------------------------------------------------------
 

@@ -41,6 +41,8 @@ function outcome(partial: Partial<GameOutcome> & Pick<GameOutcome, "winnerSeat" 
     capHit: false,
     branchingSamples: [],
     moves: [],
+    mirrorMoveCount: 0,
+    mirrorFallbackCount: 0,
     ...partial,
   };
 }
@@ -90,6 +92,35 @@ describe("computeMatchupMetrics()", () => {
     const m = computeMatchupMetrics(outcomes);
     expect(m.drawRate).toBeCloseTo(0.5);
     expect(m.capHitRate).toBeCloseTo(0.5);
+  });
+
+  // platform-corrections.md C81 / task #26: mirrorFallbackRate sums mirrorMoveCount/
+  // mirrorFallbackCount ACROSS every outcome (not averaged per-game), so a game with more mirror
+  // plies than another contributes proportionally more to the rate.
+  describe("mirrorFallbackRate", () => {
+    it("is null when no outcome in the matchup ever had a mirror agent move (never a false 0)", () => {
+      const outcomes: GameOutcome[] = [
+        outcome({ winnerSeat: 0, plies: 5 }),
+        outcome({ winnerSeat: 1, plies: 5 }),
+      ];
+      expect(computeMatchupMetrics(outcomes).mirrorFallbackRate).toBeNull();
+    });
+
+    it("sums fallback/move counts across outcomes, not a per-game average", () => {
+      const outcomes: GameOutcome[] = [
+        // Game 1: 4 mirror moves, 1 fallback.
+        outcome({ winnerSeat: 0, plies: 4, mirrorMoveCount: 4, mirrorFallbackCount: 1 }),
+        // Game 2: 1 mirror move, 1 fallback.
+        outcome({ winnerSeat: 1, plies: 1, mirrorMoveCount: 1, mirrorFallbackCount: 1 }),
+      ];
+      // Pooled: 2/5 = 0.4 — NOT the per-game average of 1/4 and 1/1 (mean 0.625).
+      expect(computeMatchupMetrics(outcomes).mirrorFallbackRate).toBeCloseTo(0.4);
+    });
+
+    it("is exactly 0 when every mirror move was a real reflection, never falling back", () => {
+      const outcomes: GameOutcome[] = [outcome({ winnerSeat: 0, plies: 3, mirrorMoveCount: 3, mirrorFallbackCount: 0 })];
+      expect(computeMatchupMetrics(outcomes).mirrorFallbackRate).toBe(0);
+    });
   });
 });
 

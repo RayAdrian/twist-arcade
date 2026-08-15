@@ -12,11 +12,22 @@
 //     g' = board'*9 + cell' = (8-board)*9 + (8-cell) = 72 - 9*board + 8 - cell = 80 - g.
 // The empty board is fixed under this rotation, so mirroring the opponent's last move (playing
 // its point-reflection) is always well-defined as a strategy shape, though it is not
-// necessarily always LEGAL — the target board may already be closed, or the reflected cell may
-// already be occupied by an earlier mirrored move (mirroring is not a drawing/non-losing
-// strategy the way it can be in some symmetric games; it is just the probe's job to reflect
-// when possible and fall back sanely otherwise, per the CHECKLIST's "never throws, never
-// returns an illegal move" contract).
+// necessarily always LEGAL — the target board may already be closed, the mover may be confined
+// (by the must-follow send rule) to a DIFFERENT board than the reflection lands in, or the
+// reflected cell may already be occupied by an earlier mirrored move.
+//
+// CORRECTED (platform-corrections.md C81 / task #26): this function used to fall back
+// INTERNALLY to `legalMoves[0]` whenever the reflection wasn't legal, rather than returning
+// `null` the way Fadeout's and Tilt's own `mirrorMove` do (games/fadeout/probes.ts,
+// games/tilt/probes.ts) — "the platform's pinned three-argument mirror convention"
+// (packages/harness/src/roster.ts's own `MirrorAgentSpec.mirrorMove` doc): `M | null`, with
+// `runner.ts`'s `playOneGame` substituting a random legal move when it sees `null`. Because
+// this game's own fallback ran INSIDE this function, the harness never observed it happening at
+// all — a mirror-probe row here was measured fallback rate 221/258 (85.7%) through the real
+// matchup shape, i.e. roughly 14% mirror content and 86% deterministic first-legal play, with
+// nothing in the report able to say so. Returning `null` here instead hands that fallback back
+// to the harness, where `runProbeSuite`'s `MatchupReport.mirrorFallback` (runner.ts) can finally
+// count it.
 
 import type { NineGridsMove, NineGridsState } from "./engine";
 
@@ -26,20 +37,12 @@ export function mirrorMove(
   _state: NineGridsState,
   lastOppMove: NineGridsMove | null,
   legalMoves: readonly NineGridsMove[]
-): NineGridsMove {
-  if (lastOppMove) {
-    const g = lastOppMove.board * 9 + lastOppMove.cell;
-    const mirroredG = TOTAL_CELLS - 1 - g;
-    const board = Math.floor(mirroredG / 9);
-    const cell = mirroredG % 9;
-    const mirrored = legalMoves.find((m) => m.board === board && m.cell === cell);
-    if (mirrored) return mirrored;
-  }
-  // Fallback (opening move with no prior opponent move, or the mirrored target isn't legal
-  // right now): play the first legal move. Never throws, never returns an illegal move.
-  const move = legalMoves[0];
-  if (!move) {
-    throw new Error("nine-grids: mirrorMove() called with no legal moves — the harness should never do this");
-  }
-  return move;
+): NineGridsMove | null {
+  if (lastOppMove === null) return null;
+  const g = lastOppMove.board * 9 + lastOppMove.cell;
+  const mirroredG = TOTAL_CELLS - 1 - g;
+  const board = Math.floor(mirroredG / 9);
+  const cell = mirroredG % 9;
+  const mirrored = legalMoves.find((m) => m.board === board && m.cell === cell);
+  return mirrored ?? null;
 }

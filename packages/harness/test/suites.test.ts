@@ -326,6 +326,7 @@ describe("worstCapHitRate() — cap-hit gating must see every matchup run, not j
     p95Plies: 30,
     meanBranchingFactor: 4,
     capHitRate: 0,
+    mirrorFallbackRate: null,
   };
 
   it("takes the max across matchups — a clean self-play must not hide a dirty vs-random", () => {
