@@ -26,8 +26,9 @@
 // all — a mirror-probe row here was measured fallback rate 221/258 (85.7%) through the real
 // matchup shape, i.e. roughly 14% mirror content and 86% deterministic first-legal play, with
 // nothing in the report able to say so. Returning `null` here instead hands that fallback back
-// to the harness, where `runProbeSuite`'s `MatchupReport.mirrorFallback` (runner.ts) can finally
-// count it.
+// to the harness, which now counts it (`GameOutcome.mirrorMoveCount`/`mirrorFallbackCount`,
+// runner.ts) and aggregates it into `MatchupReport.metrics.mirrorFallbackRate` (metrics.ts) —
+// the number a mirror-probe gate detail (probes-two-player.ts) reads to finally disclose it.
 
 import type { NineGridsMove, NineGridsState } from "./engine";
 
