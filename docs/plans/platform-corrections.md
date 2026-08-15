@@ -5251,3 +5251,59 @@ A guard comparing every workspace package's **imports** (static and templated-dy
 here — `import(`@twist-arcade/${gameId}`)` names no package a static analyzer can see, so the guard
 has to know that the registry's game ids are the expansion set. That is a real design problem, not a
 lint rule, and it is registered rather than hand-waved.
+
+## C84 — The dependency guard found a layering violation, not a missing declaration.
+
+C83's guard was built to catch undeclared imports. On its first real run it found four, all at the
+same site — and **the obvious fix would break the build.**
+
+`packages/harness/src/cli.ts:151` does `import(\`@twist-arcade/${gameId}\`)`, resolving to crackstep,
+fadeout, nine-grids or tilt. None is declared in `packages/harness/package.json`. But:
+
+```
+crackstep  deps on @twist-arcade/harness: YES
+fadeout    deps on @twist-arcade/harness: YES
+```
+
+**Declaring them creates a cycle: harness → crackstep → harness.** The missing declarations are not an
+oversight to correct; they are the symptom of a **platform package reaching into leaf packages that
+depend on it.**
+
+### Why this is the interesting kind of guard finding
+
+A guard that only ever tells you to add a line to a manifest is a linter. This one surfaced a
+structural fact: **the direction of a dependency was wrong, and the manifest was silent about it
+because declaring the truth would have been impossible.** The absence of the declaration was load-
+bearing — it was the only thing keeping the cycle from being real.
+
+The repo already solved this correctly elsewhere and the CLI simply never got the treatment.
+`scripts/ci-gates.ts` takes `resolveSafeMove` and `resolveMirrorMove` as **injected**
+`RunAllGatesDeps`, so the game→platform direction is preserved and the *app* wires them together.
+That is what the registry pattern is for. The CLI imports by name instead, and it works today only
+because pnpm hoists workspace packages to the root `node_modules` and the CLI happens to run from
+the repo root — **the identical accident as C83's `fadeout` symlink, one layer in.**
+
+### Ruling
+
+1. **Do not declare the dependencies.** The fix is to invert the CLI's game resolution to injection,
+   matching `scripts/ci-gates.ts`. Registered as its own work.
+2. **The four findings are allowlisted with a printed, explicit entry** naming the file and line, that
+   it is a layering violation rather than a missing declaration, that declaring would cycle (with
+   crackstep and fadeout named as the pair), and the task tracking the real fix. Same posture the
+   tsconfig guard already uses for `scripts/` — an exemption that prints is reviewable; one in a
+   header comment is not (C79).
+3. **The allowlist must not blanket-skip templated imports.** Templated-import detection is the most
+   valuable thing this guard does and is what caught this. Only these four resolutions are exempt, so
+   a new undeclared templated resolution still fails.
+
+### The pattern, stated once more because it keeps arriving from new directions
+
+C69 and C72: a compiler manifest silently excluding real source. C83: a package manifest silently
+omitting a real dependency. C84: a package manifest that **could not** declare the truth, because the
+truth was a cycle. Each was invisible until something asked the tool what it actually processed
+rather than reading what it claimed.
+
+And each guard found the next one's territory only after being pointed at it. The tsconfig guard
+could not see package manifests; the dependency guard cannot see layering direction — it inferred it
+here only because a human read the cycle. **The guard after this one is whatever notices that a
+platform package imports a leaf package by name.**
