@@ -1,0 +1,70 @@
+Scope: all 14 workspace projects
+✓ Lockfile passes supply-chain policies (verified 7d ago)
+Lockfile is up to date, resolution step is skipped
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Packages: +410
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Packages are cloned from the content-addressable store to the virtual store.
+  Content-addressable store is at: /Users/raymundrafael/Library/pnpm/store/v11
+  Virtual store is at:             node_modules/.pnpm
+Progress: resolved 410, reused 410, downloaded 0, added 407
+Progress: resolved 410, reused 410, downloaded 0, added 410, done
+
+dependencies:
++ @twist-arcade/bots 0.1.0 <- packages/bots
++ @twist-arcade/engine 0.1.0 <- packages/engine
++ @twist-arcade/game-spec 0.1.0 <- packages/game-spec
++ @twist-arcade/shell 0.1.0 <- packages/shell
++ next 15.5.22
++ react 19.2.8
++ react-dom 19.2.8
+
+devDependencies:
++ @axe-core/playwright 4.12.1
++ @electric-sql/pglite 0.5.4
++ @electric-sql/pglite-socket 0.2.7
++ @eslint/js 9.39.5
++ @playwright/test 1.62.1
++ @size-limit/file 13.0.3
++ @twist-arcade/crackstep 0.1.0 <- games/crackstep
++ @twist-arcade/harness 0.1.0 <- packages/harness
++ @twist-arcade/mine-run 0.1.0 <- games/mine-run
++ @twist-arcade/nine-grids 0.1.0 <- games/nine-grids
++ @twist-arcade/tilt 0.1.0 <- games/tilt
++ @types/node 20.19.43
++ @types/pg 8.20.4
++ @types/react 19.2.18
++ @types/react-dom 19.2.4
++ autoprefixer 10.5.4
++ eslint 9.39.5
++ fast-check 3.23.2
++ pg 8.22.0
++ postcss 8.5.25
++ size-limit 13.0.3
++ tailwindcss 3.4.19
++ tsx 4.23.1
++ typescript 5.9.3
++ typescript-eslint 8.65.0
++ vitest 2.1.9
+
+Done in 2.3s using pnpm v11.18.0
+
+   ╭───────────────────────────────────────────────╮
+   │                                               │
+   │     Update available! 11.18.0 → 11.21.0.      │
+   │     Changelog: https://pnpm.io/v/11.21.0      │
+   │   To update, run: corepack use pnpm@11.21.0   │
+   │                                               │
+   ╰───────────────────────────────────────────────╯
+
+multi-seed cost pilot — game=tilt, ruthless override=3000, TOTAL_GAMES=12 held fixed across every K, seedCounts=[1, 2, 3, 4, 6, 12]
+TIMING ONLY. No gate verdict is drawn from this run (tilt-t3-cost-pilot.ts's own posture).
+
+K= 1  gamesPerSeed=12  calls=1  elapsed=31.80s  perGamePlayMs=1325.0
+K= 2  gamesPerSeed= 6  calls=2  elapsed=32.74s  perGamePlayMs=1364.3
+K= 3  gamesPerSeed= 4  calls=3  elapsed=33.13s  perGamePlayMs=1380.3
+K= 4  gamesPerSeed= 3  calls=4  elapsed=31.37s  perGamePlayMs=1307.2
+K= 6  gamesPerSeed= 2  calls=6  elapsed=35.52s  perGamePlayMs=1480.0
+K=12  gamesPerSeed= 1  calls=12  elapsed=37.16s  perGamePlayMs=1548.2
+
+Done. perGamePlayMs is elapsed / (TOTAL_GAMES * 2 matchups [strongVsRandom, strongSelfPlay] — tilt has no 'standard' tier, so ruthlessVsStandard never runs). If perGamePlayMs stays flat across K, per-call overhead is negligible and splitting a fixed budget across more seeds is free.

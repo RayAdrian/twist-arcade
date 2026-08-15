@@ -70,6 +70,34 @@ export const NIGHTLY_GAMES = 2000;
 export const CI_SEED_COUNT = 100;
 export const NIGHTLY_SEED_COUNT = 1000;
 
+// platform-corrections.md C71 Part 1 / C77 — the TWO-PLAYER lane's own seed count (distinct
+// from CI_SEED_COUNT/NIGHTLY_SEED_COUNT above, which are the SOLO lane's paired-seed counts —
+// same name shape, different lane, never conflate them). `CI_GAMES`/`NIGHTLY_GAMES` above are
+// now the TOTAL games across every seed (runCiSuite's own `seedCount` contract), so raising
+// these does NOT raise total self-play cost — it reallocates the SAME existing budget from one
+// seed's games to more, smaller, independent ones.
+//
+// K=5 for "ci": matches the exact evidence already collected (C71's own five-seed Tilt FPA
+// replication, docs/research/games/tilt-fpa-replication-2026-08-12.out) rather than inventing a
+// new number — 100/5 = 20 games/seed (10 mirrored pairs), and 5 samples is the smallest count
+// that gives a non-degenerate sample-SD estimate (K=2/3 leaves 1-2 degrees of freedom). A fresh,
+// cheap timing pilot (scripts/research/multi-seed-cost-pilot.ts,
+// .scratch/multi-seed-cost-pilot.out) held TOTAL games fixed at 12 across K in
+// {1,2,3,4,6,12} on Tilt and found per-game-play cost essentially FLAT through K=4 (1325ms ->
+// 1307ms) and only ~17% higher by K=12 (1325ms -> 1548ms) — confirming per-seed call overhead is
+// small enough that splitting a fixed budget into 5 seeds is close to free, while K=12 starts
+// paying a real (if modest) tax for no evidence-grounded benefit over K=5.
+//
+// K=10 for "nightly": NIGHTLY_GAMES (2000) is 20x CI_GAMES, so 2000/10 = 200 games/seed stays
+// generous even at double the seed count — nightly's own cost tolerance is already higher (it
+// does not gate every PR), so it is the tier that should spend more of its larger budget on
+// seed diversity (SE shrinks with 1/sqrt(seedCount)) rather than on games-per-seed precision
+// that C71/C49 both found is not where the real noise lives (seed-to-seed variance dominated
+// binomial-at-n=100 variance by 2.6x — more games in ONE seed does not buy back that gap; more
+// SEEDS does).
+export const TWO_PLAYER_CI_SEED_COUNT = 5;
+export const TWO_PLAYER_NIGHTLY_SEED_COUNT = 10;
+
 export function todayUtc(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -209,10 +237,15 @@ export async function runAllGates(
       if (mirrorMove === undefined && entry.manifest.mirrorProbe === undefined && entry.manifest.tags.includes("symmetric")) {
         throw new MirrorMoveNotExportedError(gameId);
       }
+      // C71 Part 1 / C80: `games` below is the TOTAL across every seed, and `seedCount` is
+      // what turns single-seed gating (C71's own finding: this exact seed string,
+      // `` `ci:${gameId}:${opts.suite}` ``, produced Tilt's 70% FAIL — the extreme outlier of
+      // five otherwise-passing seeds) into an aggregated, precision-reporting measurement.
       const report = await runGameCiGate(engine, entry.manifest, {
         kind: "two-player",
         seed: `ci:${gameId}:${opts.suite}`,
         games: opts.suite === "nightly" ? NIGHTLY_GAMES : CI_GAMES,
+        seedCount: opts.suite === "nightly" ? TWO_PLAYER_NIGHTLY_SEED_COUNT : TWO_PLAYER_CI_SEED_COUNT,
         suite: opts.suite,
         // Type-erasure boundary matching resolveSafeMove's own posture (see that dep's own
         // comment above and defaultDeps's real import()-based resolution) — mirrorMove crosses

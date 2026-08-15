@@ -56,6 +56,148 @@ export interface GateResult {
   /** Present iff a manifest `exceptions[]` entry matched this gate and downgraded a would-be
    *  "fail" to "warn" (plan §7.5: an exception is visible in review, never a silent pass). */
   readonly exceptionJustification?: string;
+  /** Present (and `true`) iff this row was measured across multiple seeds (`GatePrecisionInputs`
+   *  supplied a `SeedPrecision` for it) AND the aggregate mean sits within `PROVISIONAL_Z`
+   *  standard errors of the nearest band edge/threshold/floor it is judged against
+   *  (platform-corrections.md C71 Part 1 / C77: "provisional within ~10 points of an edge" was a
+   *  human convention applied after the fact; this is that same idea, computed from the gate's
+   *  OWN measured seed-to-seed spread instead of a fixed point margin). Never present for a
+   *  single-seed measurement (`SeedPrecision.se === 0`) or an `"n/a"`/`"deferred"` row — omitted
+   *  (never `false`) when it does not apply, matching every other optional qualifier this module
+   *  reports (`exceptionJustification`, C57's `"unattained"`). A provisional row can be `"pass"`
+   *  OR `"fail"` — the flag says "this verdict is close enough to its own noise floor that a
+   *  second measurement could flip it," not which direction it might flip. */
+  readonly provisional?: boolean;
+}
+
+/** One rate/mean-style two-player gate value's cross-seed precision (platform-corrections.md
+ *  C71 Part 1 / C77). `seedCount` independent seeds; `sd` the SAMPLE standard deviation
+ *  (Bessel-corrected, ddof=1) of the `seedCount` per-seed values that were averaged into the
+ *  `GateInputs` field this precision describes; `se` the standard error of THAT mean
+ *  (`sd / sqrt(seedCount)`). See `aggregateAcrossSeeds`'s own doc for why this is computed
+ *  ACROSS seeds (never pooled across all `seedCount * gamesPerSeed` games as one binomial
+ *  sample) — C71's own finding is that games within one seed's run are correlated, so a pooled
+ *  count understates the true noise. `seedCount === 1` (a caller that never opted into
+ *  multi-seed measurement) reports `sd: 0, se: 0` — see that function's own doc for why 0 rather
+ *  than `NaN` or `undefined`. */
+export interface SeedPrecision {
+  readonly seedCount: number;
+  readonly sd: number;
+  readonly se: number;
+}
+
+/** Per-gate `SeedPrecision`, one entry per `GateInputs` field that carries real sampling noise
+ *  (platform-corrections.md C71 Part 1: "not every gate needs this" — there is deliberately no
+ *  entry for `capHitRate`, whose threshold is "any nonzero fails," a structural fact about
+ *  whether an event was OBSERVED at all, not a rate being compared to a band). Every field here
+ *  is optional because a single-seed `runCiSuite` call (the byte-identical default this module
+ *  has always had) never builds one at all — `evaluateCiGates` treats an absent entry for a gate
+ *  exactly like a `SeedPrecision` with `se === 0`: no precision suffix printed, never flagged
+ *  provisional.
+ *
+ *  `solved-value-reached`'s own precision is never a separate field here — `evaluateCiGates`
+ *  derives it, internally, from whichever of `drawRate`/`firstPlayerWinRate` `solvedValue.value`
+ *  selects, because `solvedValueAttainment` already reads its `achieved` number from that exact
+ *  same `GateInputs` field. Reusing the SAME `SeedPrecision` object is what keeps the two from
+ *  ever disagreeing about how precise the underlying measurement is — the identical discipline
+ *  `solvedValueAttainment`'s own doc comment already applies to `attainment` itself (computed
+ *  once, consulted by four blocks, never four independent re-derivations). */
+export interface GatePrecisionInputs {
+  readonly strongVsRandomWinRate?: SeedPrecision;
+  readonly firstPlayerWinRate?: SeedPrecision;
+  readonly drawRate?: SeedPrecision;
+  readonly meanPlies?: SeedPrecision;
+  readonly ruthlessVsStandardWinRate?: SeedPrecision;
+}
+
+/** Pure aggregation over `seedCount` independent per-seed measurements of the SAME quantity
+ *  (platform-corrections.md C71 Part 1 / C77) — exactly the by-hand computation C49 (2 seeds)
+ *  and C71 (5 seeds) each did to state a gate's own spread, automated here so every multi-seed
+ *  `runCiSuite` call states it, not just a human replication that happened to run twice.
+ *
+ *  Deliberately NOT a binomial-at-total-games computation: C71's whole finding is that games
+ *  within ONE seed's run are correlated (shared seed lineage) — Tilt's own five-seed FPA
+ *  replication measured a 12.9pp seed-to-seed sample SD against a 5.0pp binomial-at-n=100
+ *  expectation, 2.6x — so treating `seedCount * gamesPerSeed` as one pool of independent trials
+ *  understates the true noise. Treating each SEED's own already-computed rate as one sampling
+ *  unit needs no assumption about what correlates WITHIN a seed's games; it only assumes seeds
+ *  themselves are independent, which `runMatchup`'s own seed derivation guarantees (distinct
+ *  base seed strings choose independent RNG streams).
+ *
+ *  `sd` uses Bessel's correction (`/(seedCount - 1)`, not `/seedCount`) — these are `seedCount`
+ *  independent estimates of one population, and n-1 is what makes `se` an unbiased estimator of
+ *  the aggregate mean's own standard error, the same convention C49/C71's prose used informally.
+ *  `seedCount === 1` reports `sd: 0, se: 0` rather than `NaN`: a single seed's cross-seed
+ *  "spread" is genuinely undefined, but this is a real, reachable measurement (the module's own
+ *  default), not the poisoned/unreachable case C4's NaN convention exists for — `se: 0` keeps
+ *  every downstream `isProvisional` check a well-defined `false` instead of propagating a NaN
+ *  through the report. */
+export function aggregateAcrossSeeds(perSeedValues: readonly number[]): SeedPrecision & { readonly mean: number } {
+  if (perSeedValues.length === 0) {
+    throw new RangeError("aggregateAcrossSeeds: at least one per-seed value is required");
+  }
+  const seedCount = perSeedValues.length;
+  const mean = perSeedValues.reduce((a, b) => a + b, 0) / seedCount;
+  if (seedCount === 1) {
+    return { seedCount, mean, sd: 0, se: 0 };
+  }
+  const variance = perSeedValues.reduce((acc, v) => acc + (v - mean) ** 2, 0) / (seedCount - 1);
+  const sd = Math.sqrt(variance);
+  const se = sd / Math.sqrt(seedCount);
+  return { seedCount, mean, sd, se };
+}
+
+/** The z-multiple (platform-corrections.md C71 Part 1 / C77) that turns C49's post-hoc human
+ *  convention ("provisional within ~10 points of a band edge") into something `evaluateCiGates`
+ *  computes from the gate's OWN measured spread instead of a fixed point margin: a row is
+ *  flagged provisional when the nearest relevant edge sits within `PROVISIONAL_Z` standard
+ *  errors of the aggregate mean — i.e., when the data cannot rule out the true rate sitting on
+ *  the far side of that edge at ~90% one-sided confidence. 1.645 is the standard one-sided 90%
+ *  z critical value; chosen deliberately looser than a two-sided 95% (1.96) because C71's own
+ *  caveat applies here too — an SD from a handful of seeds is itself imprecise, so this flag is
+ *  built to over-flag a borderline result as provisional rather than under-flag one. */
+export const PROVISIONAL_Z = 1.645;
+
+/** True iff `mean` sits within `PROVISIONAL_Z` standard errors of ANY of `edges` — see
+ *  `PROVISIONAL_Z`'s own doc. `undefined`/`se === 0` (no multi-seed precision was supplied, or a
+ *  single-seed measurement) always returns `false`: there is no spread to judge "close" against,
+ *  so this never fires for the module's existing single-seed default. */
+function isProvisional(mean: number, precision: SeedPrecision | undefined, edges: readonly number[]): boolean {
+  if (!precision || precision.se === 0) return false;
+  return edges.some((edge) => Math.abs(mean - edge) <= PROVISIONAL_Z * precision.se);
+}
+
+/** The human-readable precision suffix appended to a rate-style gate's `detail` string when it
+ *  was measured across multiple seeds — `""` (no change to `detail` at all) for the module's
+ *  existing single-seed default, so a caller that never opts into `seedCount > 1` sees
+ *  byte-identical detail text to before C71/C77. `unit: "pp"` (the default) is for the FOUR
+ *  fields that are 0-1 fractions (`strongVsRandomWinRate`, `firstPlayerWinRate`, `drawRate`,
+ *  `ruthlessVsStandardWinRate`) — `sd`/`se` are scaled ×100 into percentage points, matching
+ *  every other number this module already prints as a percentage. `meanPlies` is NOT a
+ *  fraction — it is a raw ply count (Tilt's own real numbers: mean ~19 plies) — so `unit:
+ *  "plies"` prints `sd`/`se` UNSCALED, in plies, never mislabelled "pp" (an earlier draft of this
+ *  function did exactly that: a real multi-seed Tilt run printed "SD=118.2pp" for a quantity
+ *  whose actual spread was ~1.18 PLIES, a 100x-misleading unit — caught by running the real
+ *  wiring against a real game, not a hand-built fixture, which is why this suffix is unit-aware). */
+function precisionSuffix(precision: SeedPrecision | undefined, unit: "pp" | "plies" = "pp"): string {
+  if (!precision || precision.seedCount <= 1) return "";
+  if (unit === "plies") {
+    return ` [seeds=${precision.seedCount}, seed-to-seed SD=${precision.sd.toFixed(2)} plies, SE=${precision.se.toFixed(2)} plies]`;
+  }
+  return ` [seeds=${precision.seedCount}, seed-to-seed SD=${(precision.sd * 100).toFixed(1)}pp, SE=${(precision.se * 100).toFixed(1)}pp]`;
+}
+
+/** `solved-value-reached`'s own precision, DERIVED rather than a separate `GatePrecisionInputs`
+ *  field (see that interface's own doc) — `solvedValueAttainment` reads `achieved` from
+ *  `inputs.drawRate` (a proven draw) or `inputs.firstPlayerWinRate` (a proven decisive value), so
+ *  this reads the matching `SeedPrecision` from the SAME two fields, never a third computation
+ *  that could drift from what those two gates themselves report. */
+function attainmentPrecision(
+  solvedValue: SolvedValueClaim | undefined,
+  precision: GatePrecisionInputs | undefined
+): SeedPrecision | undefined {
+  if (!solvedValue || solvedValue.value === "unknown") return undefined;
+  return solvedValue.value === "draw" ? precision?.drawRate : precision?.firstPlayerWinRate;
 }
 
 /** Info `evaluateCiGates` needs to decide whether this lane's self-play-derived gates are
@@ -271,12 +413,17 @@ export function applyException(
   gate: ExceptionableGate,
   raw: GateStatus,
   detail: string,
-  exceptions: readonly ManifestException[]
+  exceptions: readonly ManifestException[],
+  provisional = false
 ): GateResult {
-  if (raw !== "fail") return { gate, status: raw, detail };
+  // `provisional` is spread in ONLY when true (never `provisional: false`) — every existing call
+  // site that never passes a 5th argument keeps producing the EXACT SAME GateResult shape as
+  // before C71/C77 (no extra key at all), which is what keeps this an additive-only change.
+  const provisionalField = provisional ? { provisional: true as const } : {};
+  if (raw !== "fail") return { gate, status: raw, detail, ...provisionalField };
   const exception = exceptions.find((e) => e.gate === gate);
-  if (!exception) return { gate, status: "fail", detail };
-  return { gate, status: "warn", detail, exceptionJustification: exception.justification };
+  if (!exception) return { gate, status: "fail", detail, ...provisionalField };
+  return { gate, status: "warn", detail, exceptionJustification: exception.justification, ...provisionalField };
 }
 
 /** Thrown by `evaluateCiGates` when a manifest's `solvedValue` claims a non-"unknown" value with
@@ -408,7 +555,13 @@ export function evaluateCiGates(
   suite: "ci" | "nightly" = "ci",
   solvedValue?: SolvedValueClaim,
   ruthlessBudgets?: RuthlessVsStandardBudgets,
-  deferral?: CiGateDeferral
+  deferral?: CiGateDeferral,
+  /** platform-corrections.md C71 Part 1 / C77: per-gate cross-seed precision, absent by default
+   *  (every existing call site keeps producing byte-identical `GateResult`s — see
+   *  `GatePrecisionInputs`'s own doc). When present, the relevant rate/mean-style gate blocks
+   *  below append a precision suffix to `detail` and set `provisional` when the aggregate mean
+   *  sits within `PROVISIONAL_Z` standard errors of the edge it is judged against. */
+  precision?: GatePrecisionInputs
 ): GateResult[] {
   // Validated up front, before any gate runs — an exception with a blank justification or an
   // unknown gate name is rejected regardless of whether it ends up matching a failing gate (see
@@ -458,6 +611,10 @@ export function evaluateCiGates(
   // `solvedValueAttainment`'s own doc for why this rules out any circular or order-dependent
   // outcome among the four blocks below that consult it.
   const attainment = solvedValueAttainment(solvedValue, inputs);
+  // C71 Part 1 / C77: the SAME precision object the draw-rate/first-player-win-rate blocks
+  // themselves read — see `attainmentPrecision`'s own doc for why this is a derivation, not a
+  // fourth `GatePrecisionInputs` field.
+  const attPrecision = attainmentPrecision(solvedValue, precision);
 
   const results: GateResult[] = [];
 
@@ -466,12 +623,15 @@ export function evaluateCiGates(
       results.push(deferredGate("strong-vs-random", deferral.reason));
     } else {
       const pass = inputs.strongVsRandomWinRate >= thresholds.strongVsRandomMinWinRate;
+      const p = precision?.strongVsRandomWinRate;
+      const provisional = isProvisional(inputs.strongVsRandomWinRate, p, [thresholds.strongVsRandomMinWinRate]);
       results.push(
         applyException(
           "strong-vs-random",
           pass ? "pass" : "fail",
-          `${(inputs.strongVsRandomWinRate * 100).toFixed(1)}% (min ${(thresholds.strongVsRandomMinWinRate * 100).toFixed(1)}%)`,
-          exceptions
+          `${(inputs.strongVsRandomWinRate * 100).toFixed(1)}% (min ${(thresholds.strongVsRandomMinWinRate * 100).toFixed(1)}%)${precisionSuffix(p)}`,
+          exceptions,
+          provisional
         )
       );
     }
@@ -502,14 +662,16 @@ export function evaluateCiGates(
     } else {
       const [lo, hi] = thresholds.firstPlayerWinRateRange;
       const pass = inputs.firstPlayerWinRate >= lo && inputs.firstPlayerWinRate <= hi;
-      const measured = `${(inputs.firstPlayerWinRate * 100).toFixed(1)}% (band [${(lo * 100).toFixed(0)}%, ${(hi * 100).toFixed(0)}%])`;
+      const p = precision?.firstPlayerWinRate;
+      const provisional = isProvisional(inputs.firstPlayerWinRate, p, [lo, hi]);
+      const measured = `${(inputs.firstPlayerWinRate * 100).toFixed(1)}% (band [${(lo * 100).toFixed(0)}%, ${(hi * 100).toFixed(0)}%])${precisionSuffix(p)}`;
       const detail = attainment
         ? // C55: a proof was declared but relief is WITHHELD — self-play never reached it, so
           // this is a real measurement, not a stale n/a. Naming solved-value-reached's own
           // number keeps a reader from mistaking this real fail for a wrong solvedValue claim.
           `${measured} — solvedValue relief withheld: self-play reached the proven "${solvedValue!.value}" only ${(attainment.achieved * 100).toFixed(1)}% of the time (floor ${(SOLVED_VALUE_SELF_PLAY_FLOOR * 100).toFixed(0)}%, see solved-value-reached)`
         : measured;
-      results.push(applyException("first-player-win-rate", pass ? "pass" : "fail", detail, exceptions));
+      results.push(applyException("first-player-win-rate", pass ? "pass" : "fail", detail, exceptions, provisional));
     }
   }
 
@@ -533,11 +695,13 @@ export function evaluateCiGates(
       });
     } else {
       const pass = inputs.drawRate <= thresholds.maxDrawRate;
-      const measured = `${(inputs.drawRate * 100).toFixed(1)}% (max ${(thresholds.maxDrawRate * 100).toFixed(1)}%)`;
+      const p = precision?.drawRate;
+      const provisional = isProvisional(inputs.drawRate, p, [thresholds.maxDrawRate]);
+      const measured = `${(inputs.drawRate * 100).toFixed(1)}% (max ${(thresholds.maxDrawRate * 100).toFixed(1)}%)${precisionSuffix(p)}`;
       const detail = drawAttainment
         ? `${measured} — solvedValue relief withheld: self-play reached the proven draw only ${(drawAttainment.achieved * 100).toFixed(1)}% of the time (floor ${(SOLVED_VALUE_SELF_PLAY_FLOOR * 100).toFixed(0)}%, see solved-value-reached)`
         : measured;
-      results.push(applyException("draw-rate", pass ? "pass" : "fail", detail, exceptions));
+      results.push(applyException("draw-rate", pass ? "pass" : "fail", detail, exceptions, provisional));
     }
   }
 
@@ -549,17 +713,24 @@ export function evaluateCiGates(
       const inBand = inputs.meanPlies >= lo && inputs.meanPlies <= hi;
       const noCapHits = inputs.capHitRate === 0;
       const pass = inBand && noCapHits;
+      const p = precision?.meanPlies;
+      // Provisional is judged against the PLIES band only, never against the cap-hit-rate=0
+      // threshold — that threshold is structural (platform-corrections.md C71 Part 1: "any cap
+      // hit fails" is a fact about whether an event was OBSERVED, not a rate with a confidence
+      // interval), so a real cap hit is never softened to "provisional" no matter how close the
+      // plies mean sits to its own band edge.
+      const provisional = noCapHits && isProvisional(inputs.meanPlies, p, [lo, hi]);
       // "across all matchups" made explicit here (not just self-play) — this IS
       // worstCapHitRate's own aggregation (see its doc comment), and a report that prints a
       // DIFFERENT, self-play-only cap-hit number alongside this one (as an ad hoc debug script
       // did during the C23 investigation) reads as two numbers for one quantity. This is the one
       // number the gate actually uses; it says so.
       const detail = !inBand
-        ? `mean ${inputs.meanPlies.toFixed(1)} plies (band [${lo}, ${hi}])`
+        ? `mean ${inputs.meanPlies.toFixed(1)} plies (band [${lo}, ${hi}])${precisionSuffix(p, "plies")}`
         : !noCapHits
           ? `mean ${inputs.meanPlies.toFixed(1)} plies in band, but cap-hit rate ${(inputs.capHitRate * 100).toFixed(2)}% > 0 across all matchups (any cap hit fails)`
-          : `mean ${inputs.meanPlies.toFixed(1)} plies, 0 cap hits across all matchups`;
-      results.push(applyException("mean-plies", pass ? "pass" : "fail", detail, exceptions));
+          : `mean ${inputs.meanPlies.toFixed(1)} plies, 0 cap hits across all matchups${precisionSuffix(p, "plies")}`;
+      results.push(applyException("mean-plies", pass ? "pass" : "fail", detail, exceptions, provisional));
     }
   }
 
@@ -616,19 +787,22 @@ export function evaluateCiGates(
       });
     } else {
       const pass = inputs.ruthlessVsStandardWinRate >= thresholds.ruthlessVsStandardMinWinRate;
-      const measured = `${(inputs.ruthlessVsStandardWinRate * 100).toFixed(1)}% (min ${(thresholds.ruthlessVsStandardMinWinRate * 100).toFixed(1)}%, ${suite})`;
+      const p = precision?.ruthlessVsStandardWinRate;
+      const provisional = isProvisional(inputs.ruthlessVsStandardWinRate, p, [thresholds.ruthlessVsStandardMinWinRate]);
+      const measured = `${(inputs.ruthlessVsStandardWinRate * 100).toFixed(1)}% (min ${(thresholds.ruthlessVsStandardMinWinRate * 100).toFixed(1)}%, ${suite})${precisionSuffix(p)}`;
       const detail = drawAttainment
         ? `${measured} — solvedValue relief withheld: self-play reached the proven draw only ${(drawAttainment.achieved * 100).toFixed(1)}% of the time (floor ${(SOLVED_VALUE_SELF_PLAY_FLOOR * 100).toFixed(0)}%, see solved-value-reached)`
         : measured;
+      const provisionalField = provisional ? { provisional: true as const } : {};
       if (pass) {
-        results.push({ gate: "ruthless-vs-standard", status: "pass", detail });
+        results.push({ gate: "ruthless-vs-standard", status: "pass", detail, ...provisionalField });
       } else if (suite === "nightly") {
-        results.push(applyException("ruthless-vs-standard", "fail", detail, exceptions));
+        results.push(applyException("ruthless-vs-standard", "fail", detail, exceptions, provisional));
       } else {
         // PR-budget ci suite: a below-threshold ruthless-vs-standard WARNS, never hard-fails
         // (roadmap §6) — this is not a manifest exception, it is the gate's own defined
         // severity at this suite tier, so it bypasses applyException entirely.
-        results.push({ gate: "ruthless-vs-standard", status: "warn", detail });
+        results.push({ gate: "ruthless-vs-standard", status: "warn", detail, ...provisionalField });
       }
     }
   }
@@ -648,8 +822,9 @@ export function evaluateCiGates(
     } else if (deferral?.active) {
       results.push(deferredGate("solved-value-reached", deferral.reason));
     } else if (attainment.reached) {
-      const detail = `self-play reached the proven "${solvedValue!.value}" ${(attainment.achieved * 100).toFixed(1)}% of the time (floor ${(SOLVED_VALUE_SELF_PLAY_FLOOR * 100).toFixed(0)}%, proof: ${solvedValue!.proof})`;
-      results.push(applyException("solved-value-reached", "pass", detail, exceptions));
+      const attProvisional = isProvisional(attainment.achieved, attPrecision, [SOLVED_VALUE_SELF_PLAY_FLOOR]);
+      const detail = `self-play reached the proven "${solvedValue!.value}" ${(attainment.achieved * 100).toFixed(1)}% of the time (floor ${(SOLVED_VALUE_SELF_PLAY_FLOOR * 100).toFixed(0)}%, proof: ${solvedValue!.proof})${precisionSuffix(attPrecision)}`;
+      results.push(applyException("solved-value-reached", "pass", detail, exceptions, attProvisional));
     } else {
       // C57: the floor was not met. Two claims a single absolute floor collapsed into the same
       // FAIL — "used to reach it, doesn't now" (a regression, only knowable against a declared
@@ -657,6 +832,7 @@ export function evaluateCiGates(
       // not a regression) — get different words here, never the same one.
       const achievedPct = (attainment.achieved * 100).toFixed(1);
       const floorPct = (SOLVED_VALUE_SELF_PLAY_FLOOR * 100).toFixed(0);
+      const attProvisional = isProvisional(attainment.achieved, attPrecision, [SOLVED_VALUE_SELF_PLAY_FLOOR]);
       if (baseline) {
         // A real, previously-measured baseline exists (validated non-empty/positive above) —
         // falling short of the floor with one declared IS a regression claim: something this
@@ -665,8 +841,8 @@ export function evaluateCiGates(
           `self-play reached the proven "${solvedValue!.value}" only ${achievedPct}% of the time ` +
           `(floor ${floorPct}%) — regressed from the declared attainmentBaseline of ` +
           `${(baseline.rate * 100).toFixed(1)}% (${baseline.proof}): this game's bots previously ` +
-          "attained the value and no longer do (platform-corrections.md C57)";
-        results.push(applyException("solved-value-reached", "fail", detail, exceptions));
+          `attained the value and no longer do (platform-corrections.md C57)${precisionSuffix(attPrecision)}`;
+        results.push(applyException("solved-value-reached", "fail", detail, exceptions, attProvisional));
       } else {
         // No baseline was ever declared — there is nothing on record for this to regress FROM,
         // so this is not a regression claim. Real, measured, visibly non-passing — never `"n/a"`
@@ -677,9 +853,14 @@ export function evaluateCiGates(
         const detail =
           `self-play has never reached the proven "${solvedValue!.value}" (${achievedPct}% observed, ` +
           `floor ${floorPct}%) — no manifest.solvedValue.attainmentBaseline declared, so there is ` +
-          "no history to regress from; this describes search adequacy for this tree, not a " +
-          "regression (platform-corrections.md C57)";
-        results.push({ gate: "solved-value-reached", status: "unattained", detail });
+          `no history to regress from; this describes search adequacy for this tree, not a ` +
+          `regression (platform-corrections.md C57)${precisionSuffix(attPrecision)}`;
+        results.push({
+          gate: "solved-value-reached",
+          status: "unattained",
+          detail,
+          ...(attProvisional ? { provisional: true as const } : {}),
+        });
       }
     }
   }
@@ -771,25 +952,40 @@ export class SuiteFailedError extends Error {
   }
 }
 
+/** The three matchups a single seed's worth of self-play produces (platform-corrections.md
+ *  C71 Part 1 / C77's own factoring — see `runSeedMatchups`). */
+interface SeedMatchupTriple {
+  readonly strongVsRandom: MatchupReport;
+  readonly strongSelfPlay: MatchupReport;
+  readonly ruthlessVsStandard: MatchupReport | null;
+}
+
 export interface CiSuiteReport {
   readonly gameId: string;
   readonly suite: "ci" | "nightly";
   /** True iff no gate has status "fail" ("warn" and "n/a" do not fail the suite). */
   readonly ok: boolean;
   readonly gates: readonly GateResult[];
-  /** `null` iff `manifest.ciGateBudget.deferGatesToNightly` is active at this run (C27) — no
-   *  self-play ran at all, so there is nothing to report here; every gate row explains itself
-   *  via its own `"deferred"` status/detail instead. Non-null in every other case, including
-   *  every run before C27 existed. */
-  readonly matchups: {
-    readonly strongVsRandom: MatchupReport;
-    readonly strongSelfPlay: MatchupReport;
-    readonly ruthlessVsStandard: MatchupReport | null;
-  } | null;
+  /** `null` iff `manifest.ciGateBudget.deferGatesToNightly` is active at this run (C27 — no
+   *  self-play ran at all) OR `seedCount > 1` was requested (C71 Part 1 / C77 — there is no
+   *  single MatchupReport triple to report; see `seedRuns` instead). Non-null only for the
+   *  single-seed (`seedCount` omitted or `1`) case, including every run before C27/C71 existed —
+   *  the module's byte-identical default. */
+  readonly matchups: SeedMatchupTriple | null;
+  /** Present (and one entry per seed) iff `seedCount > 1` was requested — `undefined` for every
+   *  single-seed call, including every call site that predates C71/C77 (additive-only field).
+   *  `GateInputs`'s rate/mean fields are the MEAN across these; `precision` (below) is their
+   *  cross-seed spread. */
+  readonly seedRuns?: readonly (SeedMatchupTriple & { readonly seed: string })[];
+  /** Present iff `seedCount > 1` was requested — the SAME `GatePrecisionInputs` threaded into
+   *  `evaluateCiGates` to produce `gates`' own precision suffixes/`provisional` flags, exposed
+   *  here too for a machine-readable consumer that wants the raw numbers without re-parsing
+   *  `detail` strings. */
+  readonly precision?: GatePrecisionInputs;
 }
 
 export interface RunCiSuiteOptions {
-  readonly games?: number; // per matchup; default 200 (PR budget)
+  readonly games?: number; // TOTAL across every seed (see `seedCount`); default 200 (PR budget)
   /** `runMatchup` (runner.ts) seeds matchup game *i* as `` `${seed}:${i}` ``. Two calls that
    *  vary THIS string therefore play DIFFERENT games — any measured difference between them
    *  conflates whatever you changed with seed variance, not isolates it (platform-corrections.md
@@ -803,6 +999,32 @@ export interface RunCiSuiteOptions {
   readonly seed: string;
   readonly suite?: "ci" | "nightly"; // default "ci"
   readonly clock?: RunMatchupOptions["clock"];
+  /** platform-corrections.md C71 Part 1 / C77: the number of INDEPENDENT seeds this suite's
+   *  self-play-derived rows are measured across and aggregated over (`aggregateAcrossSeeds`).
+   *  `games` (above) is the TOTAL games across every seed, never per-seed — raising `seedCount`
+   *  does NOT raise total self-play cost; it reallocates the SAME budget from one seed's games to
+   *  more, smaller, independent seeds ("fewer games per seed at equal total cost"). Default `1`
+   *  keeps every existing caller's exact single-seed behaviour, byte-identical — this option is
+   *  purely additive (see this module's own header doc). `games` must be evenly divisible by
+   *  `seedCount` (`NonDivisibleSeedCountError`) — an uneven split would silently give some seeds
+   *  more weight than others in an UNweighted per-seed mean, the same "never approximate a split,
+   *  refuse instead" posture C24 already took for "never invent a per-candidate seed." */
+  readonly seedCount?: number;
+}
+
+/** Thrown by `runCiSuite` when `games` (the TOTAL across every seed) does not divide evenly by
+ *  `seedCount` — see `RunCiSuiteOptions.seedCount`'s own doc for why this refuses rather than
+ *  rounds. Never reachable for the default `seedCount: 1` (every integer is divisible by 1). */
+export class NonDivisibleSeedCountError extends Error {
+  constructor(gameId: string, games: number, seedCount: number) {
+    super(
+      `runCiSuite: game "${gameId}"'s total games (${games}) is not evenly divisible by ` +
+        `seedCount (${seedCount}) — platform-corrections.md C71 Part 1 / C77: an uneven split ` +
+        "would silently give some seeds more weight than others in an unweighted per-seed mean. " +
+        "Choose a games/seedCount pair that divides evenly."
+    );
+    this.name = "NonDivisibleSeedCountError";
+  }
 }
 
 /** One `compareBudgets` result point: the candidate rollout count and the full report a real
@@ -956,6 +1178,17 @@ export function hasUnattainedGates(results: readonly GateResult[]): boolean {
   return results.some((r) => r.status === "unattained");
 }
 
+/** True iff any row carries `provisional: true` (platform-corrections.md C71 Part 1 / C77) — the
+ *  same "provisional, not a fully-settled claim" signal `hasDeferredGates`/`hasUnattainedGates`
+ *  provide for their own qualifiers: a report can be `ok` (or genuinely FAILED) while a rate-
+ *  style gate's aggregate mean sits within its own measured seed-to-seed noise of the edge it is
+ *  judged against — neither a lie (the verdict IS what the aggregate says) nor a settled fact (a
+ *  second measurement could flip it). `report.ts`'s `formatCiSuiteTable` checks this so the
+ *  rendered header never reads as an unqualified verdict when that is true. */
+export function hasProvisionalGates(results: readonly GateResult[]): boolean {
+  return results.some((r) => r.provisional === true);
+}
+
 // ---------------------------------------------------------------------------------------
 // Mirror-probe declaration (platform-corrections.md C48, routed at C62). NOT one of the six
 // harness-COMPUTED self-play rows this module's header doc scopes `evaluateCiGates` to — a
@@ -1039,6 +1272,61 @@ export function evaluateMirrorProbeGate(manifest: Pick<GameManifest, "id" | "mir
  * against the manifest's own threshold overrides (falling back to
  * `DEFAULT_HARNESS_THRESHOLDS`) and exceptions.
  */
+/** One seed's worth of the three self-play matchups this suite needs — factored out of
+ *  `runCiSuite` so the single-seed path (called once, with `opts.seed`/`games` UNCHANGED) and
+ *  the multi-seed path (called `seedCount` times, once per derived seed, with `games/seedCount`
+ *  each) share the exact same matchup-construction logic and can never drift apart
+ *  (platform-corrections.md C71 Part 1 / C77). The single-seed call site below reproduces the
+ *  pre-C77 code verbatim, which is what keeps that path byte-identical. */
+function runSeedMatchups<S extends WithEffects, M extends Json, V extends WithEffects>(
+  engine: GameEngine<S, M, V>,
+  ruthless: AgentSpec<S, M>,
+  standardTier: DifficultyTier | undefined,
+  seed: string,
+  games: number,
+  clock: RunMatchupOptions["clock"] | undefined
+): SeedMatchupTriple {
+  const random = resolveNamedAgent<S, M>("random");
+
+  const strongVsRandom = runMatchup(engine, ruthless, random, {
+    games,
+    seed: `${seed}:strong-vs-random`,
+    ...(clock ? { clock } : {}),
+  });
+  const strongSelfPlay = runMatchup(engine, ruthless, ruthless, {
+    games,
+    seed: `${seed}:strong-self-play`,
+    ...(clock ? { clock } : {}),
+  });
+  const ruthlessVsStandard = standardTier
+    ? runMatchup(engine, ruthless, tierAgent<S, M>("standard", standardTier), {
+        games,
+        seed: `${seed}:ruthless-vs-standard`,
+        ...(clock ? { clock } : {}),
+      })
+    : null;
+
+  return { strongVsRandom, strongSelfPlay, ruthlessVsStandard };
+}
+
+/** The `GateInputs` rate/mean fields (everything except `capHitRate`, which stays structural —
+ *  see `worstCapHitRate`) for ONE seed's `SeedMatchupTriple`. */
+function seedRates(run: SeedMatchupTriple): {
+  strongVsRandom: number;
+  firstPlayerWinRate: number;
+  drawRate: number;
+  meanPlies: number;
+  ruthlessVsStandard: number | null;
+} {
+  return {
+    strongVsRandom: agentWinRate(run.strongVsRandom.outcomes, "ruthless"),
+    firstPlayerWinRate: run.strongSelfPlay.metrics.firstPlayerWinRate,
+    drawRate: run.strongSelfPlay.metrics.drawRate,
+    meanPlies: run.strongSelfPlay.metrics.meanPlies,
+    ruthlessVsStandard: run.ruthlessVsStandard ? agentWinRate(run.ruthlessVsStandard.outcomes, "ruthless") : null,
+  };
+}
+
 export function runCiSuite<S extends WithEffects, M extends Json, V extends WithEffects>(
   engine: GameEngine<S, M, V>,
   manifest: GameManifest,
@@ -1046,6 +1334,10 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
 ): CiSuiteReport {
   const games = opts.games ?? 200;
   const suite = opts.suite ?? "ci";
+  const seedCount = opts.seedCount ?? 1;
+  if (games % seedCount !== 0) {
+    throw new NonDivisibleSeedCountError(manifest.id, games, seedCount);
+  }
   const thresholds: HarnessThresholds = { ...DEFAULT_HARNESS_THRESHOLDS, ...manifest.thresholds };
   const exceptions = manifest.exceptions ?? [];
 
@@ -1113,39 +1405,6 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
   );
 
   const ruthless = tierAgent<S, M>("ruthless", ruthlessTier);
-  const random = resolveNamedAgent<S, M>("random");
-
-  const strongVsRandom = runMatchup(engine, ruthless, random, {
-    games,
-    seed: `${opts.seed}:strong-vs-random`,
-    ...(opts.clock ? { clock: opts.clock } : {}),
-  });
-  const strongSelfPlay = runMatchup(engine, ruthless, ruthless, {
-    games,
-    seed: `${opts.seed}:strong-self-play`,
-    ...(opts.clock ? { clock: opts.clock } : {}),
-  });
-
-  const ruthlessVsStandard = standardTier
-    ? runMatchup(engine, ruthless, tierAgent<S, M>("standard", standardTier), {
-        games,
-        seed: `${opts.seed}:ruthless-vs-standard`,
-        ...(opts.clock ? { clock: opts.clock } : {}),
-      })
-    : null;
-
-  const inputs: GateInputs = {
-    strongVsRandomWinRate: agentWinRate(strongVsRandom.outcomes, "ruthless"),
-    firstPlayerWinRate: strongSelfPlay.metrics.firstPlayerWinRate,
-    drawRate: strongSelfPlay.metrics.drawRate,
-    // meanPlies deliberately stays self-play-only: it is a shape-of-game statistic (how long a
-    // BALANCED game runs), and mixing in a mismatched matchup like ruthless-vs-random would pull
-    // it toward whatever that matchup's dynamics happen to be, not the metric roadmap §6 means.
-    meanPlies: strongSelfPlay.metrics.meanPlies,
-    // capHitRate does NOT stay self-play-only — see worstCapHitRate's own doc (SHOULD FIX #3).
-    capHitRate: worstCapHitRate([strongVsRandom, strongSelfPlay, ruthlessVsStandard]),
-    ruthlessVsStandardWinRate: ruthlessVsStandard ? agentWinRate(ruthlessVsStandard.outcomes, "ruthless") : null,
-  };
 
   // C26: SAME condition as the in-memory clone substitution above (never re-derived
   // differently), so the gate and the substitution can never disagree about whether the
@@ -1156,12 +1415,97 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
     standardN: standardTier && standardTier.budget.kind === "rollouts" ? standardTier.budget.n : null,
   };
 
-  const baseGates = evaluateCiGates(inputs, thresholds, exceptions, suite, manifest.solvedValue, ruthlessBudgets);
   // C48/C62: see the deferred branch above for why this is appended here rather than folded
   // into evaluateCiGates itself, and why it is conditional on the manifest (never on suite,
   // budget, or anything else computed in this function) — a manifest that never sets
   // `mirrorProbe` gets `mirrorGate === null` and `gates === baseGates`, unchanged.
   const mirrorGate = evaluateMirrorProbeGate(manifest);
+
+  if (seedCount === 1) {
+    // C71 Part 1 / C77's byte-identical default path: reproduces the pre-C77 code exactly (via
+    // `runSeedMatchups`, called once with `opts.seed`/`games` UNCHANGED — no `:seed0:` infix, no
+    // precision object built at all), so every existing caller that never opts into
+    // `seedCount > 1` sees the identical report shape and identical numbers it always has.
+    const run = runSeedMatchups(engine, ruthless, standardTier, opts.seed, games, opts.clock);
+    const rates = seedRates(run);
+    const inputs: GateInputs = {
+      strongVsRandomWinRate: rates.strongVsRandom,
+      firstPlayerWinRate: rates.firstPlayerWinRate,
+      drawRate: rates.drawRate,
+      // meanPlies deliberately stays self-play-only: it is a shape-of-game statistic (how long a
+      // BALANCED game runs), and mixing in a mismatched matchup like ruthless-vs-random would
+      // pull it toward whatever that matchup's dynamics happen to be, not the metric roadmap §6
+      // means.
+      meanPlies: rates.meanPlies,
+      // capHitRate does NOT stay self-play-only — see worstCapHitRate's own doc (SHOULD FIX #3).
+      capHitRate: worstCapHitRate([run.strongVsRandom, run.strongSelfPlay, run.ruthlessVsStandard]),
+      ruthlessVsStandardWinRate: rates.ruthlessVsStandard,
+    };
+
+    const baseGates = evaluateCiGates(inputs, thresholds, exceptions, suite, manifest.solvedValue, ruthlessBudgets);
+    const gates = mirrorGate ? [...baseGates, mirrorGate] : baseGates;
+
+    return {
+      gameId: manifest.id,
+      suite,
+      ok: gates.every((g) => g.status !== "fail"),
+      gates,
+      matchups: run,
+    };
+  }
+
+  // C71 Part 1 / C77: `seedCount` INDEPENDENT seeds, each measured over `games / seedCount`
+  // games (the divisibility guard above already confirmed this is exact) — `games` (the caller's
+  // TOTAL budget) is unchanged, so total self-play cost stays flat regardless of `seedCount`
+  // (the "fewer games per seed at equal total cost" the plan calls for). Each seed's own rates
+  // are computed independently; `aggregateAcrossSeeds` below is the ONLY place they are combined.
+  const gamesPerSeed = games / seedCount;
+  const seedRuns = Array.from({ length: seedCount }, (_, i) => ({
+    seed: `${opts.seed}:seed${i}`,
+    ...runSeedMatchups(engine, ruthless, standardTier, `${opts.seed}:seed${i}`, gamesPerSeed, opts.clock),
+  }));
+
+  const perSeedRates = seedRuns.map((run) => seedRates(run));
+  const strongVsRandomAgg = aggregateAcrossSeeds(perSeedRates.map((r) => r.strongVsRandom));
+  const firstPlayerAgg = aggregateAcrossSeeds(perSeedRates.map((r) => r.firstPlayerWinRate));
+  const drawAgg = aggregateAcrossSeeds(perSeedRates.map((r) => r.drawRate));
+  const meanPliesAgg = aggregateAcrossSeeds(perSeedRates.map((r) => r.meanPlies));
+  // `standardTier` is fixed for the whole call (not per-seed), so either EVERY seed ran
+  // ruthless-vs-standard or NONE did — `perSeedRates[i].ruthlessVsStandard` is `null` uniformly
+  // in the "no standard tier" case, never a mix.
+  const ruthlessVsStandardAgg = standardTier
+    ? aggregateAcrossSeeds(perSeedRates.map((r) => r.ruthlessVsStandard!))
+    : null;
+
+  const inputs: GateInputs = {
+    strongVsRandomWinRate: strongVsRandomAgg.mean,
+    firstPlayerWinRate: firstPlayerAgg.mean,
+    drawRate: drawAgg.mean,
+    meanPlies: meanPliesAgg.mean,
+    capHitRate: Math.max(
+      ...seedRuns.map((run) => worstCapHitRate([run.strongVsRandom, run.strongSelfPlay, run.ruthlessVsStandard]))
+    ),
+    ruthlessVsStandardWinRate: ruthlessVsStandardAgg ? ruthlessVsStandardAgg.mean : null,
+  };
+
+  const precision: GatePrecisionInputs = {
+    strongVsRandomWinRate: strongVsRandomAgg,
+    firstPlayerWinRate: firstPlayerAgg,
+    drawRate: drawAgg,
+    meanPlies: meanPliesAgg,
+    ...(ruthlessVsStandardAgg ? { ruthlessVsStandardWinRate: ruthlessVsStandardAgg } : {}),
+  };
+
+  const baseGates = evaluateCiGates(
+    inputs,
+    thresholds,
+    exceptions,
+    suite,
+    manifest.solvedValue,
+    ruthlessBudgets,
+    undefined,
+    precision
+  );
   const gates = mirrorGate ? [...baseGates, mirrorGate] : baseGates;
 
   return {
@@ -1169,7 +1513,9 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
     suite,
     ok: gates.every((g) => g.status !== "fail"),
     gates,
-    matchups: { strongVsRandom, strongSelfPlay, ruthlessVsStandard },
+    matchups: null,
+    seedRuns,
+    precision,
   };
 }
 
