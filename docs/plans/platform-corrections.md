@@ -5206,3 +5206,48 @@ Worth noting because it is the good version of this session's recurring shape. T
 merely pass its tests; **running it under adversarial conditions it was never designed for exposed a
 defect its own design implied**, and the fix preserves detection rather than trading it away for
 quiet.
+
+## C83 — A dependency that resolved by accident, found by running the thing after four green merges.
+
+Four branches merged tonight, each typechecked, linted, tested, byte-identity-verified and
+stage-6 reviewed. Then the gate table was run on `main` and failed immediately:
+
+```
+Cannot find package '@twist-arcade/fadeout' imported from scripts/ci-gates.ts
+```
+
+**Not a merge defect.** The C64 probes wiring resolves each game's `mirrorMove` via a templated
+dynamic `import(`@twist-arcade/${gameId}`)`. The root `package.json` declared crackstep, mine-run,
+nine-grids and tilt — **and never fadeout.** It worked only because a stale `node_modules` symlink
+happened to be present, and tonight's worktree teardowns pruned it.
+
+Every branch passed because **each worktree had its own `node_modules` and resolved independently.**
+The defect existed only in the integration, which is exactly the state no branch tests.
+
+### Why the guard I shipped tonight cannot see this
+
+C72's coverage guard compares **on-disk files** against **compiler-read files.** This is a different
+pair: **imports** against **declared dependencies.** Same shape — a manifest silently failing to
+declare something real — one layer over, and invisible to the tool built for the layer below.
+
+That is C79's ruling arriving from a direction it did not anticipate. It said a guard's scope is an
+untested claim and defects migrate to where the scope ends. The scope in question was *which
+directories* the guard checks. **The unexamined scope was which kind of manifest it checks at all.**
+
+### The thing that actually caught it
+
+Not a test, not a review, not a guard: **running the real command on the integrated result.** Four
+independently-verified branches composed into a broken whole, and the only thing that could have
+found it is the step that is easiest to skip because everything upstream is green.
+
+The rule, and it is the cheapest one in this document: **after merging, run the thing.** Not the
+tests — the actual entry point, on the actual integrated tree.
+
+### Owed
+
+A guard comparing every workspace package's **imports** (static and templated-dynamic) against its
+**declared dependencies**, in the same posture as `check-engine-purity.mjs` and
+`check-tsconfig-coverage.mjs`. The templated-dynamic case is the hard part and the one that bit
+here — `import(`@twist-arcade/${gameId}`)` names no package a static analyzer can see, so the guard
+has to know that the registry's game ids are the expansion set. That is a real design problem, not a
+lint rule, and it is registered rather than hand-waved.
