@@ -40,8 +40,15 @@ export interface MirrorAgentSpec<S extends WithEffects, M extends Json> {
   readonly name: string;
   /** The platform's pinned three-argument mirror convention (see module doc). `lastOppMove` is
    *  `null` on the mirror seat's very first move of a game (there is nothing to mirror yet —
-   *  the game-local `mirrorMove` must handle that case, e.g. by playing center/any opening). */
-  readonly mirrorMove: (state: S, lastOppMove: M | null, legalMoves: readonly M[]) => M;
+   *  the game-local `mirrorMove` must handle that case, e.g. by playing center/any opening).
+   *
+   *  RETURN TYPE IS `M | null` (docs/plans/degeneracy-probes.md, C64 finding): every shipped
+   *  game's own `mirrorMove` (Fadeout/Tilt/Nine Grids `probes.ts`) is documented to return
+   *  `null` when there is no opponent move yet to mirror, or the reflected target is no longer
+   *  legal — "the harness's mirror-bot policy falls back to a random legal move in either
+   *  case" (each game's own doc comment states this convention verbatim). `runner.ts`'s
+   *  `playOneGame` is what actually implements that fallback. */
+  readonly mirrorMove: (state: S, lastOppMove: M | null, legalMoves: readonly M[]) => M | null;
 }
 
 export type AgentSpec<S extends WithEffects, M extends Json> = PolicyAgentSpec<S, M> | MirrorAgentSpec<S, M>;
@@ -55,7 +62,7 @@ function policyAgent<S extends WithEffects, M extends Json>(
 }
 
 export function mirrorAgent<S extends WithEffects, M extends Json>(
-  mirrorMove: (state: S, lastOppMove: M | null, legalMoves: readonly M[]) => M
+  mirrorMove: (state: S, lastOppMove: M | null, legalMoves: readonly M[]) => M | null
 ): MirrorAgentSpec<S, M> {
   return { kind: "mirror", name: "mirror", mirrorMove };
 }

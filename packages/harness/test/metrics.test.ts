@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  agentParityScore,
   agentWinRate,
   computeMatchupMetrics,
   percentile,
@@ -107,5 +108,36 @@ describe("agentWinRate()", () => {
   it("throws if the named agent never appears in any outcome (a caller error, not a silent 0)", () => {
     const outcomes: GameOutcome[] = [outcome({ seatAgent: ["a", "b"], winnerSeat: 0, plies: 5 })];
     expect(() => agentWinRate(outcomes, "nonexistent")).toThrow(RangeError);
+  });
+});
+
+// docs/plans/degeneracy-probes.md §1.3: rush-probe gates on a PARITY score, not a win rate — a
+// draw counts as half a point (wins + 0.5*draws)/games — since rush's own claim is "plays about
+// as well as mcts1k", and a pure win-rate metric would treat "always draws" identically to
+// "always loses", which is the wrong comparison for a parity claim.
+describe("agentParityScore()", () => {
+  it("computes a named agent's parity score (wins + 0.5*draws)/games regardless of seat", () => {
+    const outcomes: GameOutcome[] = [
+      outcome({ seatAgent: ["rush", "mcts1k"], winnerSeat: 0, plies: 5 }), // rush wins: 1
+      outcome({ seatAgent: ["mcts1k", "rush"], winnerSeat: 1, plies: 5 }), // rush wins (mirrored seat): 1
+      outcome({ seatAgent: ["rush", "mcts1k"], winnerSeat: 1, plies: 5 }), // rush loses: 0
+      outcome({ seatAgent: ["mcts1k", "rush"], winnerSeat: null, plies: 5 }), // draw: 0.5
+    ];
+    // (1 + 1 + 0 + 0.5) / 4 = 0.625
+    expect(agentParityScore(outcomes, "rush")).toBeCloseTo(0.625);
+  });
+
+  it("an agent that only ever draws scores exactly 0.5, distinct from a 0% win rate", () => {
+    const outcomes: GameOutcome[] = [
+      outcome({ seatAgent: ["rush", "mcts1k"], winnerSeat: null, plies: 5 }),
+      outcome({ seatAgent: ["mcts1k", "rush"], winnerSeat: null, plies: 5 }),
+    ];
+    expect(agentParityScore(outcomes, "rush")).toBeCloseTo(0.5);
+    expect(agentWinRate(outcomes, "rush")).toBeCloseTo(0); // the metric this one is NOT
+  });
+
+  it("throws if the named agent never appears in any outcome (mirrors agentWinRate's own guard)", () => {
+    const outcomes: GameOutcome[] = [outcome({ seatAgent: ["a", "b"], winnerSeat: 0, plies: 5 })];
+    expect(() => agentParityScore(outcomes, "nonexistent")).toThrow(RangeError);
   });
 });

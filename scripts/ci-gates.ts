@@ -49,6 +49,13 @@ import {
   type SafeMoveFn,
 } from "@twist-arcade/harness";
 
+/** The platform's pinned three-argument mirror convention (packages/harness/src/roster.ts's own
+ *  doc), typed loosely (`Json`/`unknown`) at this dynamic-import boundary — the same posture
+ *  `SafeMoveFn<Json, unknown>` already takes for `resolveSafeMove` below, for the identical
+ *  reason: a dynamic `import(`@twist-arcade/${gameId}`)` crosses a boundary TypeScript cannot
+ *  verify statically regardless of how precisely this type is written. */
+type MirrorMoveFn = (state: Json, lastOppMove: unknown, legalMoves: readonly unknown[]) => unknown;
+
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CERT_BASE_DIR = path.join(REPO_ROOT, "data/certificates");
 
@@ -90,10 +97,38 @@ export class SafeMoveNotExportedError extends Error {
   }
 }
 
+/** Thrown when a two-player game tagged `"symmetric"` does not export a `mirrorMove` hook from
+ *  its package root, AND does not declare `manifest.mirrorProbe` to opt out — the exact posture
+ *  of `SafeMoveNotExportedError` above, at the repo-wiring layer (docs/plans/degeneracy-probes.md
+ *  §4.4). "Not a warn: C64's whole lesson is that 'harness warns when absent' was claimed and
+ *  never built, and a warn nobody reads is the same hole with a log line in it." A game NOT
+ *  tagged `"symmetric"` with no `mirrorMove` export is NOT refused here — it gets an explicit n/a
+ *  row instead, from `probes-two-player.ts`'s own `MirrorProbeInput` ("unavailable") — the TAG is
+ *  what decides whether absence is an error; the EXPORT decides whether the probe runs at all
+ *  (Fadeout is the worked example: no `"symmetric"` tag, but a real `mirrorMove` export, so its
+ *  probe measures for real). */
+export class MirrorMoveNotExportedError extends Error {
+  constructor(gameId: string) {
+    super(
+      `ci-gates: two-player game "${gameId}" is tagged "symmetric" but does not export a ` +
+        `"mirrorMove" hook from its package root (@twist-arcade/${gameId}) — every symmetric ` +
+        "game MUST supply one for the mirror-bot degeneracy probe (docs/plans/" +
+        "degeneracy-probes.md §4.4), unless it explicitly opts out via manifest.mirrorProbe. " +
+        "This is a hard error, not a skipped gate."
+    );
+    this.name = "MirrorMoveNotExportedError";
+  }
+}
+
 export interface RunAllGatesDeps {
   /** Real wiring: `import(`@twist-arcade/${gameId}`)`, reading `.safeMove`. Injected so tests
    *  never need a real npm-linked game package. */
   resolveSafeMove(gameId: string): Promise<SafeMoveFn<Json, unknown> | undefined>;
+  /** Real wiring: `import(`@twist-arcade/${gameId}`)`, reading `.mirrorMove` — the SAME
+   *  repo-layout convention `resolveSafeMove` already uses (a game's package-root export;
+   *  game-spec's `RegistryEntry` has no `loadProbes()` slot for this either, same reasoning as
+   *  `resolveSafeMove`'s own doc). Injected so tests never need a real npm-linked game package. */
+  resolveMirrorMove(gameId: string): Promise<MirrorMoveFn | undefined>;
   certBaseDir: string;
   today: string;
   dayFor: (isoDay: string, offset: number) => string;
@@ -104,6 +139,10 @@ function defaultDeps(): RunAllGatesDeps {
     async resolveSafeMove(gameId: string) {
       const mod = (await import(`@twist-arcade/${gameId}`)) as { safeMove?: SafeMoveFn<Json, unknown> };
       return mod.safeMove;
+    },
+    async resolveMirrorMove(gameId: string) {
+      const mod = (await import(`@twist-arcade/${gameId}`)) as { mirrorMove?: MirrorMoveFn };
+      return mod.mirrorMove;
     },
     certBaseDir: CERT_BASE_DIR,
     today: todayUtc(),
@@ -160,11 +199,25 @@ export async function runAllGates(
     const kind = selectGateKind(entry.manifest);
 
     if (kind === "two-player") {
+      const mirrorMove = await deps.resolveMirrorMove(gameId);
+      // C64 §4.4: refuse loudly for a "symmetric"-tagged game with no resolvable export AND no
+      // explicit opt-out — never a warn, never a silent skip. A game not tagged "symmetric"
+      // falls through with `mirrorMove: undefined`; the two-player lane's own composition
+      // (probes-two-player.ts's MirrorProbeInput) reports that as an explicit n/a row, not an
+      // error — the TAG decides whether absence is an error, the EXPORT decides whether the
+      // probe runs (see MirrorMoveNotExportedError's own doc).
+      if (mirrorMove === undefined && entry.manifest.mirrorProbe === undefined && entry.manifest.tags.includes("symmetric")) {
+        throw new MirrorMoveNotExportedError(gameId);
+      }
       const report = await runGameCiGate(engine, entry.manifest, {
         kind: "two-player",
         seed: `ci:${gameId}:${opts.suite}`,
         games: opts.suite === "nightly" ? NIGHTLY_GAMES : CI_GAMES,
         suite: opts.suite,
+        // Type-erasure boundary matching resolveSafeMove's own posture (see that dep's own
+        // comment above and defaultDeps's real import()-based resolution) — mirrorMove crosses
+        // a dynamic-import boundary TypeScript cannot verify statically regardless.
+        ...(mirrorMove ? { mirrorMove } : {}),
       });
       reports.push(report);
       continue;

@@ -11,6 +11,14 @@ import { manifest } from "./manifest";
 import { Board } from "./ui/Board";
 import { boardName, boardSummaryText, closedReasonLabel, glyphFor, positionName } from "./ui/board-view";
 
+// C64 (docs/plans/degeneracy-probes.md): the missing half of the mirrorMove wiring gap the plan
+// closes — Nine Grids' mirrorMove existed and was tested (probes.ts) but was never re-exported
+// from this package root, so scripts/ci-gates.ts's `resolveMirrorMove` (mirroring the `safeMove`
+// convention — games/mine-run/index.ts) could never find it via
+// `import("@twist-arcade/nine-grids")`. Fadeout already did this (its own index.ts); Tilt and
+// Nine Grids did not — this repairs Nine Grids' half.
+export { mirrorMove } from "./probes";
+
 // UI pass (platform-corrections.md C16 gate satisfied — see ui/Board.tsx's module doc): real
 // announce() strings, replacing the TODO placeholders. Every A11Y test-plan case is tagged
 // [SPEC] against those placeholders; this is what turns them from "expected to FAIL today" into

@@ -132,9 +132,20 @@ function playOneGame<S extends WithEffects, M extends Json, V extends WithEffect
 
       const agent = seatAgents[seat]!;
       const opponentSeat: PlayerId = seat === 0 ? 1 : 0;
+      // C64 finding (docs/plans/degeneracy-probes.md): every shipped game's own mirrorMove
+      // (Fadeout/Tilt/Nine Grids probes.ts) is documented to return `null` when there is no
+      // opponent move yet to mirror, or the reflected target is no longer legal — "the
+      // harness's mirror-bot policy falls back to a random legal move in either case." That
+      // fallback was documented in three separate game packages but never actually implemented
+      // here: the only pre-existing typechecked exercise of a real mirrorMove was scripts/
+      // research/tilt-t4-gates.ts, which scripts/tsconfig.json's own `include` never covers.
+      // Implemented now, using the SAME domain-separated bot-randomness stream (`policyRng`)
+      // policy agents already draw from this ply — no new rng stream, same convention this
+      // module's own doc already establishes.
+      const mirrorMove = agent.kind === "mirror" ? agent.mirrorMove(state, lastMoveBySeat[opponentSeat] ?? null, legal) : null;
       const move: M =
         agent.kind === "mirror"
-          ? agent.mirrorMove(state, lastMoveBySeat[opponentSeat] ?? null, legal)
+          ? (mirrorMove ?? legal[policyRng.int(legal.length)]!)
           : agent.policy.chooseMove({ engine, state, player: seat, rng: policyRng, budget: agent.budget, clock })
               .move;
 

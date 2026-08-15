@@ -12,6 +12,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { GameManifest, Registry } from "@twist-arcade/game-spec";
 import { classicTicTacToe } from "@twist-arcade/engine/testkit/fixtures/classic-ttt";
+import type { TTTMove, TTTState } from "@twist-arcade/engine/testkit/fixtures/classic-ttt";
 import { bankRun, createBankRun, type BankRunMove, type BankRunState } from "@twist-arcade/engine/testkit/fixtures/bank-run";
 import {
   miniCrackstep,
@@ -28,6 +29,7 @@ import {
   CI_GAMES,
   CI_SEED_COUNT,
   dayFor,
+  MirrorMoveNotExportedError,
   runAllGates,
   SafeMoveNotExportedError,
   todayUtc,
@@ -160,6 +162,9 @@ describe("runAllGates — dispatches all three kinds from one registry", () => {
         // in scripts/ci-gates.ts is untyped at the module boundary for exactly this reason.
         resolveSafeMove: async (gameId) =>
           gameId === "bank-run-fixture" ? (alwaysBank as unknown as SafeMoveFn<Json, unknown>) : undefined,
+        // classic-ttt-fixture's manifest carries no "symmetric" tag, so an undefined mirrorMove
+        // is a normal, non-throwing n/a — not the MirrorMoveNotExportedError case.
+        resolveMirrorMove: async () => undefined,
         certBaseDir,
         today,
         dayFor,
@@ -202,7 +207,7 @@ describe("runAllGates — dispatches all three kinds from one registry", () => {
       runAllGates(
         registry,
         { suite: "ci" },
-        { resolveSafeMove: async () => undefined, certBaseDir, today: "2026-09-14", dayFor }
+        { resolveSafeMove: async () => undefined, resolveMirrorMove: async () => undefined, certBaseDir, today: "2026-09-14", dayFor }
       )
     ).rejects.toThrow(SafeMoveNotExportedError);
   });
@@ -226,6 +231,7 @@ describe("runAllGates — dispatches all three kinds from one registry", () => {
       { suite: "ci" },
       {
         resolveSafeMove: async () => alwaysBank as unknown as SafeMoveFn<Json, unknown>,
+        resolveMirrorMove: async () => undefined,
         certBaseDir,
         today: "2026-09-14",
         dayFor,
@@ -233,6 +239,133 @@ describe("runAllGates — dispatches all three kinds from one registry", () => {
     );
     expect(reports).toHaveLength(1);
     expect(reports[0]!.kind).toBe("solo-chase");
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// C64 (docs/plans/degeneracy-probes.md §4.4/§4.7): resolveMirrorMove + MirrorMoveNotExportedError
+// — the repo-layout resolution and refusal for the mirror-bot probe, at the exact posture
+// SafeMoveNotExportedError already takes. The TAG decides whether absence is an error; the
+// EXPORT decides whether the probe runs.
+// ---------------------------------------------------------------------------------------
+
+function tttMirrorMoveFixture(_state: TTTState, lastOppMove: TTTMove | null, legalMoves: readonly TTTMove[]): TTTMove | null {
+  if (lastOppMove === null) return null;
+  const reflected = 8 - lastOppMove.cell;
+  return legalMoves.find((m) => m.cell === reflected) ?? null;
+}
+
+function symmetricTwoPlayerManifest(overrides: Partial<GameManifest> = {}): GameManifest {
+  return {
+    ...twoPlayerManifest(),
+    tags: ["symmetric"],
+    difficultyTiers: [{ id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 50 }, minReplyMs: 0 }],
+    ...overrides,
+  };
+}
+
+describe("runAllGates — C64: resolveMirrorMove / MirrorMoveNotExportedError", () => {
+  let certBaseDir: string;
+
+  beforeEach(async () => {
+    certBaseDir = await mkdtemp(path.join(tmpdir(), "scripts-ci-gates-mirror-"));
+  });
+
+  afterEach(async () => {
+    await rm(certBaseDir, { recursive: true, force: true });
+  });
+
+  it("REFUSES loudly (MirrorMoveNotExportedError) for a \"symmetric\"-tagged game whose resolveMirrorMove returns undefined, with no manifest.mirrorProbe opt-out", async () => {
+    const registry: Registry = {
+      "classic-ttt-fixture": {
+        manifest: symmetricTwoPlayerManifest(),
+        loadEngine: async () => classicTicTacToe,
+        loadPresentation: async () => {
+          throw new Error("not needed by this test");
+        },
+      },
+    };
+    await expect(
+      runAllGates(
+        registry,
+        { suite: "ci" },
+        { resolveSafeMove: async () => undefined, resolveMirrorMove: async () => undefined, certBaseDir, today: "2026-09-14", dayFor }
+      )
+    ).rejects.toThrow(MirrorMoveNotExportedError);
+  });
+
+  it("does NOT refuse when a \"symmetric\"-tagged game DOES resolve a real mirrorMove — it threads through and produces a measured mirror-probe row", async () => {
+    const registry: Registry = {
+      "classic-ttt-fixture": {
+        manifest: symmetricTwoPlayerManifest(),
+        loadEngine: async () => classicTicTacToe,
+        loadPresentation: async () => {
+          throw new Error("not needed by this test");
+        },
+      },
+    };
+    const reports = await runAllGates(
+      registry,
+      { suite: "ci" },
+      {
+        resolveSafeMove: async () => undefined,
+        // Type-erasure boundary matching the real defaultDeps() import()-based resolution.
+        resolveMirrorMove: async () => tttMirrorMoveFixture as unknown as (s: unknown, l: unknown, m: readonly unknown[]) => unknown,
+        certBaseDir,
+        today: "2026-09-14",
+        dayFor,
+      }
+    );
+    expect(reports).toHaveLength(1);
+    const report = reports[0]!;
+    expect(report.kind).toBe("two-player");
+    if (report.kind === "two-player") {
+      const mirror = report.report.gates.find((g) => g.gate === "mirror-probe");
+      expect(mirror).toBeDefined();
+      expect(mirror!.status).not.toBe("n/a"); // measured for real, not the "unavailable" n/a shape
+    }
+  });
+
+  it("does NOT refuse a \"symmetric\"-tagged game that DECLARES manifest.mirrorProbe, even with no resolvable export — the declaration is the sanctioned opt-out", async () => {
+    const registry: Registry = {
+      "classic-ttt-fixture": {
+        manifest: symmetricTwoPlayerManifest({
+          mirrorProbe: { applicable: false, reason: "scripts/test/ci-gates.test.ts: declared opt-out fixture" },
+        }),
+        loadEngine: async () => classicTicTacToe,
+        loadPresentation: async () => {
+          throw new Error("not needed by this test");
+        },
+      },
+    };
+    const reports = await runAllGates(
+      registry,
+      { suite: "ci" },
+      { resolveSafeMove: async () => undefined, resolveMirrorMove: async () => undefined, certBaseDir, today: "2026-09-14", dayFor }
+    );
+    expect(reports).toHaveLength(1);
+  });
+
+  it("a game NOT tagged \"symmetric\" with an unresolved mirrorMove is NOT refused — it gets an explicit n/a row, never a crash (the tag decides the error, the export decides the row)", async () => {
+    const registry: Registry = {
+      "classic-ttt-fixture": {
+        manifest: twoPlayerManifest(), // tags: [] — not symmetric
+        loadEngine: async () => classicTicTacToe,
+        loadPresentation: async () => {
+          throw new Error("not needed by this test");
+        },
+      },
+    };
+    const reports = await runAllGates(
+      registry,
+      { suite: "ci" },
+      { resolveSafeMove: async () => undefined, resolveMirrorMove: async () => undefined, certBaseDir, today: "2026-09-14", dayFor }
+    );
+    expect(reports).toHaveLength(1);
+    const report = reports[0]!;
+    if (report.kind === "two-player") {
+      expect(report.report.gates.find((g) => g.gate === "mirror-probe")?.status).toBe("n/a");
+    }
   });
 });
 
@@ -282,6 +415,7 @@ describe("runAllGates — C13 --game filter", () => {
       { suite: "ci", game: "bank-run-fixture" },
       {
         resolveSafeMove: async () => alwaysBank as unknown as SafeMoveFn<Json, unknown>,
+        resolveMirrorMove: async () => undefined,
         certBaseDir,
         today: "2026-09-14",
         dayFor,
@@ -313,6 +447,7 @@ describe("runAllGates — C13 --game filter", () => {
         { suite: "ci", game: "not-a-real-game" },
         {
           resolveSafeMove: async () => undefined,
+          resolveMirrorMove: async () => undefined,
           certBaseDir,
           today: "2026-09-14",
           dayFor,
@@ -328,6 +463,7 @@ describe("runAllGates — C13 --game filter", () => {
       { suite: "ci" },
       {
         resolveSafeMove: async () => alwaysBank as unknown as SafeMoveFn<Json, unknown>,
+        resolveMirrorMove: async () => undefined,
         certBaseDir,
         today: "2026-09-14",
         dayFor,
