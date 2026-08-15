@@ -4956,3 +4956,76 @@ scripts that legitimately import game code, which is a real design question abou
 relates to the build graph. **Reverted rather than left red**, and routed to task #24 with this
 evidence attached — a half-applied fix that turns the tree red is worse than the gap it closes, and
 the point of testing the ruling was to size it, which it did.
+
+## C80 — The fix for a measurement that overstated its certainty overstated its certainty.
+
+C71's multi-seed gating exists because a single-seed gate asserted verdicts it could not support.
+Stage-6 review found the fix does the same thing, one level in.
+
+### The statistical error
+
+`PROVISIONAL_Z = 1.645` is a **normal** quantile applied to a **t** problem. With K=5 the cross-seed
+standard error has **4 degrees of freedom**; the correct one-sided 95% multiplier is
+**t(0.95, 4) = 2.132**, roughly 30% wider. A mean sitting 1.9 standard errors from a band edge — a
+distance the data cannot resolve — currently receives an **unqualified** PASS or FAIL.
+
+**The provisional flag under-fires, which is precisely the failure mode the change was built to
+prevent.** Verdicts are unaffected (the flag is annotative), but the headline claim — *"the report
+states its own precision"* — is the part that is wrong.
+
+### The two false comments, which are the C77 defect again
+
+The constant's doc says 1.645 is "the standard one-sided **90%** z critical value." It is the
+one-sided **95%** value; one-sided 90% is 1.282. And it says the choice is "deliberately looser than
+a two-sided 95% (1.96) … built to **over**-flag a borderline result rather than under-flag."
+**Inverted.** A smaller multiplier narrows the window and produces *fewer* flags.
+
+So a reader auditing this cannot tell which confidence level was intended, and is told the
+conservatism runs the opposite direction from reality. **One hour after C77 ruled that a fix's
+narrative is a claim needing its own test, a fix shipped with a narrative that is false twice in two
+sentences.** The pattern is not agent-specific and it is not going away by being noticed once.
+
+### The collision, which is mine
+
+The branch numbered its correction **C77** while I was writing C77, C78 and C79 on `main`. Twenty-seven
+code references across `packages/harness/src/*`, `scripts/ci-gates.ts` and
+`scripts/research/multi-seed-cost-pilot.ts` would have pointed at an unrelated correction about a
+homepage. Correction numbers are load-bearing cross-references here, and **I created the collision by
+writing corrections on `main` while a branch was writing one against a stale base.** Renumbered to
+C80 — this entry.
+
+The general point: **a numbering scheme with no allocator is a shared mutable variable.** Every
+long-running branch that adds a correction is racing every other. It has now happened once; it will
+happen again with three branches still open.
+
+### Four more findings worth keeping
+
+1. **A zero or tiny cross-seed SD silently disables the flag.** At 20 games/seed, per-seed rates are
+   5pp-granular, so five chance-identical readings give SD = 0 and an unqualified verdict for a mean
+   sitting *on* an edge. Ruled: floor fraction gates at the binomial bound
+   `sqrt(mean·(1−mean)/totalGames)` — a cross-seed estimate below that is SD-estimation noise, not
+   precision.
+2. **K=5 and K=10 are budget-derived, not power-derived**, and "matches the evidence already
+   collected" describes provenance while sounding like derivation. The measured power is computable
+   from this diff's own data: ~7pp SE at ci, so the flag only resolves verdicts ≳11–15pp from an edge
+   against a 15pp band half-width. **Say the number rather than implying a calculation happened.**
+3. **"SE shrinks with 1/√K" is false at fixed total games.** Only the between-seed term shrinks with
+   K; the binomial floor is set by total games. The advice was directionally right and the stated law
+   would mislead the next person to tune it.
+4. **`compareBudgets` is a silent scope end** — it cannot opt into multi-seed, so every rollout-budget
+   sweep still runs one seed per candidate, and now prints with no precision suffix, which reads as
+   *settled* rather than *unmeasured*. This repo makes budget decisions constantly (C22, C73–C76).
+   **C79's lesson recurring within the day: a guard's scope is an untested claim, and defects migrate
+   to where the scope ends.**
+
+### What held
+
+The design survived scrutiny intact. Cross-seed SD is genuinely computed across seeds rather than
+pooled as a binomial over `seedCount × gamesPerSeed`. The single-seed default is byte-identical **by
+construction**, verified rather than intended. Twenty games per seed introduces **no estimator bias** —
+with an equal split the mean of per-seed rates equals the pooled rate, and the cross-seed SD
+automatically absorbs the inflated within-seed noise. The tests are load-bearing: a sabotage-and-revert
+failed exactly the six provisional-specific tests and nothing else.
+
+**Tilt's result stands: 70.0% FAIL → 64.0% PASS, provisional.** The game was never broken. Under the t
+correction the row stays provisional, so the finding survives its own fix.
