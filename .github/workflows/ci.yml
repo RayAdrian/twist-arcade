@@ -31,6 +31,17 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: tsconfig coverage guard (C69/C72)
+        run: pnpm check:tsconfig-coverage
+        # C69: games/bid-tac-toe's tsconfig `include` glob never covered its solver — the
+        # code producing the exact solve the harness cites by name as gate proof — so
+        # `pnpm typecheck` above was truthfully green over a set of files that silently
+        # excluded the ones that mattered. C72: the owed audit found the same shape again,
+        # shipped on `main` (games/tilt missing `ui/**/*.ts`). This asks `tsc --listFiles`
+        # directly, per package, rather than reading `include` globs and predicting what
+        # they cover — see scripts/check-tsconfig-coverage.mjs's header. Must stay
+        # immediately after Typecheck: it verifies the scope of the check just above it.
+
       - name: Lint
         run: pnpm lint
 
