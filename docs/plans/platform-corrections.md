@@ -5111,3 +5111,45 @@ I approved the design of is the process working.** Ruling: C79 ruling 1 is satis
 than in that branch, because the honest extension goes red on `scripts/research`'s five real errors
 (C79 addendum) — but the header comment asserting the now-refuted rationale must go **now**, and every
 exemption must become a printed runtime artifact rather than prose.
+
+## C82 — The stale remote is a trap, and it has now caught two agents.
+
+Twice today an agent rebased a feature branch onto **`origin/main`** — which sits at `faa675d`, a
+C15-era commit roughly 120 behind local `main` (C68: nothing has been pushed, by the user's
+instruction to work locally). Both times the patches **replayed cleanly**, because they conflict with
+nothing in that old tree, and the branch was silently anchored to a base predating five games, the
+schema, and eighty corrections.
+
+The home-1b agent hit it first and misread the symptom as *"`origin/main` moved backward"* — it had
+not; its reflog shows only forward pushes. The tsconfig agent hit it second, noticed the anchoring
+itself, reset, and redid the rebase against local `main` correctly.
+
+**The hazard is that it looks like success.** `git rebase origin/main` reports no conflicts, tests
+still pass (the branch's own tests do not depend on the newer commits), and nothing announces that the
+base is wrong. Only a `merge-base --is-ancestor` check against a recent commit catches it.
+
+This is not an agent defect. **`origin/main` is the conventional target and it is deliberately wrong
+here**, which makes every agent's correct habit into a failure mode. It will catch a third.
+
+**Ruling: brief every branch with its rebase target explicitly — `main`, never `origin/main` — and
+verify with `git merge-base --is-ancestor <recent-correction-sha> HEAD` before merging.** I have been
+doing that check ad hoc; it is now the rule. The durable fix is pushing, which is the user's call and
+is blocked behind the Actions billing question (C68).
+
+### And a real defect the tsconfig guard found in itself
+
+Under full-suite parallel load, the guard produced two flaky failures that would not reproduce
+standalone. Root cause: it takes **two independent, unsynchronized filesystem snapshots** — its own
+directory walk, and a separate `tsc --listFiles` subprocess's reads — which are not atomic against a
+*different* test (`check-engine-purity.test.ts`) that plants and removes real files under
+`packages/engine/src/` while it runs.
+
+A time-of-check/time-of-use race, inside a guard whose entire job is comparing two views of the
+filesystem. Fixed by requiring a second measurement, after a pause, to reproduce the identical file
+set before reporting a gap — a real configuration gap cannot fail to reproduce; a transient collision
+reliably will not. Verified not to weaken detection: every planted violation still fails every time.
+
+Worth noting because it is the good version of this session's recurring shape. The guard did not
+merely pass its tests; **running it under adversarial conditions it was never designed for exposed a
+defect its own design implied**, and the fix preserves detection rather than trading it away for
+quiet.
