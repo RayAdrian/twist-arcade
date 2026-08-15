@@ -71,19 +71,27 @@ export interface GameManifest {
   // "Tic-Tac-Toe", "Minesweeper" — drives shelves (buildShelves groups games by this string
   // verbatim, so it must stay a real classic-game name for that grouping to read sensibly).
   //
-  // SENTINEL CONVENTION (C77 item 4, packages/shell/src/manifest-copy.ts): a game with no
-  // classic-game ancestor to attribute (an original twist, not a twist ON anything) sets this
-  // to an explanatory string STARTING WITH "N/A" (case-insensitive), e.g. Crackstep's
-  // `"N/A — an original twist on a floor-coverage path puzzle"`. Any shell UI that renders an
-  // "a twist on {classic}" attribution line MUST go through
-  // `classicAttributionLine(classic)` (packages/shell/src/manifest-copy.ts) rather than
-  // template-stringing this field directly — it returns `null` (render nothing) for the N/A
-  // sentinel instead of producing "a twist on N/A — ...". `classic` stays a plain `string`
-  // here on purpose (this sentinel-in-a-string convention is the deliberate stopgap): a real
-  // `classic: string | null` type has been ruled the correct end state, but that's a
-  // cross-team migration touching all five games' manifests, scheduled separately (task #23) —
-  // do not preempt it by changing this field's type unilaterally.
-  classic: string;
+  // `null` means this game has NO classic-game ancestor to attribute — an original design, not
+  // a twist ON anything (e.g. Crackstep, an original floor-coverage path puzzle). `null` is a
+  // first-class signal, not a fallback encoded in a string:
+  //   - `buildShelves` (packages/shell/src/shelves.ts) routes every `classic: null` game
+  //     straight to the "All games" remainder shelf, and NEVER groups two `null` games
+  //     together — two originals sharing "no classic" are not a shared classic family, and
+  //     grouping them by the shared `null` key would produce a shelf titled "Twists on null",
+  //     the same species of garbled copy platform-corrections.md C77 item 4 fixed one level up.
+  //   - `classicAttributionLine(classic)` (packages/shell/src/manifest-copy.ts) returns `null`
+  //     (render nothing) for a `null` classic. Any shell UI rendering an "a twist on {classic}"
+  //     attribution line MUST go through that function rather than template-stringing this
+  //     field directly.
+  //   - `pickNextTwist` (packages/shell/src/next-twist.ts) never ranks two `null`-classic games
+  //     as "the same classic" for the same reason.
+  //
+  // Historical note: this field used to be a plain `string`, and "no classic" was encoded as an
+  // explanatory string STARTING WITH "N/A" (case-insensitive) — a deliberate stopgap
+  // (platform-corrections.md C77 item 4) pending this exact migration (task #23). That
+  // string-sentinel convention is retired as of this change; `null` is now the only "no
+  // classic" signal, and no code should test `classic` against an "N/A"-shaped string.
+  classic: string | null;
   ruleSentence: string; // <=90 chars — hard constraint
   tags: string[]; // ["decay"], ["press-your-luck"] — facets, next-twist loop
   estMinutes: number;

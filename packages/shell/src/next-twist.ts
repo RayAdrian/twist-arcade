@@ -21,7 +21,12 @@ export function pickNextTwist(
   const candidates = withoutRecent.length > 0 ? withoutRecent : others;
 
   const rank = (m: GameManifest): number => {
-    if (current && m.classic === current.classic) return 0;
+    // `current.classic === null` means "no classic-game ancestor" (an original design) — never
+    // treated as a match, even against another game whose `classic` is also `null`. Without
+    // this guard, `null === null` would rank two unrelated originals as "the same classic",
+    // reproducing the exact grouping bug buildShelves guards against (platform-corrections.md
+    // C77 item 4 / task #23): two originals sharing "no classic" are not a shared family.
+    if (current && current.classic !== null && m.classic === current.classic) return 0;
     if (current && m.tags.some((tag) => current.tags.includes(tag))) return 1;
     return 2;
   };

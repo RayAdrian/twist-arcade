@@ -17,14 +17,28 @@ export interface Shelf {
 
 export function buildShelves(manifests: readonly GameManifest[]): Shelf[] {
   const byClassic = new Map<string, GameManifest[]>();
+  const remainder: GameManifest[] = [];
+
   for (const m of manifests) {
+    // `classic: null` means "no classic-game ancestor" (GameManifest.classic doc) — an
+    // original design. It routes straight to the remainder shelf and is NEVER grouped with
+    // another `null` game: two originals sharing "no classic" are not a shared classic family,
+    // and grouping them by the shared `null` key would produce a shelf titled "Twists on null"
+    // — the same garbled-copy defect platform-corrections.md C77 fixed one level up, just with
+    // `null` standing in for the old string sentinel. Handled explicitly here, not by accident
+    // of every `null` group having size 1 — that accident is exactly what let two DIFFERENT
+    // original games (both `null`) silently collide into one shelf under the old string-keyed
+    // Map, since `null === null` but two distinct sentinel strings never collided.
+    if (m.classic === null) {
+      remainder.push(m);
+      continue;
+    }
     const group = byClassic.get(m.classic);
     if (group) group.push(m);
     else byClassic.set(m.classic, [m]);
   }
 
   const shelves: Shelf[] = [];
-  const remainder: GameManifest[] = [];
 
   // Map preserves first-insertion order, so shelf order is deterministic given the same
   // (registry-ordered) input.
