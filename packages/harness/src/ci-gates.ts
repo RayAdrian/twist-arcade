@@ -34,7 +34,8 @@ import {
   type SoloGateChaseInputsFull,
   type SoloGatePuzzleInputs,
 } from "./solo-gates";
-import { runCiSuite, type CiSuiteReport, type RunCiSuiteOptions } from "./suites";
+import { runCiSuite, solvedValueAttainment, type CiSuiteReport, type RunCiSuiteOptions } from "./suites";
+import { runProbeSuite, type RushDrawAttainment } from "./probes-two-player";
 
 // ---------------------------------------------------------------------------------------
 // C2 dispatch — selected by manifest.solo.format, never by player count.
@@ -99,24 +100,98 @@ export interface TwoPlayerCiGateOptions {
   readonly games?: number;
   readonly suite?: "ci" | "nightly";
   readonly clock?: RunMatchupClock;
+  /** C64 (docs/plans/degeneracy-probes.md): the game's own mirrorMove, repo-layout-resolved by
+   *  scripts/ci-gates.ts (mirroring the `safeMove` precedent — see that script's own doc) and
+   *  threaded through here. Omitted (the default): see `probes-two-player.ts`'s
+   *  `MirrorProbeInput` for how that's reported (n/a, never a silent skip, unless
+   *  `manifest.mirrorProbe` is declared, in which case it's never consulted at all). */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readonly mirrorMove?: (state: any, lastOppMove: any, legalMoves: readonly any[]) => any;
 }
 
 // Re-declared narrowly rather than importing RunMatchupOptions's clock type just to forward
 // it — keeps this module's public surface independent of runner.ts's internal shape.
 type RunMatchupClock = RunCiSuiteOptions["clock"];
 
+/**
+ * Composes `runCiSuite`'s six-plus-mirror-declaration rows with `runProbeSuite`'s three
+ * degeneracy-probe rows (C64) onto ONE `CiSuiteReport` — gate rows are concatenated, `matchups`
+ * stays exactly what `runCiSuite` produced (probe matchup detail is available from
+ * `runProbeSuite` directly for a caller that wants it, e.g. a research script), so this
+ * composition can NEVER perturb the pre-existing six rows' own shape (S0's byte-identical
+ * guarantee) — it only ever ADDS rows, the same append-only discipline `evaluateMirrorProbeGate`
+ * already established at C48/C62.
+ *
+ * Rush's proven-draw relief (`probes-two-player.ts`'s `RushDrawAttainment`) is computed HERE,
+ * once, from `runCiSuite`'s own strong-self-play numbers via `solvedValueAttainment` — the
+ * SAME shared computation `evaluateCiGates` itself consults, never re-derived (the plan's own
+ * named C55-shape risk). `null` (no self-play ran — an active C27 deferral), no proven
+ * `solvedValue`, OR a proven value that is NOT `"draw"` all omit the option, granting no relief
+ * by default — `RushDrawAttainment`'s own n/a detail text asserts "a proven, reached draw"
+ * verbatim (plan §1.3: "a parity score is evidence of nothing once neither side can win", which
+ * is specifically a DRAW property), so a `p0-win`/`p1-win` claim must never reach it (stage-6
+ * finding: the prior version checked `attainment.reached` alone, with no `value === "draw"`
+ * guard — a reached p0-win/p1-win claim would have gotten unearned relief AND a report sentence
+ * asserting a draw that was never proven).
+ */
 export function runTwoPlayerCiGate(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   engine: GameEngine<any, any, any>,
   manifest: GameManifest,
   opts: TwoPlayerCiGateOptions
 ): CiSuiteReport {
-  return runCiSuite(engine, manifest, {
+  const suite = opts.suite ?? "ci";
+  const ciReport = runCiSuite(engine, manifest, {
     seed: opts.seed,
     games: opts.games ?? DEFAULT_CI_GATE_GAMES,
-    suite: opts.suite ?? "ci",
+    suite,
     ...(opts.clock ? { clock: opts.clock } : {}),
   });
+
+  const strongSelfPlay = ciReport.matchups?.strongSelfPlay.metrics;
+  const attainment = strongSelfPlay
+    ? solvedValueAttainment(manifest.solvedValue, {
+        drawRate: strongSelfPlay.drawRate,
+        firstPlayerWinRate: strongSelfPlay.firstPlayerWinRate,
+      })
+    : null;
+  // `solvedValueAttainment` reports `{achieved, reached}` — no `proof` (it does not need one to
+  // do its OWN job, shared with three other evaluateCiGates blocks that already have
+  // `manifest.solvedValue!.proof` in scope). `RushDrawAttainment` names the artifact for its own
+  // n/a detail string, so it's paired back in here, at the one seam that needs both.
+  //
+  // `solvedValue.value === "draw"` is REQUIRED, not optional (stage-6 finding) — rush's relief
+  // detail text is hardcoded to assert "a proven, reached draw"; granting it off ANY reached
+  // value (including p0-win/p1-win) would make that sentence false for a decisive game.
+  //
+  // `manifest.solvedValue.proof!`: NOT `?? ""` (stage-6 finding — an empty string would let this
+  // cite a nonexistent artifact). C23's own invariant already guarantees this is safe: `ciReport`
+  // above only exists because `runCiSuite` -> `evaluateCiGates` already ran and did NOT throw
+  // `MissingSolvedValueProofError`, which refuses any `solvedValue.value !== "unknown"` with an
+  // empty/absent `proof` before any gate evaluates — reaching this line with `value === "draw"`
+  // (checked immediately above) therefore already proves `proof` is a real, non-empty string.
+  const rushDrawAttainment: RushDrawAttainment | undefined =
+    attainment && manifest.solvedValue?.value === "draw"
+      ? { reached: attainment.reached, proof: manifest.solvedValue.proof! }
+      : undefined;
+
+  // probes-two-player.ts's own doc: `games` is deliberately NEVER forwarded here — the probe
+  // suite always defaults to 100, at both suite tiers (plan §3: "deliberately not
+  // NIGHTLY_GAMES"), independent of whatever games count the CI suite itself ran with.
+  const probeReport = runProbeSuite(engine, manifest, {
+    seed: opts.seed,
+    suite,
+    ...(opts.mirrorMove ? { mirrorMove: opts.mirrorMove } : {}),
+    ...(rushDrawAttainment ? { rushDrawAttainment } : {}),
+    ...(opts.clock ? { clock: opts.clock } : {}),
+  });
+
+  const gates = [...ciReport.gates, ...probeReport.gates];
+  return {
+    ...ciReport,
+    ok: gates.every((g) => g.status !== "fail"),
+    gates,
+  };
 }
 
 // ---------------------------------------------------------------------------------------

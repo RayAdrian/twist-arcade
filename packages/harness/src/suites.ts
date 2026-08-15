@@ -97,8 +97,10 @@ const DEFERRABLE_CI_GATES = [
 
 /** `"deferred"`, naming the tier that measures the row for real (C27) — distinct at the report
  *  layer from both `"n/a"` (never measured, at any tier) and a real `"pass"`/`"fail"`/`"warn"`
- *  (measured, right here, right now). */
-function deferredGate(gate: string, reason: string): GateResult {
+ *  (measured, right here, right now). Exported so `probes-two-player.ts` reuses this SAME
+ *  formatting for its own three probe rows under an active C27 deferral, rather than a second,
+ *  independently-worded copy drifting from this one. */
+export function deferredGate(gate: string, reason: string): GateResult {
   return { gate, status: "deferred", detail: `measured at nightly (${reason})` };
 }
 
@@ -135,7 +137,10 @@ export interface GateInputs {
   ruthlessVsStandardWinRate: number | null;
 }
 
-interface ManifestException {
+/** Exported (was module-private) so `probes-two-player.ts` can validate its OWN exceptions[]
+ *  independently, standalone-safe (see `validateExceptions` below), rather than trusting a
+ *  caller always ran `evaluateCiGates` first with the same list. */
+export interface ManifestException {
   readonly gate: string;
   readonly justification: string;
 }
@@ -174,6 +179,13 @@ export class EmptyExceptionJustificationError extends Error {
  *  `find((e) => e.gate === gate)` per gate block), so it never downgrades anything, anywhere —
  *  indistinguishable, at the report layer, from a typo nobody caught. `UnknownExceptionGateError`
  *  refuses that up front, same seam as `EmptyExceptionJustificationError`. */
+/** WIDENED under docs/plans/degeneracy-probes.md (C64) to include the three two-player
+ *  degeneracy probe gates (`probes-two-player.ts`'s own `evaluateProbeGates`, plan §1.4: "all
+ *  three measured probe gates join EXCEPTIONABLE_GATES, so a justified, reviewable exception can
+ *  downgrade a fail — never silently"). This is what makes `UnknownExceptionGateError`'s former
+ *  "mirror-probe" special case (see that class's own doc) FALSE the moment mirror can genuinely
+ *  fail: it is no longer an unknown, unexceptionable name — it is now a real, measured gate like
+ *  any other in this array. */
 const EXCEPTIONABLE_GATES = [
   "strong-vs-random",
   "first-player-win-rate",
@@ -181,6 +193,9 @@ const EXCEPTIONABLE_GATES = [
   "mean-plies",
   "ruthless-vs-standard",
   "solved-value-reached",
+  "mirror-probe",
+  "stall-probe",
+  "rush-probe",
 ] as const;
 
 /** The type-level twin of `EXCEPTIONABLE_GATES` — every literal `applyException`'s `gate`
@@ -190,41 +205,69 @@ export type ExceptionableGate = (typeof EXCEPTIONABLE_GATES)[number];
 
 export const KNOWN_EXCEPTIONABLE_GATES: ReadonlySet<string> = new Set(EXCEPTIONABLE_GATES);
 
-/** Thrown by `evaluateCiGates` when a manifest exception names a gate that is not one of
- *  `KNOWN_EXCEPTIONABLE_GATES` (platform-corrections.md C63). Same posture, same seam as
- *  `EmptyExceptionJustificationError`: an exception that can never downgrade anything is not a
- *  quirky no-op, it is an honesty defect — deferring this refusal (as a "later" cleanup) is
- *  exactly how C48's mirror-probe reasoning rotted unimplemented across two games before it was
- *  finally routed at C62/C63, so it is refused here, now, at the manifest boundary.
+/** Thrown by `evaluateCiGates` (and standalone by `probes-two-player.ts`'s own
+ *  `validateExceptions` call, via the shared `validateExceptions` helper below) when a manifest
+ *  exception names a gate that is not one of `KNOWN_EXCEPTIONABLE_GATES` (platform-corrections.md
+ *  C63). Same posture, same seam as `EmptyExceptionJustificationError`: an exception that can
+ *  never downgrade anything is not a quirky no-op, it is an honesty defect — deferring this
+ *  refusal (as a "later" cleanup) is exactly how C48's mirror-probe reasoning rotted unimplemented
+ *  across two games before it was finally routed at C62/C63, so it is refused here, now, at the
+ *  manifest boundary.
  *
- *  Special-cased for `"mirror-probe"`: it is a real, plausible-sounding gate name (unlike a
- *  typo), but it is not exceptionable — `evaluateMirrorProbeGate` never reports "fail" (only
- *  "n/a"), so there is nothing for `applyException` to ever downgrade. A game trying to excuse a
- *  mirror-probe result is pointed at `manifest.mirrorProbe` instead — that trap is more likely to
- *  be walked into now that "mirror-probe" is a real row a reviewer sees in every report. */
+ *  CORRECTED under docs/plans/degeneracy-probes.md (C64/C65): this class used to special-case
+ *  `"mirror-probe"` with guidance pointing at `manifest.mirrorProbe` instead, on the claim that
+ *  mirror-probe "never reports fail (only n/a), so there is nothing for an exception to
+ *  downgrade." That claim is now FALSE — `probes-two-player.ts`'s `evaluateProbeGates` measures a
+ *  real mirror-probe win rate whenever a game does NOT declare `manifest.mirrorProbe`, and it CAN
+ *  fail (at suite "nightly"; "ci" downgrades to warn structurally, same severity rule as
+ *  `ruthless-vs-standard`). `"mirror-probe"` (and its two siblings, `"stall-probe"`/
+ *  `"rush-probe"`) are ordinary members of `EXCEPTIONABLE_GATES` now — leaving the old special
+ *  case in place would have been exactly the stale-guidance defect C65 itself was about: a
+ *  correction that stops being true and nothing acts on it. The two claims stay distinct, as
+ *  the plan requires: `manifest.mirrorProbe` says "the probe cannot measure its claim here";
+ *  `exceptions[]` says "it measured, it fired, and here is why we ship anyway." */
 export class UnknownExceptionGateError extends Error {
   constructor(gate: string) {
-    const guidance =
-      gate === "mirror-probe"
-        ? '"mirror-probe" is not a gate exceptions[] can target — it never reports "fail" (only ' +
-          '"n/a"), so there is nothing for an exception to downgrade. Declare manifest.mirrorProbe ' +
-          "instead (platform-corrections.md C48/C62) if this game's mirror probe does not apply."
-        : `known exceptionable gates are: ${[...KNOWN_EXCEPTIONABLE_GATES].join(", ")}.`;
     super(
       `evaluateCiGates: manifest exception names gate "${gate}", which does not route through ` +
         "applyException (platform-corrections.md C63) — an exception naming a gate that does not " +
         "exist is silently dead, never downgrading anything, indistinguishable from a typo nobody " +
-        `caught. ${guidance}`
+        `caught. Known exceptionable gates are: ${[...KNOWN_EXCEPTIONABLE_GATES].join(", ")}.`
     );
     this.name = "UnknownExceptionGateError";
+  }
+}
+
+/** Validates a manifest's `exceptions[]` list up front, before any gate evaluates on the
+ *  strength of it — identity (is this a known gate) checked before content (is the
+ *  justification blank), same ordering rule `evaluateCiGates` has always used (see its own
+ *  comment at the call site below for why that ordering is deliberate). Extracted (was inlined
+ *  in `evaluateCiGates` only) so `probes-two-player.ts`'s `evaluateProbeGates` can call this
+ *  SAME validation on its own, standalone (its own tests build inputs by hand, with no
+ *  `evaluateCiGates` call in the loop at all) — a pure evaluator that silently accepted a dead
+ *  exception when tested in isolation would be exactly the kind of quiet gap this module's other
+ *  validators (`EmptyExceptionJustificationError`, `MissingSolvedValueProofError`, ...) exist to
+ *  rule out everywhere, not just when composed through `runCiSuite`. */
+export function validateExceptions(exceptions: readonly ManifestException[]): void {
+  for (const exception of exceptions) {
+    // C63: a dead exception (naming a gate applyException never sees) must never reach the
+    // report layer any more than a blank justification may.
+    if (!KNOWN_EXCEPTIONABLE_GATES.has(exception.gate)) {
+      throw new UnknownExceptionGateError(exception.gate);
+    }
+    if (exception.justification.trim() === "") {
+      throw new EmptyExceptionJustificationError(exception.gate);
+    }
   }
 }
 
 /** Applies a manifest exception (if any) to a raw "fail" verdict: downgrades to "warn" with the
  *  justification attached. A raw "pass"/"warn"/"n/a" is returned unchanged — an exception only
  *  ever SOFTENS a fail, it can never manufacture one, and it is applied per gate name (an
- *  exception for gate X must never touch gate Y). */
-function applyException(
+ *  exception for gate X must never touch gate Y). Exported so `probes-two-player.ts` applies
+ *  the SAME exception mechanism to its three probe gates (now in `EXCEPTIONABLE_GATES`) rather
+ *  than a parallel, independently-typed downgrade path. */
+export function applyException(
   gate: ExceptionableGate,
   raw: GateStatus,
   detail: string,
@@ -324,10 +367,19 @@ export const SOLVED_VALUE_SELF_PLAY_FLOOR = 0.9;
  *  before gate evaluation starts. No block reads `results` to decide its own status, so the four
  *  blocks that consult `attainment` could be evaluated in ANY order (or even in parallel) and
  *  would produce byte-identical output — there is no dependency edge for a cycle to form on, and
- *  nothing for evaluation order to perturb. */
-function solvedValueAttainment(
+ *  nothing for evaluation order to perturb.
+ *
+ *  EXPORTED, and its `inputs` parameter WIDENED to `Pick<GateInputs, ...>` (docs/plans/
+ *  degeneracy-probes.md §1.3), so `probes-two-player.ts`'s rush-probe reuses this EXACT
+ *  computation for its own "proven, reached draw makes a parity score evidence of nothing"
+ *  relief — never re-deriving it off a second, independently-computed drawRate/
+ *  firstPlayerWinRate pair (the plan's own named C55-shape risk: "re-deriving instead of sharing
+ *  it lets the probe relief and solved-value-reached drift"). The composing caller
+ *  (`ci-gates.ts`'s `runTwoPlayerCiGate`) computes this ONCE from `runCiSuite`'s own strong-
+ *  self-play numbers and threads the result into `runProbeSuite`. */
+export function solvedValueAttainment(
   solvedValue: SolvedValueClaim | undefined,
-  inputs: GateInputs
+  inputs: Pick<GateInputs, "drawRate" | "firstPlayerWinRate">
 ): { readonly achieved: number; readonly reached: boolean } | null {
   if (!solvedValue || solvedValue.value === "unknown") return null;
   const achieved =
@@ -368,16 +420,7 @@ export function evaluateCiGates(
   // wrong first; fixing the justification, re-running, and only then discovering the gate name
   // was wrong too is a worse loop than the reverse. Neither check can ever silence the other —
   // this is purely an ordering choice, not a change in what gets refused.
-  for (const exception of exceptions) {
-    // C63: a dead exception (naming a gate applyException never sees) must never reach the
-    // report layer any more than a blank justification may.
-    if (!KNOWN_EXCEPTIONABLE_GATES.has(exception.gate)) {
-      throw new UnknownExceptionGateError(exception.gate);
-    }
-    if (exception.justification.trim() === "") {
-      throw new EmptyExceptionJustificationError(exception.gate);
-    }
-  }
+  validateExceptions(exceptions);
 
   // C23: same posture, same seam — a claimed solved value with no proof is refused before any
   // gate runs on the strength of it.
@@ -804,12 +847,73 @@ export function compareBudgets<S extends WithEffects, M extends Json, V extends 
   });
 }
 
-function findTier(manifest: GameManifest, id: DifficultyTier["id"]): DifficultyTier | undefined {
+/** Exported so `probes-two-player.ts` resolves "standard" the same way `runCiSuite` does. */
+export function findTier(manifest: GameManifest, id: DifficultyTier["id"]): DifficultyTier | undefined {
   return manifest.difficultyTiers.find((t) => t.id === id);
 }
 
-function tierAgent<S extends WithEffects, M extends Json>(name: string, tier: DifficultyTier): AgentSpec<S, M> {
+/** Exported so `probes-two-player.ts` builds its own "ruthless" probe opponent the identical
+ *  way `runCiSuite` builds its strong-vs-random/strong-self-play/ruthless-vs-standard agents. */
+export function tierAgent<S extends WithEffects, M extends Json>(name: string, tier: DifficultyTier): AgentSpec<S, M> {
   return { kind: "policy", name, policy: tierPolicy<S, M>(tier), budget: tier.budget };
+}
+
+/** The "ruthless" tier resolution `runCiSuite` needs (C19/C20/C22/C26), extracted so
+ *  `probes-two-player.ts`'s `runProbeSuite` reuses the EXACT same effective budget — "ruthless
+ *  at the suite's effective budget" (docs/plans/degeneracy-probes.md §1.1/§3) means the SAME
+ *  in-memory-cloned tier `runCiSuite` measures with, never a second, independently-scaled clone.
+ *  Pure mechanical extraction of what was previously inlined in `runCiSuite` (verified
+ *  byte-identical against S0's fixed-seed baseline) — same errors, same conditions, same order. */
+export interface EffectiveRuthlessTier {
+  readonly ruthlessTier: DifficultyTier;
+  readonly standardTier: DifficultyTier | undefined;
+  readonly ciRolloutOverride: number | undefined;
+}
+
+export function resolveEffectiveRuthlessTier(
+  manifest: GameManifest,
+  suite: "ci" | "nightly",
+  shippedRuthlessTier: DifficultyTier
+): EffectiveRuthlessTier {
+  // C19: at suite "ci" only, measure with `ciGateBudget.twoPlayerCiRollouts` rollouts instead
+  // of the tier's own shipped budget, via an IN-MEMORY clone — the shipped tier object (what a
+  // real player's bot actually uses) is never touched (C20: "the shipped ruthless tier was
+  // never touched"). Nightly always uses the tier's real budget unscaled (the plan's "nightly
+  // keeps the full-budget table"). A `deadlineMs`-budgeted tier is left alone either way — this
+  // override only ever applies to the deterministic `rollouts` budget kind the harness gates
+  // with (platform §5.2).
+  const ciRolloutOverride = manifest.ciGateBudget?.twoPlayerCiRollouts;
+
+  // C22: a shipped budget expensive enough to matter MUST declare an override for suite "ci" —
+  // checked before anything else runs, so an absent override is a loud, immediate refusal
+  // (MissingCiRolloutBudgetError) rather than a silent full-cost run. See that error's own doc
+  // comment for why this module refuses to just compute-and-trust a scaled number instead.
+  if (
+    suite === "ci" &&
+    ciRolloutOverride === undefined &&
+    shippedRuthlessTier.budget.kind === "rollouts" &&
+    shippedRuthlessTier.budget.n > MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE
+  ) {
+    throw new MissingCiRolloutBudgetError(manifest.id, shippedRuthlessTier.budget.n);
+  }
+
+  const ruthlessTier =
+    suite === "ci" && ciRolloutOverride !== undefined && shippedRuthlessTier.budget.kind === "rollouts"
+      ? { ...shippedRuthlessTier, budget: { kind: "rollouts" as const, n: ciRolloutOverride } }
+      : shippedRuthlessTier;
+
+  const standardTier = findTier(manifest, "standard");
+  // C19/C20: a scaled-down ruthless budget must never collapse onto standard's own budget — a
+  // tier gate is meaningless once two tiers share a budget (Wrap's exact finding). Checked
+  // BEFORE running anything, so a collapse is a loud refusal, never a silently-meaningless
+  // ruthless-vs-standard ratio.
+  if (standardTier && ruthlessTier.budget.kind === "rollouts" && standardTier.budget.kind === "rollouts") {
+    if (ruthlessTier.budget.n <= standardTier.budget.n) {
+      throw new TierBudgetCollapseError(manifest.id, ruthlessTier.budget.n, standardTier.budget.n);
+    }
+  }
+
+  return { ruthlessTier, standardTier, ciRolloutOverride };
 }
 
 /**
@@ -998,43 +1102,15 @@ export function runCiSuite<S extends WithEffects, M extends Json, V extends With
     };
   }
 
-  // C19: at suite "ci" only, measure with `ciGateBudget.twoPlayerCiRollouts` rollouts instead
-  // of the tier's own shipped budget, via an IN-MEMORY clone — the shipped tier object (what a
-  // real player's bot actually uses) is never touched (C20: "the shipped ruthless tier was
-  // never touched"). Nightly always uses the tier's real budget unscaled (the plan's "nightly
-  // keeps the full-budget table"). A `deadlineMs`-budgeted tier is left alone either way — this
-  // override only ever applies to the deterministic `rollouts` budget kind the harness gates
-  // with (platform §5.2).
-  const ciRolloutOverride = manifest.ciGateBudget?.twoPlayerCiRollouts;
-
-  // C22: a shipped budget expensive enough to matter MUST declare an override for suite "ci" —
-  // checked before anything else runs, so an absent override is a loud, immediate refusal
-  // (MissingCiRolloutBudgetError) rather than a silent full-cost run. See that error's own doc
-  // comment for why this module refuses to just compute-and-trust a scaled number instead.
-  if (
-    suite === "ci" &&
-    ciRolloutOverride === undefined &&
-    shippedRuthlessTier.budget.kind === "rollouts" &&
-    shippedRuthlessTier.budget.n > MAX_CI_ROLLOUTS_WITHOUT_OVERRIDE
-  ) {
-    throw new MissingCiRolloutBudgetError(manifest.id, shippedRuthlessTier.budget.n);
-  }
-
-  const ruthlessTier =
-    suite === "ci" && ciRolloutOverride !== undefined && shippedRuthlessTier.budget.kind === "rollouts"
-      ? { ...shippedRuthlessTier, budget: { kind: "rollouts" as const, n: ciRolloutOverride } }
-      : shippedRuthlessTier;
-
-  const standardTier = findTier(manifest, "standard");
-  // C19/C20: a scaled-down ruthless budget must never collapse onto standard's own budget — a
-  // tier gate is meaningless once two tiers share a budget (Wrap's exact finding). Checked
-  // BEFORE running anything, so a collapse is a loud refusal, never a silently-meaningless
-  // ruthless-vs-standard ratio.
-  if (standardTier && ruthlessTier.budget.kind === "rollouts" && standardTier.budget.kind === "rollouts") {
-    if (ruthlessTier.budget.n <= standardTier.budget.n) {
-      throw new TierBudgetCollapseError(manifest.id, ruthlessTier.budget.n, standardTier.budget.n);
-    }
-  }
+  // C19/C20/C22/C26 budget resolution — extracted to `resolveEffectiveRuthlessTier` (pure
+  // mechanical extraction, verified byte-identical against S0's fixed-seed baseline) so
+  // `probes-two-player.ts`'s `runProbeSuite` resolves "ruthless at the suite's effective
+  // budget" (docs/plans/degeneracy-probes.md §1.1/§3) the identical way, never a second clone.
+  const { ruthlessTier, standardTier, ciRolloutOverride } = resolveEffectiveRuthlessTier(
+    manifest,
+    suite,
+    shippedRuthlessTier
+  );
 
   const ruthless = tierAgent<S, M>("ruthless", ruthlessTier);
   const random = resolveNamedAgent<S, M>("random");

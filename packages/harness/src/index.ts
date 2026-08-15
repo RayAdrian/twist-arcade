@@ -46,8 +46,20 @@ export {
 export type { AgentSpec, MirrorAgentSpec, PolicyAgentSpec } from "./roster";
 export { mirrorAgent, resolveNamedAgent, UnknownAgentNameError } from "./roster";
 
+// C64 (docs/plans/degeneracy-probes.md): the two-player degeneracy probe suite — mirror/stall/
+// rush, wired into CI for the first time. See probes-two-player.ts's own module doc for why this
+// stays a separate lane beside suites.ts rather than folding into it.
+export type {
+  MirrorProbeInput,
+  ProbeGateInputs,
+  ProbeSuiteReport,
+  RunProbeSuiteOptions,
+  RushDrawAttainment,
+} from "./probes-two-player";
+export { evaluateProbeGates, ProbeDeferredGateAtNightlyError, runProbeSuite } from "./probes-two-player";
+
 export type { GameOutcome, MatchupMetrics } from "./metrics";
-export { agentWinRate, computeMatchupMetrics, percentile } from "./metrics";
+export { agentParityScore, agentWinRate, computeMatchupMetrics, percentile } from "./metrics";
 
 export type { MatchupReport, RunMatchupOptions } from "./runner";
 export { HiddenInformationUnsupportedError, runMatchup } from "./runner";

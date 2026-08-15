@@ -132,9 +132,25 @@ function playOneGame<S extends WithEffects, M extends Json, V extends WithEffect
 
       const agent = seatAgents[seat]!;
       const opponentSeat: PlayerId = seat === 0 ? 1 : 0;
+      // C64 finding (docs/plans/degeneracy-probes.md): Fadeout's and Tilt's own mirrorMove
+      // (probes.ts) are documented to return `null` when there is no opponent move yet to
+      // mirror, or the reflected target is no longer legal — "the harness's mirror-bot policy
+      // falls back to a random legal move in either case." That fallback was documented in two
+      // game packages but never actually implemented here: the only pre-existing typechecked
+      // exercise of a real mirrorMove was scripts/research/tilt-t4-gates.ts, which
+      // scripts/tsconfig.json's own `include` never covers. Implemented now, using the SAME
+      // domain-separated bot-randomness stream (`policyRng`) policy agents already draw from
+      // this ply — no new rng stream, same convention this module's own doc already establishes.
+      //
+      // CORRECTED (stage-6 review): Nine Grids' own mirrorMove never returns `null` — it falls
+      // back INTERNALLY to `legalMoves[0]` (see roster.ts's MirrorAgentSpec.mirrorMove doc for
+      // the full note) — so this substitution never fires for Nine Grids at all; its own
+      // fallback is invisible to the harness. Aligning Nine Grids and counting fallback
+      // substitutions are recorded cross-team follow-ups, not fixed here.
+      const mirrorMove = agent.kind === "mirror" ? agent.mirrorMove(state, lastMoveBySeat[opponentSeat] ?? null, legal) : null;
       const move: M =
         agent.kind === "mirror"
-          ? agent.mirrorMove(state, lastMoveBySeat[opponentSeat] ?? null, legal)
+          ? (mirrorMove ?? legal[policyRng.int(legal.length)]!)
           : agent.policy.chooseMove({ engine, state, player: seat, rng: policyRng, budget: agent.budget, clock })
               .move;
 

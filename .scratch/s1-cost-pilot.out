@@ -1,0 +1,15 @@
+S1 cost pilot — 15 games/matchup, TIMING ONLY (C26), never a verdict.
+
+tilt:       28.2s for 15 games x 3 probe matchups (mirror+stall+rush)
+fadeout:    62.0s for 15 games x 3 probe matchups (mirror+stall+rush)
+nine-grids: 110.0s for 15 games x 3 probe matchups (mirror+stall+rush)
+
+Linear n=15 -> n=100 extrapolation (estimate; NOT a measurement at n=100):
+  tilt: 188s (3.1 min) for the full 100-game probe suite
+  fadeout: 413s (6.9 min) for the full 100-game probe suite
+  nine-grids: 734s (12.2 min) for the full 100-game probe suite
+
+Plan §3's own estimate (the '+mirror +stall' and '+rush' columns combined, at n=100):
+  tilt:       +~96s +~25s  = +~121s (~2.0 min)
+  fadeout:    +~7-8min +~1.5min = +~8.5-9.5 min
+  nine-grids: +~8-10min +~4-6min = +~12-16 min

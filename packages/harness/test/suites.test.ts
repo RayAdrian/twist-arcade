@@ -213,7 +213,11 @@ describe("evaluateCiGates() — UnknownExceptionGateError: an exception naming a
   // C64 commit message for the pasted error). This assertion is downgraded to what it actually
   // is: a readable pin of the current six names, useful for catching an accidental edit to
   // EXCEPTIONABLE_GATES itself, not a substitute for the type-level guarantee.
-  it("KNOWN_EXCEPTIONABLE_GATES currently names these six gates (a readable pin, not the enforcement — see applyException's ExceptionableGate parameter type in suites.ts for that)", () => {
+  // UPDATED under docs/plans/degeneracy-probes.md (C64): widened from six to nine gates —
+  // "mirror-probe"/"stall-probe"/"rush-probe" (probes-two-player.ts's evaluateProbeGates) now
+  // route through applyException too, since all three CAN genuinely fail once measured (never
+  // could before this plan landed).
+  it("KNOWN_EXCEPTIONABLE_GATES currently names these nine gates (a readable pin, not the enforcement — see applyException's ExceptionableGate parameter type in suites.ts for that)", () => {
     expect([...KNOWN_EXCEPTIONABLE_GATES].sort()).toEqual(
       [
         "strong-vs-random",
@@ -222,6 +226,9 @@ describe("evaluateCiGates() — UnknownExceptionGateError: an exception naming a
         "mean-plies",
         "ruthless-vs-standard",
         "solved-value-reached",
+        "mirror-probe",
+        "stall-probe",
+        "rush-probe",
       ].sort()
     );
   });
@@ -248,23 +255,28 @@ describe("evaluateCiGates() — UnknownExceptionGateError: an exception naming a
     ).toThrow(UnknownExceptionGateError);
   });
 
-  it("special-cases \"mirror-probe\" with a message pointing at manifest.mirrorProbe instead — the trap a game author is now most likely to walk into, since it is a real, plausible gate name that simply is not exceptionable", () => {
-    let thrown: unknown;
-    try {
+  // CORRECTED under docs/plans/degeneracy-probes.md (C64/C65): this test used to assert that
+  // "mirror-probe" was special-cased as a NEVER-exceptionable gate name, pointed at
+  // manifest.mirrorProbe instead — true only while mirror-probe could never report "fail" (it
+  // only ever reported "n/a", via the declaration-only evaluateMirrorProbeGate). That is no
+  // longer true: probes-two-player.ts's evaluateProbeGates measures a REAL mirror-probe win rate
+  // for any game that does not declare manifest.mirrorProbe, and it CAN fail (for real, at suite
+  // "nightly"). Keeping the old assertion would have been exactly C65's own defect — a
+  // correction whose premise stopped being true, with nothing updated to match. "mirror-probe"
+  // is now an ORDINARY exceptionable gate, same as its two probe siblings — proven below by NOT
+  // throwing, the mirror image of what this test used to check.
+  it("does NOT special-case \"mirror-probe\" anymore — it is now an ordinary exceptionable gate, since mirror-probe can genuinely fail once measured (C64)", () => {
+    expect(() =>
       evaluateCiGates(
         HEALTHY,
         DEFAULT_HARNESS_THRESHOLDS,
-        [{ gate: "mirror-probe", justification: "trying to excuse a mirror-probe fail" }],
+        [{ gate: "mirror-probe", justification: "a real, reviewable justification for a real mirror-probe fail" }],
         "ci"
-      );
-    } catch (e) {
-      thrown = e;
-    }
-    expect(thrown).toBeInstanceOf(UnknownExceptionGateError);
-    expect((thrown as Error).message).toMatch(/mirrorProbe/);
+      )
+    ).not.toThrow();
   });
 
-  it("does NOT throw for any of the six real exceptionable gate names", () => {
+  it("does NOT throw for any of the nine real exceptionable gate names (widened from six under C64 — mirror-probe/stall-probe/rush-probe joined)", () => {
     for (const gate of KNOWN_EXCEPTIONABLE_GATES) {
       expect(() =>
         evaluateCiGates(HEALTHY, DEFAULT_HARNESS_THRESHOLDS, [{ gate, justification: "real gate, real reason" }], "ci")

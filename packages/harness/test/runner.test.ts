@@ -276,4 +276,50 @@ describe("mirrorAgent() wiring (mirror is per-game — the runner just has to ca
       expect(m).not.toBeNull();
     }
   });
+
+  // C64 finding (docs/plans/degeneracy-probes.md): Fadeout's and Tilt's own mirrorMove
+  // (probes.ts) are documented, verbatim, to return `null` when there is no opponent move yet
+  // to mirror or the reflected target is no longer legal, with "the harness's mirror-bot policy
+  // falls back to a random legal move in either case" — a fallback that was documented in two
+  // game packages but never actually implemented here (Nine Grids' own mirrorMove never returns
+  // null at all — it falls back INTERNALLY to `legalMoves[0]`, a corrected claim; see
+  // roster.ts's MirrorAgentSpec.mirrorMove doc for the full stage-6 note). The only pre-existing
+  // exercise of a real mirrorMove (scripts/research/tilt-t4-gates.ts) sits outside
+  // scripts/tsconfig.json's own `include`, so this gap was never even typechecked, let alone
+  // tested. PLANTED VIOLATION: a mirrorMove that ALWAYS returns null must never crash the
+  // engine with an illegal/absent move — the runner must substitute a real legal move every time.
+  it("a mirrorMove that ALWAYS returns null never crashes the engine — the runner substitutes a real legal move every ply (the documented, previously-unimplemented 'null -> fallback random' convention)", () => {
+    const alwaysNullMirror = mirrorAgent<TTTState, TTTMove>(() => null);
+    const opponent = resolveNamedAgent<TTTState, TTTMove>("random");
+    // classicTicTacToe.isLegal (called by apply()) would throw on an illegal/absent move — no
+    // games completing without throwing IS the assertion; mirrorSeats:false pins the null-mirror
+    // to seat 1 (P2) so its very first call also exercises `lastOppMove !== null` (P1 always
+    // moves first), covering the "reflected target no longer legal" branch shape too, not just
+    // the "nothing to mirror yet" one.
+    expect(() =>
+      runMatchup(classicTicTacToe, opponent, alwaysNullMirror, {
+        games: 20,
+        seed: "runner-test:mirror-null-fallback",
+        mirrorSeats: false,
+      })
+    ).not.toThrow();
+  });
+
+  it("the null-fallback picks moves that vary run to run (a real uniform-random draw from legalMoves, not a hardcoded pick like 'always legal[0]')", () => {
+    const seenFirstMoves = new Set<number>();
+    for (let i = 0; i < 8; i++) {
+      const alwaysNullMirror = mirrorAgent<TTTState, TTTMove>(() => null);
+      const opponent = resolveNamedAgent<TTTState, TTTMove>("random");
+      const report = runMatchup(classicTicTacToe, alwaysNullMirror, opponent, {
+        games: 1,
+        seed: `runner-test:mirror-null-fallback-variety:${i}`,
+        mirrorSeats: false,
+      });
+      const firstMove = report.outcomes[0]!.moves[0]!.moves[0]![1] as TTTMove;
+      seenFirstMoves.add(firstMove.cell);
+    }
+    // 8 independent seeds over 9 cells: a hardcoded "always legal[0]" bug would collapse this to
+    // size 1; a real uniform draw makes that astronomically unlikely.
+    expect(seenFirstMoves.size).toBeGreaterThan(1);
+  });
 });

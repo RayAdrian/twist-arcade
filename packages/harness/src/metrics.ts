@@ -126,3 +126,24 @@ export function agentWinRate(outcomes: readonly GameOutcome[], agentName: string
   }).length;
   return wins / participated.length;
 }
+
+/**
+ * `agentName`'s PARITY score across `outcomes` — (wins + 0.5*draws)/games, regardless of seat
+ * (docs/plans/degeneracy-probes.md §1.3): the rush-probe's own metric, distinct from
+ * `agentWinRate` on purpose. Rush's claim is "plays about as well as mcts1k" — a parity claim,
+ * where a draw is genuinely half a point, not a loss. `agentWinRate` would score "always draws"
+ * identically to "always loses" (both 0%), which is the wrong number for that claim; this
+ * function is what tells them apart. Same "throw rather than silently return 0" posture as
+ * `agentWinRate` for an agent name that never appears — a caller error, not a real 0% score.
+ */
+export function agentParityScore(outcomes: readonly GameOutcome[], agentName: string): number {
+  const participated = outcomes.filter((o) => o.seatAgent.includes(agentName));
+  if (participated.length === 0) {
+    throw new RangeError(`agentParityScore: agent "${agentName}" does not appear in any outcome`);
+  }
+  const points = participated.reduce((sum, o) => {
+    if (o.winnerSeat === null) return sum + 0.5;
+    return sum + (o.seatAgent[o.winnerSeat] === agentName ? 1 : 0);
+  }, 0);
+  return points / participated.length;
+}

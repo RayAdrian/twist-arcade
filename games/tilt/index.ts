@@ -27,6 +27,14 @@ import { Board } from "./ui/Board";
 import { boardSummaryText, glyphFor, tiltProximityAnnouncement } from "./ui/board-view";
 import { Telegraph } from "./ui/Telegraph";
 
+// C64 (docs/plans/degeneracy-probes.md): the missing half of the mirrorMove wiring gap the plan
+// closes — Tilt's mirrorMove existed and was tested (probes.ts, probes.test.ts) but was never
+// re-exported from this package root, so scripts/ci-gates.ts's `resolveMirrorMove` (mirroring
+// the `safeMove` convention — games/mine-run/index.ts) could never find it via
+// `import("@twist-arcade/tilt")`. Fadeout already did this (its own index.ts); Tilt and Nine
+// Grids did not — this repairs Tilt's half.
+export { mirrorMove } from "./probes";
+
 function movedText(ev: Extract<GameEvent<TiltState>, { kind: "moved" }>): string {
   const placed = ev.effects.find((e) => e.type === "placed");
   if (!placed || typeof placed.column !== "number") return "";

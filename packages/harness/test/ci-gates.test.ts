@@ -19,6 +19,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { classicTicTacToe } from "@twist-arcade/engine/testkit/fixtures/classic-ttt";
+import type { TTTMove, TTTState } from "@twist-arcade/engine/testkit/fixtures/classic-ttt";
+import type { ActiveSpec, GameEngine, Json, PlayerId, Status, WithEffects } from "@twist-arcade/engine";
 import { bankRun, createBankRun, type BankRunMove, type BankRunState } from "@twist-arcade/engine/testkit/fixtures/bank-run";
 import { safeMove as mineRunSafeMove } from "@twist-arcade/mine-run";
 import type { GameManifest } from "@twist-arcade/game-spec";
@@ -35,6 +37,7 @@ import {
   selectGateKind,
 } from "../src/ci-gates";
 import { certifyDay, writeCertificate } from "../src/certify";
+import { runCiSuite } from "../src/suites";
 import { dfsSolver } from "../src/solver/generic-solo";
 import { holeWalk, type HoleWalkMove, type HoleWalkState } from "./fixtures/hole-walk";
 import { createAlwaysSafeBrokenMineRun, createAlwaysSafeHealthyMineRun } from "./fixtures/mine-run-mutants";
@@ -144,6 +147,231 @@ describe("runTwoPlayerCiGate", () => {
     });
     expect(result.kind).toBe("two-player");
     expect(result.ok).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// C64 (docs/plans/degeneracy-probes.md): runTwoPlayerCiGate composes runCiSuite's six-plus-
+// mirror-declaration rows with runProbeSuite's three degeneracy-probe rows onto ONE report —
+// real wiring, not hand-built reports (this is the "gate never observed failing is not a gate"
+// standing warning applied to the COMPOSITION seam itself, not just each half in isolation).
+// ---------------------------------------------------------------------------------------
+
+// classic-ttt's own point-reflection mirror: cell -> 8 - cell (same shape as Fadeout's real
+// mirrorMove on the identical 3x3 board — games/fadeout/probes.ts).
+function tttMirrorMoveFixture(_state: TTTState, lastOppMove: TTTMove | null, legalMoves: readonly TTTMove[]): TTTMove | null {
+  if (lastOppMove === null) return null;
+  const reflected = 8 - lastOppMove.cell;
+  return legalMoves.find((m) => m.cell === reflected) ?? null;
+}
+
+describe("runTwoPlayerCiGate — C64: composes the two-player degeneracy probe suite (mirror/stall/rush) onto the same report", () => {
+  const healthyManifest: GameManifest = {
+    id: "classic-ttt-fixture",
+    title: "Healthy TTT",
+    classic: "Tic-Tac-Toe",
+    ruleSentence: "ci-gates.test.ts C64 healthy fixture.",
+    tags: [],
+    estMinutes: 1,
+    modes: { bot: true, hotseat: false, asyncLink: false },
+    players: { min: 2, max: 2 },
+    difficultyTiers: [
+      { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 50 }, minReplyMs: 0 },
+    ],
+  };
+
+  it("adds mirror-probe/stall-probe/rush-probe onto the existing six rows, never perturbing them (append-only, S0's own discipline extended to this composition)", () => {
+    const plainCiReport = runCiSuite(classicTicTacToe, healthyManifest, { seed: "ci-gates:c64:append-only", games: 30 });
+    const composed = runTwoPlayerCiGate(classicTicTacToe, healthyManifest, {
+      seed: "ci-gates:c64:append-only",
+      games: 30,
+      mirrorMove: tttMirrorMoveFixture,
+    });
+
+    // The six pre-existing rows are BYTE-IDENTICAL between a bare runCiSuite call and this
+    // composition, same seed, same games — proving the composition never mutates or reorders
+    // them, only appends after.
+    expect(composed.gates.slice(0, plainCiReport.gates.length)).toEqual(plainCiReport.gates);
+
+    const probeGateNames = composed.gates.slice(plainCiReport.gates.length).map((g) => g.gate);
+    expect(probeGateNames).toEqual(["mirror-probe", "stall-probe", "rush-probe"]);
+  });
+
+  it("mirror-probe exclusivity holds through the FULL composition: a manifest that DECLARES mirrorProbe gets exactly ONE mirror-probe row (the n/a declaration), even when opts.mirrorMove is ALSO supplied", () => {
+    const declaringManifest: GameManifest = {
+      ...healthyManifest,
+      mirrorProbe: { applicable: false, reason: "ci-gates.test.ts C64: declared inapplicable, mirrorMove supplied anyway" },
+    };
+    const composed = runTwoPlayerCiGate(classicTicTacToe, declaringManifest, {
+      seed: "ci-gates:c64:mirror-exclusivity",
+      games: 20,
+      mirrorMove: tttMirrorMoveFixture,
+    });
+    const mirrorRows = composed.gates.filter((g) => g.gate === "mirror-probe");
+    expect(mirrorRows).toHaveLength(1);
+    expect(mirrorRows[0]!.status).toBe("n/a");
+    expect(mirrorRows[0]!.detail).toContain("declared inapplicable");
+    // stall-probe/rush-probe still ran for real — the declaration is mirror-specific.
+    expect(composed.gates.find((g) => g.gate === "stall-probe")).toBeDefined();
+    expect(composed.gates.find((g) => g.gate === "rush-probe")).toBeDefined();
+  });
+
+  it("omitting mirrorMove entirely still produces exactly one mirror-probe row (n/a, 'unavailable')", () => {
+    const composed = runTwoPlayerCiGate(classicTicTacToe, healthyManifest, {
+      seed: "ci-gates:c64:mirror-omitted",
+      games: 20,
+    });
+    const mirrorRows = composed.gates.filter((g) => g.gate === "mirror-probe");
+    expect(mirrorRows).toHaveLength(1);
+    expect(mirrorRows[0]!.status).toBe("n/a");
+  });
+
+  // CORRECTED (found while running this test): the FIRST version of this test tried to trip
+  // stall-probe by sabotaging the ruthless opponent to `{kind:"random"}` and asserting a
+  // specific ["warn","fail"] outcome — a wrong assumption about classic-ttt specifically, not an
+  // implementation bug. stallPolicy explicitly treats an immediate WIN as its worst outcome
+  // (stall.ts's own doc: "ending the game right here is the WORST outcome for a stalling
+  // agent"), so stall's WIN rate has no reliable relationship to how weak its opponent is — the
+  // measured run came back "pass". Fixed to isolate what this test actually needs to prove
+  // (a REAL measured number feeds a REAL gate decision, honoring manifest.thresholds overrides
+  // and the ci/nightly severity split) from what it does NOT need to assume (which direction a
+  // stochastic matchup's win rate happens to land): an intentionally impossible-to-pass
+  // threshold override, so ANY real (non-negative) win rate trips "fail" deterministically.
+  it("PLANTED VIOLATION: a manifest threshold override makes ANY real measured stall win rate fail — proves a REAL number (not a hand-built one) drives the gate, with the ci/nightly severity split honored", () => {
+    const zeroTolerance: GameManifest = {
+      ...healthyManifest,
+      thresholds: { stallProbeWinRateWarn: -1, stallProbeWinRateFail: -1 }, // any real (>=0) win rate fails
+    };
+    const ci = runTwoPlayerCiGate(classicTicTacToe, zeroTolerance, { seed: "ci-gates:c64:stall-threshold-ci", games: 20 });
+    // ci-tier severity split (plan §1.4): a would-be fail downgrades to warn.
+    expect(ci.gates.find((g) => g.gate === "stall-probe")!.status).toBe("warn");
+
+    const nightly = runTwoPlayerCiGate(classicTicTacToe, zeroTolerance, {
+      seed: "ci-gates:c64:stall-threshold-nightly",
+      games: 20,
+      suite: "nightly",
+    });
+    expect(nightly.gates.find((g) => g.gate === "stall-probe")!.status).toBe("fail");
+    expect(nightly.ok).toBe(false);
+  });
+
+  it("routes through runGameCiGate's dispatcher with mirrorMove threaded through identically", async () => {
+    const result = await runGameCiGate(classicTicTacToe, healthyManifest, {
+      kind: "two-player",
+      seed: "ci-gates:c64:dispatched",
+      games: 20,
+      mirrorMove: tttMirrorMoveFixture,
+    });
+    expect(result.kind).toBe("two-player");
+    if (result.kind === "two-player") {
+      expect(result.report.gates.find((g) => g.gate === "mirror-probe")).toBeDefined();
+    }
+  });
+
+  it("C27 deferral: probe rows defer alongside the six existing rows, through the full composition", () => {
+    const deferredManifest: GameManifest = {
+      ...healthyManifest,
+      ciGateBudget: { deferGatesToNightly: { reason: "ci-gates.test.ts C64 deferral fixture" } },
+    };
+    const composed = runTwoPlayerCiGate(classicTicTacToe, deferredManifest, {
+      seed: "ci-gates:c64:defer",
+      mirrorMove: tttMirrorMoveFixture,
+    });
+    // healthyManifest declares no "standard" tier and no solvedValue — TWO structural facts
+    // (suites.ts's own documented precedent) that survive deferral unconditionally as "n/a",
+    // never "deferred": ruthless-vs-standard has nothing to compare without a standard tier,
+    // and solved-value-reached has nothing to confirm without a proven value, at any tier.
+    const STRUCTURALLY_NA = new Set(["ruthless-vs-standard", "solved-value-reached"]);
+    for (const gate of composed.gates) {
+      if (STRUCTURALLY_NA.has(gate.gate)) {
+        expect(gate.status, `gate ${gate.gate}`).toBe("n/a");
+        continue;
+      }
+      expect(gate.status, `gate ${gate.gate}`).toBe("deferred");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// STAGE-6 FINDING: rush-probe's proven-draw relief fired on ANY reached solvedValue, not only
+// a draw — the guard never checked `solvedValue.value === "draw"` — while the relief's own
+// detail text hardcodes "a proven, reached draw". A reached p0-win/p1-win claim would have
+// gotten UNEARNED relief (rush measures nothing) plus a report sentence asserting a draw that
+// was never proven. Proven with a REAL, deterministically-reached (not hand-built) p0-win claim
+// below — a tiny local fixture engine where seat 0 wins on its own first move, every game,
+// regardless of policy, so self-play genuinely reaches firstPlayerWinRate 100% (>= the 90%
+// floor) without depending on any real game's actual balance.
+// ---------------------------------------------------------------------------------------
+
+interface P0AlwaysWinsState extends WithEffects {
+  readonly turn: PlayerId;
+}
+interface P0AlwaysWinsMove {
+  readonly [key: string]: Json;
+}
+
+/** Seat 0 has exactly one legal move, which ends the game with seat 0 the winner — deterministic
+ *  regardless of which policy occupies either seat. Exists ONLY so a `solvedValue: {value:
+ *  "p0-win"}` claim is genuinely, reliably REACHED by real self-play in a test, without needing
+ *  a real game whose actual balance happens to favor P1 90%+ of the time. */
+const p0AlwaysWins: GameEngine<P0AlwaysWinsState, P0AlwaysWinsMove, P0AlwaysWinsState> = {
+  meta: {
+    id: "p0-always-wins-fixture",
+    name: "P0 Always Wins (ci-gates.test.ts stage-6 fixture)",
+    minPlayers: 2,
+    maxPlayers: 2,
+    hiddenInformation: false,
+    simultaneous: false,
+    stochastic: false,
+    version: 1,
+  },
+  setup: () => ({ turn: 0, lastEffects: [] }),
+  legalMoves: (state, player) => (player === state.turn ? [{}] : []),
+  isLegal: (state, player) => player === state.turn,
+  active: (state): ActiveSpec => ({ mode: "sequential", player: state.turn }),
+  apply: (state) => ({ turn: state.turn === 0 ? 1 : 0, lastEffects: [] }),
+  status: (state): Status => (state.turn === 1 ? { kind: "won", winner: 0 } : { kind: "ongoing" }),
+  playerView: (state) => state,
+  encode: (state) => JSON.stringify(state),
+  decode: (s) => JSON.parse(s) as P0AlwaysWinsState,
+};
+
+describe("runTwoPlayerCiGate — C64 stage-6: rush-probe's proven-draw relief must NOT fire on a non-draw solvedValue", () => {
+  const p0WinManifest: GameManifest = {
+    id: "p0-always-wins-fixture",
+    title: "P0 Always Wins",
+    classic: "n/a",
+    ruleSentence: "ci-gates.test.ts stage-6 fixture: seat 0 always wins on its own first move.",
+    tags: [],
+    estMinutes: 1,
+    modes: { bot: true, hotseat: false, asyncLink: false },
+    players: { min: 2, max: 2 },
+    difficultyTiers: [
+      { id: "ruthless", policy: { kind: "random" }, budget: { kind: "rollouts", n: 1 }, minReplyMs: 0 },
+    ],
+    solvedValue: { value: "p0-win", proof: "ci-gates.test.ts: seat 0 wins on its own first move by construction" },
+  };
+
+  it("self-play genuinely REACHES the proven p0-win claim (sanity: the fixture does what it claims)", () => {
+    const report = runTwoPlayerCiGate(p0AlwaysWins, p0WinManifest, { seed: "ci-gates:c64:p0win-sanity", games: 20 });
+    const solvedValueReached = report.gates.find((g) => g.gate === "solved-value-reached")!;
+    expect(solvedValueReached.status).toBe("pass");
+    expect(solvedValueReached.detail).toContain("100.0%");
+  });
+
+  it("PLANTED VIOLATION (regression): rush-probe measures for REAL — never n/a — despite the reached p0-win claim, and never asserts a draw that was never proven", () => {
+    const report = runTwoPlayerCiGate(p0AlwaysWins, p0WinManifest, { seed: "ci-gates:c64:p0win-rush", games: 20 });
+    const rush = report.gates.find((g) => g.gate === "rush-probe")!;
+    // The bug: this used to be "n/a" citing "a proven, reached draw" — false on both counts for
+    // a p0-win claim. Fixed: rush-probe must be a REAL measurement (this engine always ends
+    // after one ply either way, so rush's parity score is deterministic and well above the fail
+    // threshold — mirrorSeats:true means rush plays each seat every pair, winning as seat 0 and
+    // losing as seat 1, landing near a 50% parity score, comfortably >= rushProbeScoreFail).
+    expect(rush.status).not.toBe("n/a");
+    expect(["warn", "fail"]).toContain(rush.status);
+    // Specifically the n/a relief's own phrase — NOT a bare "draw" substring check, which would
+    // false-positive on the real measured detail's own "(wins + 0.5*draws)/games" formula text.
+    expect(rush.detail).not.toContain("proven, reached draw");
   });
 });
 
