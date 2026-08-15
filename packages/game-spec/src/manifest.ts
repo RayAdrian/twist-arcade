@@ -68,7 +68,22 @@ export interface SolvedValueClaim {
 export interface GameManifest {
   id: string; // === engine.meta.id (contract test asserts equality)
   title: string; // "Fadeout", "Crackstep", "Mine Run"
-  classic: string; // "Tic-Tac-Toe", "Minesweeper" — drives shelves
+  // "Tic-Tac-Toe", "Minesweeper" — drives shelves (buildShelves groups games by this string
+  // verbatim, so it must stay a real classic-game name for that grouping to read sensibly).
+  //
+  // SENTINEL CONVENTION (C77 item 4, packages/shell/src/manifest-copy.ts): a game with no
+  // classic-game ancestor to attribute (an original twist, not a twist ON anything) sets this
+  // to an explanatory string STARTING WITH "N/A" (case-insensitive), e.g. Crackstep's
+  // `"N/A — an original twist on a floor-coverage path puzzle"`. Any shell UI that renders an
+  // "a twist on {classic}" attribution line MUST go through
+  // `classicAttributionLine(classic)` (packages/shell/src/manifest-copy.ts) rather than
+  // template-stringing this field directly — it returns `null` (render nothing) for the N/A
+  // sentinel instead of producing "a twist on N/A — ...". `classic` stays a plain `string`
+  // here on purpose (this sentinel-in-a-string convention is the deliberate stopgap): a real
+  // `classic: string | null` type has been ruled the correct end state, but that's a
+  // cross-team migration touching all five games' manifests, scheduled separately (task #23) —
+  // do not preempt it by changing this field's type unilaterally.
+  classic: string;
   ruleSentence: string; // <=90 chars — hard constraint
   tags: string[]; // ["decay"], ["press-your-luck"] — facets, next-twist loop
   estMinutes: number;

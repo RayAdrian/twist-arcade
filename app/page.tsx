@@ -185,7 +185,17 @@ export default function HomePage() {
                 >
                   {shelf.title}{" "}
                   <span className="font-mono text-sm font-normal tabular-nums text-ink-muted">
-                    ({shelf.games.length})
+                    {/* buildShelves caps `shelf.games` at SHELF_CAP (8) and reports the overflow
+                     * only as the boolean `hasMore` — it does not expose the family's real
+                     * total count. `shelf.games.length` is therefore the CAPPED count, not the
+                     * true one: at today's data (every family well under 8) they're identical,
+                     * but a family that grew past 8 would render "(8)" here while actually
+                     * holding more — a latent trap, not just a cosmetic nit. "8+" is the
+                     * cheapest correct fix available from data already in hand; a real total
+                     * would need buildShelves' Shelf type to carry one, which is out of scope
+                     * for this pass. */}
+                    ({shelf.games.length}
+                    {shelf.hasMore ? "+" : ""})
                   </span>
                 </h2>
                 {/* No browse/filter route exists yet (deferred per ui-direction.md §2.1 until

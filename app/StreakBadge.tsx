@@ -19,6 +19,24 @@
 // streak.ts's own record never changes while this page stays mounted (the only writer,
 // recordDailyCompletion, runs from a game's own terminal-transition effect, on a different
 // route) — so a one-time read-on-mount is correct here, not a subscription.
+//
+// LIVENESS OBLIGATION FOR WHOEVER WIRES DAILY (C77 item 5 — recorded here because it is
+// currently UNREACHABLE, not because it's fixed): streak.ts's `applyDailyCompletion` only
+// recomputes `current` at the NEXT completion — reading it in between tells you the streak AS
+// OF the last time it was played, not whether it is still alive today. Right now that's
+// harmless: nothing under app/** ever passes `opts.daily` to `useGame()` (grep confirms it),
+// so `recordDailyCompletion` is never called and this badge only ever displays a value that was
+// true at write time and has not since been contradicted. The MOMENT real daily play is wired
+// up, that stops being true — a player who stops playing dailies will see their last-known
+// streak here INDEFINITELY (e.g. "🔥7" forever), because nothing here ever re-derives "is this
+// streak still alive as of TODAY's actual daily number" — that requires comparing
+// `lastDailyN` against the real current daily number, which lives in whatever wires daily
+// (packages/daily's day-resolution logic), not in this component or in streak.ts itself
+// (streak.ts is deliberately clock-free — see its own header comment). Whoever wires daily
+// owns closing this gap (e.g. passing the real daily number in here, or exposing a
+// "isStreakLive(streak, currentDailyN)" check from packages/daily) before this badge can be
+// trusted once dailies are real — flagged here rather than left an invisible trap for that
+// team to discover the hard way.
 
 import { useEffect, useState } from "react";
 import { readStreak, shouldShowStreakFlame } from "@twist-arcade/shell";

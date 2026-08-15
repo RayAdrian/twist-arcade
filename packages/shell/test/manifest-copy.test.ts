@@ -20,4 +20,27 @@ describe("classicAttributionLine", () => {
     expect(classicAttributionLine("N/A")).toBeNull();
     expect(classicAttributionLine("N/A - something else")).toBeNull();
   });
+
+  // C77 item 4: case-insensitivity + a blank-string guard.
+  it("is case-insensitive for the N/A sentinel", () => {
+    expect(classicAttributionLine("n/a")).toBeNull();
+    expect(classicAttributionLine("n/a — lowercase variant")).toBeNull();
+    expect(classicAttributionLine("N/a — mixed case")).toBeNull();
+  });
+
+  it("returns null for a blank or whitespace-only classic, never the dangling 'a twist on '", () => {
+    expect(classicAttributionLine("")).toBeNull();
+    expect(classicAttributionLine("   ")).toBeNull();
+    expect(classicAttributionLine("\t\n")).toBeNull();
+  });
+
+  it("does not false-positive on a classic that merely STARTS WITH the letters n/a with no boundary", () => {
+    // "N/Athletics" is not the N/A sentinel — it's a (hypothetical) classic name that happens to
+    // start with the same three characters with no separator after them.
+    expect(classicAttributionLine("N/Athletics")).toBe("a twist on N/Athletics");
+  });
+
+  it("trims surrounding whitespace in the rendered attribution", () => {
+    expect(classicAttributionLine("  Tic-Tac-Toe  ")).toBe("a twist on Tic-Tac-Toe");
+  });
 });

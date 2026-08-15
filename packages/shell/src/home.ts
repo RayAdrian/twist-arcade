@@ -44,13 +44,31 @@ export function shouldShowStreakFlame(streak: StreakRecord): boolean {
 // GameCard's own existing hover lift — see that file's module doc for why no extra JS is
 // needed for the straighten-on-hover behavior).
 //
-// These are HAND-AUTHORED class names (`.tilt-a`..`.tilt-f`, defined in app/globals.css),
-// deliberately NOT Tailwind arbitrary-value classes (`rotate-[-0.6deg]`) — a first pass used
-// arbitrary-value strings assembled inside this array and Tailwind's JIT content scanner never
-// picked them up in the real build (reported in orchestrator review of design 1b: "every card
-// here is axis-aligned"), even though the scanned-file glob covers this module. Named classes
-// sidestep that dependency entirely: they're written directly in app/globals.css, so there's
-// nothing for a content-scanner to fail to detect.
+// These are HAND-AUTHORED class names (`.tilt-a`..`.tilt-f`, defined in app/globals.css,
+// OUTSIDE any `@layer` block — that placement is the actual load-bearing part, see below), not
+// Tailwind arbitrary-value classes (`rotate-[-0.6deg]`).
+//
+// CORRECTED NARRATIVE (platform-corrections.md C77 review — this comment previously asserted a
+// root cause the reviewer refuted by building both ways with the project's own Tailwind CLI).
+// The first pass DID use arbitrary-value strings here (`rotate-[-0.6deg] hover:rotate-0
+// motion-reduce:rotate-0`), and cards still rendered axis-aligned in review — but the claim
+// that Tailwind's JIT scanner "never generated the CSS" for that string was checked directly
+// and is FALSE: it WAS emitted, as `--tw-rotate: -0.6deg` (a custom property consumed by a
+// shared `transform` rule, invisible to a naive `grep "rotate(-0.6deg)"`). The string also
+// carried `motion-reduce:rotate-0`, so a reduced-motion environment straightening every card is
+// the more likely explanation for what was observed — untested at the time.
+//
+// These named classes are NOT immune to content-scanning purge just by virtue of being
+// hand-authored: had they stayed inside `@layer utilities` (as a first version of the fix did),
+// they'd survive ONLY because "tilt-a".."tilt-f" happen to appear literally in THIS array —
+// the exact same fragile dependency the arbitrary-value string had, on a different literal
+// (proof: `.scratch/prove-tilt-immune.mts`, and see app/globals.css's own comment on this rule
+// for the full builds-both-ways result). What actually makes them safe is that app/globals.css
+// declares them OUTSIDE `@layer utilities` — plain top-level CSS is never subject to Tailwind's
+// content-based purge regardless of what appears here. A future `` `tilt-${letter}` ``
+// refactor of this array would still be perfectly fine under that placement (unlike under the
+// in-layer version, where it would silently reproduce this whole defect class) — but the safety
+// comes from globals.css's structure, not from anything in this file or these tests.
 const CARD_TILT_CLASSES: readonly string[] = ["tilt-a", "tilt-b", "tilt-c", "tilt-d", "tilt-e", "tilt-f"];
 
 /** Deterministic per-card tilt class, cycling through `CARD_TILT_CLASSES` by shelf position. */

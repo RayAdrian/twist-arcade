@@ -58,10 +58,15 @@ describe("shouldShowStreakFlame — never renders an invented number", () => {
 });
 
 // The actual rotation degrees live in app/globals.css's `.tilt-a`..`.tilt-f` hand-authored
-// classes (NOT Tailwind arbitrary-value classes — see home.ts's own doc comment for why a
-// first pass using `rotate-[-0.6deg]`-style strings silently failed to render in the real
-// build). This file can only assert the NAME-cycling contract from here; app/page.tsx's own
-// screenshot verification is what confirms the named classes actually rotate a card.
+// classes, declared OUTSIDE any `@layer` block (see that file's comment on those rules, and
+// home.ts's own doc comment on CARD_TILT_CLASSES, for the corrected C77 narrative on why that
+// placement — not simply "named classes instead of arbitrary-value ones" — is what makes them
+// survive content-scanning purge; `.scratch/prove-tilt-immune.mts` builds it both ways). This
+// file can only assert the NAME-cycling contract from here — it has no way to observe whether a
+// real build actually emits CSS for the returned name, which is exactly the kind of drift a
+// future `` `tilt-${letter}` `` refactor could reintroduce without failing here. Real emission
+// is verified by app/globals.css's own placement (structural, not tested per se) plus the
+// screenshot verification pass in the final report.
 describe("cardTiltClass — deterministic alternating tilt-class name for cut-out cards", () => {
   it("returns one of the known hand-authored tilt class names", () => {
     expect(cardTiltClass(0)).toMatch(/^tilt-[a-f]$/);

@@ -77,52 +77,102 @@
   :root.dark .divider-squiggle {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='8' viewBox='0 0 48 8'%3E%3Cpath d='M0 4 Q6 0 12 4 T24 4 T36 4 T48 4' fill='none' stroke='%23b7ae9c' stroke-width='1'/%3E%3C/svg%3E");
   }
+}
 
-  /* Riso Zine home direction (design 1b) — the cut-out shelf cards' deterministic alternating
-   * tilt (packages/shell/src/home.ts's `cardTiltClass`). Hand-authored, named classes — NOT
-   * Tailwind arbitrary-value classes (`rotate-[-0.6deg]`) — because a first pass built with
-   * that approach silently failed to render in the real build: `rotate-[-0.6deg]` etc. lived
-   * only inside a runtime-selected string in a .ts module, and Tailwind's JIT content scanner
-   * never generated the CSS for it there, even though the file is covered by the scanned-file
-   * glob (orchestrator review of design 1b: "every card here is axis-aligned"). Named classes,
-   * written directly here, remove that dependency entirely. `:hover` (not `.group:hover` /
-   * `:has()`) straightens the tilt because hovering the card's inner `<GameCard>` Link makes
-   * the pointer physically over THIS wrapper's box too — CSS `:hover` bubbles to every
-   * ancestor, so no extra machinery is needed for the "straightens on hover" behavior. */
-  .tilt-a {
-    transform: rotate(-0.6deg);
-  }
-  .tilt-b {
-    transform: rotate(0.5deg);
-  }
-  .tilt-c {
-    transform: rotate(-0.4deg);
-  }
-  .tilt-d {
-    transform: rotate(0.7deg);
-  }
-  .tilt-e {
-    transform: rotate(-0.8deg);
-  }
-  .tilt-f {
-    transform: rotate(0.3deg);
-  }
-  .tilt-a,
-  .tilt-b,
-  .tilt-c,
-  .tilt-d,
-  .tilt-e,
-  .tilt-f {
-    transition: transform var(--dur-place) var(--ease);
-  }
-  .tilt-a:hover,
-  .tilt-b:hover,
-  .tilt-c:hover,
-  .tilt-d:hover,
-  .tilt-e:hover,
-  .tilt-f:hover {
-    transform: rotate(0deg);
-  }
+/* Riso Zine home direction (design 1b) — the cut-out shelf cards' deterministic alternating
+ * tilt (packages/shell/src/home.ts's `cardTiltClass`).
+ *
+ * CORRECTED NARRATIVE (platform-corrections.md C77 review; this comment previously asserted a
+ * refuted root cause — see that entry for the full ruling). What actually happened: the FIRST
+ * pass built these as Tailwind arbitrary-value classes (`rotate-[-0.6deg] hover:rotate-0
+ * motion-reduce:rotate-0`, assembled inside a runtime-selected array in home.ts) and cards
+ * still rendered axis-aligned. The comment that used to live here claimed Tailwind's JIT
+ * content scanner "never generated the CSS" for those literals — checked directly with the
+ * project's own Tailwind CLI both ways, and that claim is FALSE: `rotate-[-0.6deg]` WAS being
+ * emitted all along, as `--tw-rotate: -0.6deg` (Tailwind's arbitrary-value utilities set a CSS
+ * custom property consumed by a shared `transform` rule) — invisible to a naive
+ * `grep "rotate(-0.6deg)"`, but present. The more likely explanation for the observed
+ * non-rotation: that string also carried `motion-reduce:rotate-0`, and a reduced-motion
+ * environment (the reviewing browser is one candidate) would force every card to 0deg — nobody
+ * actually tested that hypothesis before this fix shipped.
+ *
+ * So why does THIS version (named classes, not arbitrary-value ones) work? NOT because it
+ * escapes Tailwind's content-scanning purge — it doesn't. Anything inside `@layer utilities`
+ * (see that layer above) is purged in production exactly like a Tailwind-generated utility
+ * unless its selector text appears somewhere in the scanned content; these six classes survive
+ * ONLY because the literal strings "tilt-a".."tilt-f" happen to appear in
+ * packages/shell/src/home.ts's CARD_TILT_CLASSES array (which the content glob does cover) —
+ * the exact same dependency the arbitrary-value version had, just on a different literal. A
+ * future `` `tilt-${letter}` `` template-literal refactor of that array would silently
+ * reproduce this build's original defect, and cardTiltClass's own name-cycling unit tests
+ * cannot catch that (they assert the returned STRING, never whether a build actually emits
+ * CSS for it).
+ *
+ * What is genuinely immune to content-scanning purge is declaring the rule OUTSIDE any
+ * `@layer` — Tailwind's JIT purge only touches `@layer utilities`/`@layer components` content;
+ * plain top-level CSS (like `.ta-float` below, already structured this way before this fix)
+ * passes through untouched regardless of what content is scanned. These six rules are placed
+ * here, outside `@layer utilities`, specifically to get that real guarantee instead of a
+ * same-mechanism-different-literal one. PROVEN, not asserted: `.scratch/prove-tilt-immune.mts`
+ * builds this exact stylesheet through the project's own `tailwindcss` PostCSS plugin twice —
+ * once with the real content globs, once with `packages/shell/src/home.ts` EXCLUDED from them
+ * (so no literal "tilt-a" etc. appears anywhere in scanned content) — and confirms `.tilt-a`
+ * still emits in both runs while a control class placed inside `@layer utilities` with no other
+ * reference disappears in the second run. See the final report for that script's output.
+ *
+ * `:hover` (not `.group:hover` / `:has()`) straightens the tilt because hovering the card's
+ * inner `<GameCard>` Link makes the pointer physically over THIS wrapper's box too — CSS
+ * `:hover` bubbles to every ancestor, so no extra machinery is needed for the
+ * "straightens on hover" behavior.
+ *
+ * REDUCED-MOTION DECISION (C77 item 3, made deliberately rather than left silent): unlike the
+ * original arbitrary-value string, these classes do NOT reset to 0deg under
+ * `prefers-reduced-motion: reduce`. Reasoning: a static sub-degree rotation is a fixed visual
+ * styling choice, not motion — nothing here MOVES on its own or loops, matching this
+ * codebase's own existing precedent for `.edge-hand` above (a permanent hand-drawn border-
+ * radius, unconditionally applied, never gated on reduced motion either) and ui-direction.md's
+ * governing distinction ("motion restates static encodings; it never informs alone" — the
+ * converse also holds: a static encoding is not motion and needs no motion gate). What DOES
+ * need gating is the ANIMATED transition from tilted to straight on hover, and that is already
+ * covered: the global `prefers-reduced-motion: reduce` blanket below collapses
+ * `transition-duration` to 0.01ms for every element on the page, this one included, so a
+ * reduced-motion user still reaches the same straightened end state on hover — just instantly,
+ * never via a smooth animation. Removing the base tilt entirely under reduced motion would
+ * conflate "wants less animation" with "wants less visual design," which this codebase
+ * deliberately keeps separate. */
+.tilt-a {
+  transform: rotate(-0.6deg);
+}
+.tilt-b {
+  transform: rotate(0.5deg);
+}
+.tilt-c {
+  transform: rotate(-0.4deg);
+}
+.tilt-d {
+  transform: rotate(0.7deg);
+}
+.tilt-e {
+  transform: rotate(-0.8deg);
+}
+.tilt-f {
+  transform: rotate(0.3deg);
+}
+.tilt-a,
+.tilt-b,
+.tilt-c,
+.tilt-d,
+.tilt-e,
+.tilt-f {
+  transition: transform var(--dur-place) var(--ease);
+}
+.tilt-a:hover,
+.tilt-b:hover,
+.tilt-c:hover,
+.tilt-d:hover,
+.tilt-e:hover,
+.tilt-f:hover {
+  transform: rotate(0deg);
 }
 
 /* Riso Zine home direction (design 1b) — the hero panel's floating tile-grid motif
