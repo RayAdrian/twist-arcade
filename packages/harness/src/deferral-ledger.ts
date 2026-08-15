@@ -1,5 +1,6 @@
-// packages/harness/src/deferral-ledger.ts — the deferral-DISCHARGE ledger (platform-
-// corrections.md C70, closing a gap C27/C68 left open).
+// packages/harness/src/deferral-ledger.ts — the deferral-DISCHARGE mechanism (platform-
+// corrections.md C70, C81, closing a gap C27/C68 left open — and REVISED here after C81's
+// stage-6 review found the first version self-defeating).
 //
 // C27 built a real "deferred" gate status: a Strong-dependent solo-chase row (or its two-player
 // analogue) that is too expensive to measure at suite "ci" reports `"deferred"`, naming nightly
@@ -8,67 +9,95 @@
 // file, on purpose, so every existing gate's semantics and every existing report's raw shape
 // stay byte-identical.
 //
-// C68 then found nightly has never once completed a run (eight attempts, eight failures, all
-// GitHub Actions billing, zero code). C70's finding, concrete on Mine Run: 8 of its 10 gates
-// have been measured NOWHERE, EVER, and its CI report has printed "OK (provisional — …)" with
-// exit code 0 every single time regardless — because nothing checks that "measured at nightly"
-// ever actually happened. A deferral is a promise about the future; this module is what checks
-// the promise was kept.
+// C68 found nightly has never once completed a run (billing, not code). C70's first version of
+// this module tracked deferral state in ONE mutable `data/deferral-ledger.json`, written both
+// at "ci" (self-registering an observation) and at "nightly" (recording a discharge). C81's
+// stage-6 review found the fatal flaw: `nightly.yml` runs in an EPHEMERAL GitHub Actions
+// workspace with no commit-back step, so the nightly write was discarded every night. A kept
+// promise could never discharge — the mechanism would have turned "nightly never runs" into
+// "CI is permanently red and unrecoverable," which is worse than the defect it fixed.
+//
+// THIS VERSION derives discharge from a COMMITTED ARTIFACT instead of a workspace write —
+// exactly certify.ts's own convention (`data/certificates/<gameId>/<day>.json`): a real nightly
+// run produces one small, immutable, DATED `DeferralRun` file recording which gate names it
+// measured FOR REAL that day, derived from the run's own report rows (never a hardcoded
+// canonical list — see the A2 note below). A human commits that file afterward, the same
+// documented manual path certify.ts already requires; nothing here assumes CI can write to the
+// repo, and nothing here needs it to. Discharge recognition then SCANS whatever `DeferralRun`
+// files are actually committed, at read time — there is no mutable ledger blob to lose, and
+// tampering means forging an entire dated, reviewable evidence file rather than hand-editing one
+// date field.
+//
+// C81's A2 finding, and how this version avoids it: the FIRST version recorded "what CI
+// observed as deferred" on one side and "the hardcoded STRONG_DEPENDENT_CHASE_GATES/
+// DEFERRABLE_CI_GATES canonical list" on the other, compared by exact-set equality — but a
+// two-player game's `ruthless-vs-standard`/`solved-value-reached` rows can independently be
+// `"n/a"` (a structural reason, unrelated to deferral) even while a deferral is active, making
+// the ci-observed set a PROPER SUBSET of the canonical list. Exact equality then treated every
+// such nightly run as "a different promise," erasing the discharge and springing the age back —
+// permanently un-dischargeable, latent only because Mine Run (solo-chase) never hits it. This
+// version fixes it two ways: (1) `measuredGateNames` derives "what was measured" from a report's
+// OWN rows on BOTH sides, never a separate constant; (2) discharge recognition is COVERAGE
+// (`resolveDischargeAnchor`: a run discharges iff its `measuredGates` is a SUPERSET of the
+// CURRENTLY deferred names), not exact-set equality — a run that measured more than what is
+// deferred today still counts.
 //
 // THE CORE IDEA: a deferral is anchored to the day it was DECLARED (`GameManifest.ciGateBudget.
-// deferGatesToNightly.since` — see that field's own doc for why this is manifest-authored
-// rather than inferred from whenever a run first happens to read it), and ages from there until
-// a run that actually measures the SAME gate set for real (`recordDischarge`, called only at
-// suite "nightly", which structurally never accepts a partial/deferred roster — see
-// solo-gates.ts's `SoloDeferredGateAtNightlyError` / suites.ts's `TwoPlayerDeferredGateAtNightlyError`)
-// resets the clock. Three severities: "fresh" (recently declared or recently discharged),
-// "stale" (visibly overdue, past DEFERRAL_WARN_DAYS), "overdue" (DEFERRAL_FATAL_DAYS+ —
-// individually fatal). A SEPARATE, aggregate rule (DEFERRAL_MATERIAL_FRACTION) additionally
-// fails a report when a MAJORITY of a game's real gates have gone stale together, even if no
-// single row has individually reached "overdue" yet — Mine Run's actual 8/10 shape, which is
-// "material" from the day it goes stale, not only after 30 days.
+// deferGatesToNightly.since` — see that field's own doc), and ages from there until a committed
+// `DeferralRun` shows a later day that covered the same gates for real. Three severities:
+// "fresh", "stale" (>= DEFERRAL_WARN_DAYS), "overdue" (>= DEFERRAL_FATAL_DAYS, individually
+// fatal). A SEPARATE, aggregate rule (DEFERRAL_MATERIAL_FRACTION) additionally fails a report
+// when a MAJORITY of a game's real gates have gone stale together, even with no single row
+// individually overdue — Mine Run's actual 8/10 shape.
 //
-// THRESHOLDS, ARGUED (not just picked):
-//   - DEFERRAL_WARN_DAYS = 7. Nightly's own cadence is daily; a single missed night (a bad
-//     build, a transient blip) is not evidence of anything — but seven consecutive misses is a
-//     full week with no plausible "someone will notice tomorrow" excuse left. This is also the
-//     point a deferral becomes VISIBLE (a `"stale"` row, and materiality starts counting it),
-//     not yet build-breaking on its own.
+// THRESHOLDS, ARGUED (unchanged from C70 — C81's review reproduced and upheld this reasoning):
+//   - DEFERRAL_WARN_DAYS = 7. Nightly's own cadence is daily; a single missed night is not
+//     evidence of anything, but seven consecutive misses leaves no "someone will notice
+//     tomorrow" excuse. This is the point a deferral becomes VISIBLE, not yet build-breaking.
 //   - DEFERRAL_FATAL_DAYS = 30. Reuses this codebase's OWN existing 30-day convention
-//     (solo-gates.ts's `certifiedBufferDays`: warn under 30 days of buffer) rather than
-//     inventing a new number. Thirty days is far more runway than any plausible transient-infra
-//     explanation needs (C68's actual blocker — GitHub Actions billing — is fixable in minutes,
-//     not weeks) while still giving a real fix window before a shipped game's central gates are
-//     allowed to block on it. Past this point "deferred" and "abandoned" are the same word, and
-//     the report must say so.
+//     (solo-gates.ts's `certifiedBufferDays`) rather than inventing a number. C81's review noted
+//     the transfer is warn-on-REMAINING-RUNWAY -> fatal-on-ELAPSED-AGE, which is strictly MORE
+//     conservative than the source convention, not a loose analogy. C68's actual blocker
+//     (GitHub Actions billing) is fixable in minutes, so 30 days is far more runway than any
+//     transient explanation needs.
 //   - DEFERRAL_MATERIAL_FRACTION = 0.5. Once a MAJORITY of a game's real (non-"n/a") gates are
 //     simultaneously stale-or-worse, "OK" is describing well under half the actual gate table —
-//     that claim is misleading regardless of whether any individual row has reached the
-//     (further-out) fatal threshold yet. Below half, the report is still meaningfully
-//     informative about most of the table even while imperfect, so it stays a provisional OK.
+//     misleading regardless of whether any individual row has reached the fatal threshold yet.
 //
-// WHERE THE RECORD LIVES, AND HOW IT DOESN'T GO STALE THE SAME WAY (C70's own question):
-// `data/deferral-ledger.json`, checked into the repo — greppable, reviewable, survives a fresh
-// checkout, needs no CI. Three concrete anti-staleness properties, not just a promise:
-//   1. It self-registers. `observeDeferral` is called as a side effect of every ordinary "ci"
-//      run (scripts/ci-gates.ts's main()) — nobody has to remember a separate step, the same
-//      way certify.ts's certificates are written by running certify, not by hand.
-//   2. Its age anchor can only move EARLIER for an unchanged identity, never later (see
-//      `resolveEntry` below) — a manifest edit that bumps `since` forward, or a ledger entry
-//      that gets regenerated from scratch, can never erase already-recorded age for the SAME
-//      promise. Only a materially different gate set (a genuinely new promise) resets the
-//      clock, and that is a deliberate, visible choice (a different `gates` array), not a
-//      silent one.
-//   3. Its failure mode is asymmetric on purpose: if the ledger write is ever skipped or lost,
-//      the WORST that happens is the next run re-anchors from `since` (still correct, if
-//      `since` is set) or from "today" (understating age — the documented, safe-side fallback).
-//      Nothing about losing the ledger can make an aging deferral look MORE fresh than it is
-//      relative to its own declared `since`; it can only, at worst, fail to have accumulated
-//      extra credit for a discharge that isn't re-derivable any other way. A ledger that goes
-//      stale in this scheme rots toward MORE alarm, never toward silently exonerating a promise
-//      that was never kept — which is the one direction C70 exists to forbid.
+// WHERE THE RECORD LIVES, AND HOW IT DOESN'T GO STALE THE SAME WAY (C70's own question, C81's
+// review sharpened the answer):
+//   1. It self-registers on the "when did this begin" half. `since` lives in the manifest
+//      itself (committed, human-authored, code-reviewed exactly like `reason`) and is read
+//      LIVE every time — there is no separate cached "first observed" value that could drift
+//      from it or need reconciling. A manifest edit that bumps `since` forward is a normal,
+//      reviewable diff in the SAME field that already carries the cost justification — visible
+//      to a reviewer directly, rather than something a ledger has to silently defend against.
+//   2. Discharge is tamper-evident BY CONSTRUCTION. There is no single mutable "lastDischargedAt"
+//      date to hand-edit — discharging a promise requires a whole dated `DeferralRun` file
+//      whose `measuredGates` actually covers what was deferred, committed and reviewable like
+//      any other evidence artifact in this repo (`data/certificates/`, `docs/research/games/`).
+//   3. Its failure mode is asymmetric on purpose. If a nightly run's artifact is never written
+//      or never committed (billing outage, someone forgot), the worst case is the deferral
+//      keeps aging from `since` — exactly the state C70 exists to surface, not a state that
+//      silently looks discharged. A `DeferralRun` that fails validation (malformed shape, an
+//      invalid date, a day/filename mismatch) throws LOUDLY (`MalformedDeferralRunError`) rather
+//      than being silently ignored or read as some default — C81's A3 finding on the first
+//      version was that a malformed `firstObservedAt` produced `NaN` age, both threshold
+//      comparisons false, and a silent `"fresh"` verdict: exit 0 on corrupted input. This
+//      version has no code path that reaches a numeric comparison without first validating
+//      every date it read.
+//
+// THE DOCUMENTED MANUAL PATH (required by C81's ruling, since the automated one is blocked on
+// billing no code change fixes): a human runs `pnpm harness:ci-gates -- --suite nightly
+// [--game <id>]` locally (exactly as C70 itself was measured — "run everything locally"), which
+// writes `data/deferral-runs/<gameId>/<day>.json` for every game whose manifest still declares
+// a deferral, and then commits that file the same way a certified daily gets committed. Nothing
+// in nightly.yml needs to change: its existing `pnpm harness:ci-gates -- --suite nightly` step
+// still writes the same file into the ephemeral runner's own workspace, harmlessly discarded —
+// it is simply no longer load-bearing for anything, since discharge no longer depends on that
+// write surviving.
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { GameCiGateReport } from "./ci-gates";
 
@@ -80,35 +109,23 @@ export const DEFERRAL_MATERIAL_FRACTION = 0.5;
 
 export type DeferralSeverity = "fresh" | "stale" | "overdue";
 
-/** One tracked deferral per gameId — a game has at most one active `ciGateBudget.
- *  deferGatesToNightly` block (it belongs to exactly one gate lane), so `gameId` alone is a
- *  sufficient ledger key; `lane` is still carried for audit/display and as an identity guard. */
-export interface DeferralLedgerEntry {
-  readonly gameId: string;
-  readonly lane: DeferralLane;
-  /** Sorted gate names this deferral covers — the DEFERRABLE_CI_GATES / STRONG_DEPENDENT_
-   *  CHASE_GATES list for this lane at observation time. Part of the deferral's IDENTITY: a
-   *  later observation with a different gate set is a materially different promise, not the
-   *  same one continuing, and resets `firstObservedAt`. */
-  readonly gates: readonly string[];
-  /** The tier a later run must complete at, for real, to discharge this deferral — always
-   *  "nightly" today (the only other suite), spelled out rather than assumed so a reader of a
-   *  raw ledger entry never has to infer it. */
-  readonly dischargingSuite: "nightly";
-  /** UTC "YYYY-MM-DD" this exact identity was first observed — either the manifest's own
-   *  declared `since` (preferred) or the day a run first saw it (fallback; understates age). */
-  readonly firstObservedAt: string;
-  /** UTC "YYYY-MM-DD" of the most recent run that actually measured this identity's gates for
-   *  real. Undefined iff this deferral has NEVER been discharged — Mine Run's real state today. */
-  readonly lastDischargedAt?: string;
-}
-
-export type DeferralLedger = Readonly<Record<string, DeferralLedgerEntry>>;
-
 export class InvalidDeferralSinceError extends Error {
   constructor(value: string, context: string) {
     super(`deferral-ledger: invalid UTC date ${JSON.stringify(value)} for ${context} — expected "YYYY-MM-DD".`);
     this.name = "InvalidDeferralSinceError";
+  }
+}
+
+/** Thrown by `readDeferralRun`/`readAllDeferralRuns` on ANY malformed stored artifact — wrong
+ *  shape, an invalid date, an unrecognized `lane`, or (mirroring certify.ts's
+ *  `CertificateDayMismatchError`) a `day` that disagrees with the filename it's stored under.
+ *  Never caught and defaulted internally: a corrupted evidence file must fail LOUD (C81's A3
+ *  finding on the prior version — a malformed date must never read as a quietly-passing
+ *  "fresh"). */
+export class MalformedDeferralRunError extends Error {
+  constructor(gameId: string, day: string, reason: string) {
+    super(`deferral-ledger: malformed DeferralRun for "${gameId}" at "${day}" — ${reason}`);
+    this.name = "MalformedDeferralRunError";
   }
 }
 
@@ -124,83 +141,173 @@ function daysBetween(fromIso: string, toIso: string): number {
   return Math.round((to - from) / 86_400_000);
 }
 
-function sameGateSet(a: readonly string[], b: readonly string[]): boolean {
-  if (a.length !== b.length) return false;
-  const as = [...a].sort();
-  const bs = [...b].sort();
-  return as.every((g, i) => g === bs[i]);
-}
-
-export interface DeferralObservation {
-  readonly gameId: string;
-  readonly lane: DeferralLane;
-  /** The gate names THIS observation covers — need not be pre-sorted. */
-  readonly gates: readonly string[];
-  /** `GameManifest.ciGateBudget.deferGatesToNightly.since`, forwarded verbatim. Omit only for a
-   *  deferral that never set it (see that field's own doc for the consequence). */
-  readonly since?: string;
-}
-
-/** Resolves the ledger entry an observation/discharge should be merged into: reuses the
- *  existing entry (anchor never moves later) when the identity (lane + gate set) is unchanged,
- *  or starts a fresh one (anchored at `since`, discharge history cleared) when it is not — a
- *  materially different gate set is a materially different promise. See this module's own doc
- *  for why "never moves later" is the ledger's core anti-staleness property. */
-function resolveEntry(ledger: DeferralLedger, obs: DeferralObservation, today: string): DeferralLedgerEntry {
-  assertValidIsoDay(today, "today");
-  if (obs.since !== undefined) {
-    assertValidIsoDay(obs.since, `manifest.ciGateBudget.deferGatesToNightly.since for "${obs.gameId}"`);
-  }
-
-  const gates = [...obs.gates].sort();
-  const existing = ledger[obs.gameId];
-  const matchesIdentity = existing !== undefined && existing.lane === obs.lane && sameGateSet(existing.gates, gates);
-
-  if (matchesIdentity) {
-    const candidates = [existing.firstObservedAt, ...(obs.since !== undefined ? [obs.since] : [])];
-    const firstObservedAt = candidates.reduce((a, b) => (a < b ? a : b));
-    return { ...existing, gates, firstObservedAt };
-  }
-
-  return {
-    gameId: obs.gameId,
-    lane: obs.lane,
-    gates,
-    dischargingSuite: "nightly",
-    firstObservedAt: obs.since ?? today,
-  };
-}
-
-/** Records that suite "ci" saw this deferral active this run — the "self-registering" half of
- *  the anti-staleness scheme (this module's own doc, property 1): called as a side effect of an
- *  ordinary CI run, never a separate step a human has to remember. Never touches
- *  `lastDischargedAt`. */
-export function observeDeferral(ledger: DeferralLedger, obs: DeferralObservation, today: string): DeferralLedger {
-  return { ...ledger, [obs.gameId]: resolveEntry(ledger, obs, today) };
-}
-
-/** Records that suite "nightly" measured this identity's gates for real THIS run — recognizing
- *  a later run as "the discharging one" (requirement 1). Safe to call even when no prior
- *  `observeDeferral` ever ran for this identity (nightly running before any CI observation is
- *  not a lost event — the entry is created fresh, already discharged, age 0). */
-export function recordDischarge(ledger: DeferralLedger, obs: DeferralObservation, today: string): DeferralLedger {
-  const entry = resolveEntry(ledger, obs, today);
-  return { ...ledger, [obs.gameId]: { ...entry, lastDischargedAt: today } };
-}
-
-/** Days since this deferral was last known to be kept — from `lastDischargedAt` if it has ever
- *  been discharged (a fresh promise renewed nightly reads as ~0 forever), else from
- *  `firstObservedAt` (Mine Run's real, undischarged-since-2026-08-07 case). */
-export function deferralAgeDays(entry: DeferralLedgerEntry, today: string): number {
-  assertValidIsoDay(today, "today");
-  const anchor = entry.lastDischargedAt ?? entry.firstObservedAt;
-  return Math.max(0, daysBetween(anchor, today));
-}
-
 export function deferralSeverity(ageDays: number): DeferralSeverity {
   if (ageDays >= DEFERRAL_FATAL_DAYS) return "overdue";
   if (ageDays >= DEFERRAL_WARN_DAYS) return "stale";
   return "fresh";
+}
+
+export function deferralAgeDays(anchorDay: string, today: string): number {
+  assertValidIsoDay(anchorDay, "anchor day");
+  assertValidIsoDay(today, "today");
+  return Math.max(0, daysBetween(anchorDay, today));
+}
+
+export interface GateRowLike {
+  readonly name: string;
+  readonly status: string;
+}
+
+/** Every gate name a report measured FOR REAL — every row that is NOT `"n/a"`. Used on BOTH
+ *  sides of discharge recognition (the currently-deferred set at "ci", and what a real nightly
+ *  run actually measured) so there is exactly one source of truth for "what counts as this
+ *  lane's gates", never a hardcoded list that can drift out of sync with either report (C81's
+ *  A2 finding). A nightly report never contains a `"deferred"` row (structurally enforced by
+ *  `SoloDeferredGateAtNightlyError`/`TwoPlayerDeferredGateAtNightlyError`), so every non-"n/a"
+ *  row there is, by construction, something that WAS measured for real that run. */
+export function measuredGateNames(gates: readonly GateRowLike[]): string[] {
+  return gates.filter((g) => g.status !== "n/a").map((g) => g.name);
+}
+
+// ---------------------------------------------------------------------------------------
+// DeferralRun — one committed, immutable, per-day artifact per game (mirrors certify.ts's
+// DailyCertificate storage convention line for line: baseDir-injected, atomic write via
+// tmp+rename, ENOENT reads as "nothing stored", validate everything read, throw loudly on
+// mismatch).
+// ---------------------------------------------------------------------------------------
+
+export interface DeferralRun {
+  readonly gameId: string;
+  readonly lane: DeferralLane;
+  /** UTC "YYYY-MM-DD" — the day this run actually happened. */
+  readonly day: string;
+  /** The tier that produced this run — always "nightly" today (the only tier that ever
+   *  measures a deferred lane's gates for real), spelled out rather than assumed. */
+  readonly suite: "nightly";
+  /** Every gate name this run measured for real (see `measuredGateNames`) — NOT filtered down
+   *  to "only the ones some other list says are deferrable"; the full real set, so coverage
+   *  checks (`resolveDischargeAnchor`) work regardless of which specific rows happen to be
+   *  deferred at any given "ci" run. */
+  readonly measuredGates: readonly string[];
+}
+
+export function deferralRunPath(baseDir: string, gameId: string, day: string): string {
+  return path.join(baseDir, gameId, `${day}.json`);
+}
+
+export function defaultDeferralRunsBaseDir(repoRoot: string): string {
+  return path.join(repoRoot, "data/deferral-runs");
+}
+
+/** Atomic write (tmp file in the same directory, then `rename`) — identical reasoning to
+ *  certify.ts's `writeCertificate`: a reader never observes a half-written run. */
+export async function writeDeferralRun(baseDir: string, run: DeferralRun): Promise<void> {
+  const file = deferralRunPath(baseDir, run.gameId, run.day);
+  await mkdir(path.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  await writeFile(tmp, `${JSON.stringify(run, null, 2)}\n`, "utf8");
+  await rename(tmp, file);
+}
+
+function assertValidDeferralRun(value: unknown, gameId: string, expectedDay: string): asserts value is DeferralRun {
+  const fail = (reason: string): never => {
+    throw new MalformedDeferralRunError(gameId, expectedDay, reason);
+  };
+  if (typeof value !== "object" || value === null) fail("not a JSON object");
+  const v = value as Record<string, unknown>;
+  if (typeof v.gameId !== "string" || v.gameId.length === 0) fail("missing/invalid gameId");
+  if (v.gameId !== gameId) fail(`gameId "${String(v.gameId)}" disagrees with the directory it was read from ("${gameId}")`);
+  if (v.lane !== "two-player" && v.lane !== "solo-chase") fail(`invalid lane ${JSON.stringify(v.lane)}`);
+  if (typeof v.day !== "string") fail("missing day");
+  try {
+    assertValidIsoDay(v.day as string, "day");
+  } catch (err) {
+    fail((err as Error).message);
+  }
+  if (v.day !== expectedDay) fail(`stored day "${String(v.day)}" disagrees with the filename it's stored under ("${expectedDay}.json")`);
+  if (v.suite !== "nightly") fail(`invalid suite ${JSON.stringify(v.suite)}`);
+  if (!Array.isArray(v.measuredGates) || !(v.measuredGates as unknown[]).every((g) => typeof g === "string")) {
+    fail("measuredGates must be a string array");
+  }
+}
+
+export async function readDeferralRun(baseDir: string, gameId: string, day: string): Promise<DeferralRun | undefined> {
+  let raw: string;
+  try {
+    raw = await readFile(deferralRunPath(baseDir, gameId, day), "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw err;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new MalformedDeferralRunError(gameId, day, "not valid JSON");
+  }
+  assertValidDeferralRun(parsed, gameId, day);
+  return parsed;
+}
+
+/** All committed runs for a game, sorted ascending by day (a UTC "YYYY-MM-DD" string, so
+ *  lexicographic order is chronological order) — mirrors certify.ts's `readAllCertificates`. */
+export async function readAllDeferralRuns(baseDir: string, gameId: string): Promise<DeferralRun[]> {
+  let entries: string[];
+  try {
+    entries = await readdir(path.join(baseDir, gameId));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
+  }
+  const days = entries.filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, ""));
+  days.sort();
+  const runs: DeferralRun[] = [];
+  for (const day of days) {
+    const run = await readDeferralRun(baseDir, gameId, day);
+    if (run) runs.push(run);
+  }
+  return runs;
+}
+
+// ---------------------------------------------------------------------------------------
+// Discharge recognition and aging — pure, no I/O. `resolveDischargeAnchor`/
+// `annotateDeferralAging` take already-loaded `DeferralRun[]` and an already-resolved `today`
+// so they stay testable without touching a filesystem.
+// ---------------------------------------------------------------------------------------
+
+export interface DischargeAnchor {
+  /** UTC "YYYY-MM-DD" — the day age is measured from: the most recent covering run's day, or
+   *  `since` (or `today`, if `since` was never set) when nothing has ever discharged it. */
+  readonly anchorDay: string;
+  /** The specific run that discharges the CURRENTLY-deferred gate set, if any. */
+  readonly dischargedBy?: DeferralRun;
+}
+
+/**
+ * Requirement 1, "a later run recognized as the discharging one": among `runs`, the most recent
+ * whose `measuredGates` COVERS every name in `deferredGateNames` (a superset check, not exact
+ * equality — see this module's own doc on C81's A2 finding) discharges the deferral; its `day`
+ * becomes the age anchor. With no covering run, the anchor is `since` (the manifest-declared
+ * day this deferral was committed) or `today` if `since` was never set — the documented,
+ * understating-age fallback.
+ */
+export function resolveDischargeAnchor(
+  deferredGateNames: readonly string[],
+  runs: readonly DeferralRun[],
+  since: string | undefined,
+  today: string
+): DischargeAnchor {
+  assertValidIsoDay(today, "today");
+  if (since !== undefined) assertValidIsoDay(since, "since");
+
+  const covering = runs
+    .filter((r) => deferredGateNames.every((g) => r.measuredGates.includes(g)))
+    .slice()
+    .sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0));
+
+  const dischargedBy = covering[0];
+  if (dischargedBy) return { anchorDay: dischargedBy.day, dischargedBy };
+  return { anchorDay: since ?? today };
 }
 
 export interface DeferralRowAging {
@@ -227,33 +334,24 @@ export interface DeferralAgingReport {
   readonly forcesFail: boolean;
 }
 
-export interface GateRowLike {
-  readonly name: string;
-  readonly status: string;
-}
-
-/** The pure core: given an already-evaluated gate row array (untouched — this never re-derives
- *  or overrides a single row's `status`) and this game's ledger entry (if any), computes the
- *  aging/materiality verdict. Returns `undefined` when no row is `"deferred"` — a game with no
- *  active deferral is completely untouched by this mechanism, which is what makes the
- *  byte-identity guard for non-deferring games trivial: nothing downstream needs to special-case
- *  "aging is absent" beyond checking for `undefined`. */
+/** The pure core: given an already-evaluated gate row array (untouched — never re-derives or
+ *  overrides a single row's `status`), this game's committed discharge evidence, and its
+ *  manifest-declared `since`, computes the aging/materiality verdict. Returns `undefined` when
+ *  no row is `"deferred"` — a game with no active deferral is completely untouched by this
+ *  mechanism. */
 export function annotateDeferralAging(
   gameId: string,
   gates: readonly GateRowLike[],
-  ledgerEntry: DeferralLedgerEntry | undefined,
+  runs: readonly DeferralRun[],
+  since: string | undefined,
   today: string
 ): DeferralAgingReport | undefined {
   const deferredNames = gates.filter((g) => g.status === "deferred").map((g) => g.name);
   if (deferredNames.length === 0) return undefined;
 
   const applicableGateCount = gates.filter((g) => g.status !== "n/a").length;
-  // Missing ledger entry for an active deferral (e.g. a dry run that never persisted) is
-  // treated as age 0 — the conservative direction: never manufacture alarm from an absence of
-  // history, only from a PRESENT, dated one (this module's own doc, "rots toward more alarm,
-  // never toward silently exonerating" — but exonerating something with literally no evidence
-  // either way is not the same as silently exonerating a KNOWN-aged promise).
-  const ageDays = ledgerEntry ? deferralAgeDays(ledgerEntry, today) : 0;
+  const { anchorDay } = resolveDischargeAnchor(deferredNames, runs, since, today);
+  const ageDays = deferralAgeDays(anchorDay, today);
   const severity = deferralSeverity(ageDays);
   const rows: DeferralRowAging[] = deferredNames.map((gate) => ({ gate, ageDays, severity }));
 
@@ -275,8 +373,8 @@ export function annotateDeferralAging(
 }
 
 /** The exit-code combinator: a report that was otherwise `ok` (no `"fail"` row) is no longer
- *  effectively ok once aging forces it — this is the direct fix for C70's "OK (provisional — …)
- *  with exit code 0" finding. A report that was already not-ok stays not-ok regardless. */
+ *  effectively ok once aging forces it — the direct fix for C70's "OK (provisional — …) with
+ *  exit code 0" finding. A report that was already not-ok stays not-ok regardless. */
 export function effectiveOk(reportOk: boolean, aging: DeferralAgingReport | undefined): boolean {
   return reportOk && !(aging?.forcesFail ?? false);
 }
@@ -285,8 +383,7 @@ export function effectiveOk(reportOk: boolean, aging: DeferralAgingReport | unde
 // GameCiGateReport adapters — the two gate lanes name their row fields differently
 // (suites.ts's GateResult.gate vs solo-gates.ts's GateResult.name); normalized here to the one
 // shape (`GateRowLike`) this module's pure functions consume. solo-puzzle never carries a
-// `ciGateBudget.deferGatesToNightly` concern (manifest.ts's own doc: the field only ever names
-// the two-player and solo score-chase lanes), so it is not a `DeferralLane` at all.
+// `ciGateBudget.deferGatesToNightly` concern, so it is not a `DeferralLane` at all.
 // ---------------------------------------------------------------------------------------
 
 export function laneOfReport(result: GameCiGateReport): DeferralLane | undefined {
@@ -301,48 +398,13 @@ export function gateRowsFromReport(result: GameCiGateReport): readonly GateRowLi
   return [];
 }
 
-/** Convenience: `annotateDeferralAging` fed straight from a `GameCiGateReport` + the current
- *  ledger, the way scripts/ci-gates.ts's wiring layer actually calls it. */
+/** Convenience: `annotateDeferralAging` fed straight from a `GameCiGateReport` + this game's
+ *  already-loaded discharge evidence, the way scripts/ci-gates.ts's wiring layer calls it. */
 export function annotateDeferralAgingForReport(
   result: GameCiGateReport,
-  ledger: DeferralLedger,
+  runs: readonly DeferralRun[],
+  since: string | undefined,
   today: string
 ): DeferralAgingReport | undefined {
-  return annotateDeferralAging(result.gameId, gateRowsFromReport(result), ledger[result.gameId], today);
-}
-
-// ---------------------------------------------------------------------------------------
-// Storage — committed JSON at (conventionally) `data/deferral-ledger.json`, mirroring
-// certify.ts's own `baseDir`-injected, atomic-write (tmp file + rename) convention exactly:
-// this module's ONLY job is get-it-to/from-disk, nothing schema-specific, and a caller-supplied
-// path (never a baked-in absolute one) so tests point it at a scratch directory.
-// ---------------------------------------------------------------------------------------
-
-export function defaultLedgerPath(repoRoot: string): string {
-  return path.join(repoRoot, "data/deferral-ledger.json");
-}
-
-export async function readDeferralLedger(filePath: string): Promise<DeferralLedger> {
-  try {
-    const raw = await readFile(filePath, "utf8");
-    return JSON.parse(raw) as DeferralLedger;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return {};
-    throw err;
-  }
-}
-
-/** Serializes with keys sorted (gameId order) so an unchanged ledger re-writes byte-identically
- *  — no git churn from re-running gates when nothing actually changed. Atomic (tmp + rename),
- *  same reasoning as certify.ts's `writeCertificate`: a reader never observes a half-written
- *  ledger. */
-export async function writeDeferralLedger(filePath: string, ledger: DeferralLedger): Promise<void> {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  const tmp = `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const sortedEntries: Record<string, DeferralLedgerEntry> = {};
-  for (const key of Object.keys(ledger).sort()) {
-    sortedEntries[key] = ledger[key]!;
-  }
-  await writeFile(tmp, `${JSON.stringify(sortedEntries, null, 2)}\n`, "utf8");
-  await rename(tmp, filePath);
+  return annotateDeferralAging(result.gameId, gateRowsFromReport(result), runs, since, today);
 }

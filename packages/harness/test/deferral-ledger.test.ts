@@ -1,44 +1,47 @@
 // packages/harness/test/deferral-ledger.test.ts — TDD anchor for deferral-ledger.ts
-// (platform-corrections.md C70, extending C27/C68).
+// (platform-corrections.md C70, C81).
 //
-// C27 built a real, sound "deferred" gate status: a Strong-dependent row that is too expensive
-// to measure at suite "ci" reports `"deferred"` instead of a fabricated pass. C68 then found
-// that nightly — the tier every deferral names as the one that measures it for real — has never
-// once completed a run. C70's finding: nothing in the system ever checks that a deferral's
-// promise was kept, so Mine Run's report has printed "OK (provisional — …)" with exit code 0
-// on 8 of its 10 gates, forever, since the day the deferral was declared.
+// C27 built a real "deferred" gate status. C68 found nightly has never once completed a run.
+// C70 built a first discharge mechanism — and C81's stage-6 review found it self-defeating:
+// `recordDischarge` wrote into a single mutable `data/deferral-ledger.json` at suite "nightly",
+// but `nightly.yml` runs in an ephemeral GitHub Actions workspace with no commit-back step, so
+// that write was discarded every night. A kept promise could never discharge.
 //
-// This module is the missing check: a deferral RECORDS what would discharge it (which tier,
-// and the exact gate names — `observeDeferral`), a later run that actually measures those gates
-// for real is RECOGNIZED as the discharging one (`recordDischarge`), and an undischarged
-// deferral AGES — visibly (`"stale"` past `DEFERRAL_WARN_DAYS`) and eventually fatally
-// (`"overdue"` past `DEFERRAL_FATAL_DAYS`, `annotateDeferralAging(...).forcesFail === true`).
-// A SEPARATE, aggregate rule (`DEFERRAL_MATERIAL_FRACTION`) means a report is not allowed to
-// keep printing an unqualified "OK" merely because no single row has individually gone fatal
-// yet, when a MAJORITY of a game's real gates have gone stale together — Mine Run's actual
-// 8/10 shape.
+// THIS design instead derives discharge from a COMMITTED ARTIFACT, exactly like
+// certify.ts's own `data/certificates/<gameId>/<day>.json`: a real nightly run writes one small,
+// immutable, dated `DeferralRun` file recording which gates it actually measured for real that
+// day (derived from the run's OWN report rows — never a hardcoded canonical list, which is what
+// C81's A2 finding showed goes out of sync between the "ci" and "nightly" lanes). A human commits
+// that file afterward, the same documented manual path certify.ts already requires (C68: nightly
+// cannot run automatically today regardless — billing, not code). Discharge recognition then
+// SCANS these committed files at read time; there is no mutable ledger blob to write, lose, or
+// hand-edit undetected — tampering means forging an entire dated, reviewable evidence file.
 
-import { describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   annotateDeferralAging,
+  defaultDeferralRunsBaseDir,
   DEFERRAL_FATAL_DAYS,
-  DEFERRAL_MATERIAL_FRACTION,
   DEFERRAL_WARN_DAYS,
-  deferralAgeDays,
+  deferralRunPath,
   deferralSeverity,
   effectiveOk,
   InvalidDeferralSinceError,
-  observeDeferral,
-  readDeferralLedger,
-  recordDischarge,
-  writeDeferralLedger,
-  type DeferralLedger,
+  MalformedDeferralRunError,
+  measuredGateNames,
+  readAllDeferralRuns,
+  readDeferralRun,
+  resolveDischargeAnchor,
+  writeDeferralRun,
+  type DeferralRun,
 } from "../src/deferral-ledger";
 
 // Mine Run's REAL 19-row shape (evaluateChaseGates' deferred branch, platform-corrections.md
 // C27): 10 applicable (non-"n/a") rows, 8 of which are Strong-dependent and report "deferred"
-// when Strong never ran; 9 n/a rows (suicideProbe + the 8 puzzle-only rows) are never
-// applicable regardless of deferral and must never count toward the materiality fraction.
+// when Strong never ran.
 const MINE_RUN_DEFERRED_GATES = [
   "strongVsRandomRatio",
   "distributionOverlap",
@@ -53,7 +56,27 @@ const MINE_RUN_DEFERRED_GATES = [
 function mineRunShapedRows(): { name: string; status: string }[] {
   return [
     ...MINE_RUN_DEFERRED_GATES.map((name) => ({ name, status: "deferred" })),
-    { name: "greedyVsRandomRatio", status: "pass" }, // measured for real even under deferral
+    { name: "greedyVsRandomRatio", status: "pass" },
+    { name: "grindProbe", status: "pass" },
+    { name: "suicideProbe", status: "n/a" },
+    { name: "certificatePresent", status: "n/a" },
+    { name: "certificatePar", status: "n/a" },
+    { name: "randomPlayoutSolveRate", status: "n/a" },
+    { name: "forcedMoveFraction", status: "n/a" },
+    { name: "generatorRejectionRate", status: "n/a" },
+    { name: "dayOverDayDrift", status: "n/a" },
+    { name: "certifiedBufferDays", status: "n/a" },
+    { name: "fogDeductionOnly", status: "n/a" },
+  ];
+}
+
+/** A real nightly report for the same manifest: every previously-deferred row now measured for
+ *  real (pass/fail — never "deferred", structurally enforced upstream), plus everything that
+ *  was already real at "ci" tier too. */
+function mineRunNightlyMeasuredRows(): { name: string; status: string }[] {
+  return [
+    ...MINE_RUN_DEFERRED_GATES.map((name) => ({ name, status: "pass" })),
+    { name: "greedyVsRandomRatio", status: "pass" },
     { name: "grindProbe", status: "pass" },
     { name: "suicideProbe", status: "n/a" },
     { name: "certificatePresent", status: "n/a" },
@@ -84,245 +107,237 @@ describe("deferralSeverity — the three-band escalation (C70)", () => {
   });
 });
 
-describe("observeDeferral — anchoring firstObservedAt", () => {
-  it("a brand-new deferral anchors to the manifest-declared `since`, NOT to today — the whole point being that deploying this ledger must not erase pre-existing age (C70's own trap, one level up)", () => {
-    const ledger: DeferralLedger = {};
-    const next = observeDeferral(
-      ledger,
-      { gameId: "mine-run", lane: "solo-chase", gates: [...MINE_RUN_DEFERRED_GATES], since: "2026-08-07" },
-      "2026-08-15"
-    );
-    expect(next["mine-run"]!.firstObservedAt).toBe("2026-08-07");
-    expect(deferralAgeDays(next["mine-run"]!, "2026-08-15")).toBe(8);
-  });
-
-  it("omitting `since` anchors to today (documented, understated-age fallback)", () => {
-    const next = observeDeferral(
-      {},
-      { gameId: "no-since-game", lane: "solo-chase", gates: ["a", "b"] },
-      "2026-08-15"
-    );
-    expect(next["no-since-game"]!.firstObservedAt).toBe("2026-08-15");
-  });
-
-  it("re-observing the SAME identity is a no-op on firstObservedAt (idempotent — the nightly-less every-CI-run case)", () => {
-    const first = observeDeferral(
-      {},
-      { gameId: "mine-run", lane: "solo-chase", gates: [...MINE_RUN_DEFERRED_GATES], since: "2026-08-07" },
-      "2026-08-15"
-    );
-    const second = observeDeferral(
-      first,
-      { gameId: "mine-run", lane: "solo-chase", gates: [...MINE_RUN_DEFERRED_GATES], since: "2026-08-07" },
-      "2026-08-20"
-    );
-    expect(second["mine-run"]!.firstObservedAt).toBe("2026-08-07");
-  });
-
-  it("firstObservedAt can only move EARLIER, never later, for the same identity — a manifest edit that bumps `since` forward cannot silently reset an already-aging deferral's clock", () => {
-    const first = observeDeferral(
-      {},
-      { gameId: "mine-run", lane: "solo-chase", gates: [...MINE_RUN_DEFERRED_GATES], since: "2026-08-07" },
-      "2026-08-15"
-    );
-    // Someone edits the manifest and (accidentally or not) bumps `since` forward to today.
-    const gamed = observeDeferral(
-      first,
-      { gameId: "mine-run", lane: "solo-chase", gates: [...MINE_RUN_DEFERRED_GATES], since: "2026-09-01" },
-      "2026-09-01"
-    );
-    expect(gamed["mine-run"]!.firstObservedAt).toBe("2026-08-07");
-  });
-
-  it("a MATERIALLY different gate set (a genuinely new promise) DOES reset the clock — this is deliberate, not a bug", () => {
-    const first = observeDeferral(
-      {},
-      { gameId: "mine-run", lane: "solo-chase", gates: [...MINE_RUN_DEFERRED_GATES], since: "2026-08-07" },
-      "2026-08-15"
-    );
-    const reshaped = observeDeferral(
-      first,
-      { gameId: "mine-run", lane: "solo-chase", gates: ["strongVsRandomRatio"], since: "2026-08-20" },
-      "2026-08-20"
-    );
-    expect(reshaped["mine-run"]!.firstObservedAt).toBe("2026-08-20");
-    expect(reshaped["mine-run"]!.lastDischargedAt).toBeUndefined();
-  });
-
-  it("rejects a malformed `since` (InvalidDeferralSinceError) rather than silently misdating the ledger", () => {
-    expect(() =>
-      observeDeferral({}, { gameId: "x", lane: "solo-chase", gates: ["a"], since: "08/07/2026" }, "2026-08-15")
-    ).toThrow(InvalidDeferralSinceError);
-  });
-});
-
-describe("recordDischarge — a later real nightly run recognized as the discharging one (requirement 1)", () => {
-  it("PLANTED VIOLATION, DISCHARGED: an aged deferral, once nightly measures the SAME gate set for real, resets age to 0", () => {
-    const observed = observeDeferral(
-      {},
-      { gameId: "mine-run", lane: "solo-chase", gates: [...MINE_RUN_DEFERRED_GATES], since: "2026-08-07" },
-      "2026-08-15"
-    );
-    expect(deferralAgeDays(observed["mine-run"]!, "2026-08-15")).toBe(8); // aged, undischarged
-
-    const discharged = recordDischarge(
-      observed,
-      { gameId: "mine-run", lane: "solo-chase", gates: [...MINE_RUN_DEFERRED_GATES] },
-      "2026-08-15"
-    );
-    expect(discharged["mine-run"]!.lastDischargedAt).toBe("2026-08-15");
-    expect(deferralAgeDays(discharged["mine-run"]!, "2026-08-15")).toBe(0);
-
-    // Tonight's discharge does not erase the historical firstObservedAt — only the AGE clock,
-    // which is measured from the more recent of the two, resets.
-    expect(discharged["mine-run"]!.firstObservedAt).toBe("2026-08-07");
-
-    // The very next CI run re-declares the SAME deferral (Strong is still unaffordable at "ci"
-    // tomorrow) — age must measure from last night's discharge, not from 2026-08-07 again.
-    const nextCiRun = observeDeferral(
-      discharged,
-      { gameId: "mine-run", lane: "solo-chase", gates: [...MINE_RUN_DEFERRED_GATES], since: "2026-08-07" },
-      "2026-08-17"
-    );
-    expect(deferralAgeDays(nextCiRun["mine-run"]!, "2026-08-17")).toBe(2);
-  });
-
-  it("a discharge for an identity never observed before still records it (nightly running before any CI observation is not a lost event)", () => {
-    const discharged = recordDischarge(
-      {},
-      { gameId: "fresh-game", lane: "two-player", gates: ["strong-vs-random"] },
-      "2026-08-15"
-    );
-    expect(discharged["fresh-game"]!.firstObservedAt).toBe("2026-08-15");
-    expect(discharged["fresh-game"]!.lastDischargedAt).toBe("2026-08-15");
-    expect(deferralAgeDays(discharged["fresh-game"]!, "2026-08-15")).toBe(0);
-  });
-});
-
-describe("annotateDeferralAging — per-row severity and the report-level materiality gate (requirements 2 and 3)", () => {
-  it("no deferred rows at all: undefined (a no-op — games with no deferrals must be untouched by this mechanism)", () => {
+describe("measuredGateNames — derived from a report's OWN rows, never a hardcoded canonical list (C81's A2 fix)", () => {
+  it("every non-'n/a' row counts as measured — pass, fail, warn, unattained alike", () => {
     const rows = [
+      { name: "a", status: "pass" },
+      { name: "b", status: "fail" },
+      { name: "c", status: "warn" },
+      { name: "d", status: "unattained" },
+      { name: "e", status: "n/a" },
+    ];
+    expect(measuredGateNames(rows)).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("a two-player nightly run's measured set can be a SUBSET of the solo-chase canonical list shape — no assumption either lane's full list applies", () => {
+    // The exact defect C81 found: ruthless-vs-standard/solved-value-reached can independently
+    // be n/a (a structural reason unrelated to deferral) even at a game whose deferral is
+    // active — so "what was measured tonight" must come from the report, not a constant.
+    const rows = [
+      { name: "strong-vs-random", status: "pass" },
       { name: "first-player-win-rate", status: "pass" },
       { name: "draw-rate", status: "pass" },
+      { name: "mean-plies", status: "pass" },
+      { name: "ruthless-vs-standard", status: "n/a" }, // no "standard" tier — structural, not deferral
+      { name: "solved-value-reached", status: "n/a" },
     ];
-    expect(annotateDeferralAging("fadeout", rows, undefined, "2026-08-15")).toBeUndefined();
+    expect(measuredGateNames(rows)).toEqual(["strong-vs-random", "first-player-win-rate", "draw-rate", "mean-plies"]);
+  });
+});
+
+describe("resolveDischargeAnchor — requirement 1: a later run recognized as the discharging one, via COVERAGE not exact-set equality (C81's A2 fix)", () => {
+  const deferredNames = [...MINE_RUN_DEFERRED_GATES];
+
+  it("no runs at all: anchors to the manifest-declared `since`", () => {
+    const anchor = resolveDischargeAnchor(deferredNames, [], "2026-08-07", "2026-08-15");
+    expect(anchor.anchorDay).toBe("2026-08-07");
+    expect(anchor.dischargedBy).toBeUndefined();
   });
 
-  it("fresh (age 0, e.g. the moment a deferral is first declared): materiality NOT breached, does not force a fail — C27's deferral stays usable on day one", () => {
-    const ledger = observeDeferral(
-      {},
-      { gameId: "mine-run", lane: "solo-chase", gates: [...MINE_RUN_DEFERRED_GATES], since: "2026-08-15" },
-      "2026-08-15"
-    );
-    const aging = annotateDeferralAging("mine-run", mineRunShapedRows(), ledger["mine-run"], "2026-08-15")!;
-    expect(aging.applicableGateCount).toBe(10);
-    expect(aging.staleOrOverdueCount).toBe(0);
-    expect(aging.materialityBreached).toBe(false);
-    expect(aging.anyOverdue).toBe(false);
+  it("omitting `since` (and no runs) anchors to today (documented, understated-age fallback)", () => {
+    const anchor = resolveDischargeAnchor(deferredNames, [], undefined, "2026-08-15");
+    expect(anchor.anchorDay).toBe("2026-08-15");
+  });
+
+  it("a run that measured EVERY currently-deferred gate discharges — anchors to that run's day", () => {
+    const run: DeferralRun = {
+      gameId: "mine-run",
+      lane: "solo-chase",
+      day: "2026-08-15",
+      suite: "nightly",
+      measuredGates: [...deferredNames, "greedyVsRandomRatio", "grindProbe"],
+    };
+    const anchor = resolveDischargeAnchor(deferredNames, [run], "2026-08-07", "2026-08-15");
+    expect(anchor.anchorDay).toBe("2026-08-15");
+    expect(anchor.dischargedBy).toBe(run);
+  });
+
+  it("COVERAGE, not exact equality: a run that measured MORE than the currently-deferred set still discharges (the two-player subset case A2 flagged)", () => {
+    const currentlyDeferred = ["strong-vs-random", "first-player-win-rate"]; // a proper subset — draw-rate/mean-plies/ruthless-vs-standard/solved-value-reached are n/a today
+    const run: DeferralRun = {
+      gameId: "some-two-player-game",
+      lane: "two-player",
+      day: "2026-08-15",
+      suite: "nightly",
+      // nightly's own measured set for this manifest that night happens to be the SAME subset
+      // (ruthless-vs-standard/solved-value-reached are STILL n/a at nightly too, structurally)
+      // — a strict-equality check on a hardcoded 6-name canonical list would have missed this.
+      measuredGates: ["strong-vs-random", "first-player-win-rate"],
+    };
+    const anchor = resolveDischargeAnchor(currentlyDeferred, [run], "2026-08-01", "2026-08-15");
+    expect(anchor.anchorDay).toBe("2026-08-15");
+    expect(anchor.dischargedBy).toBe(run);
+  });
+
+  it("a run that did NOT measure every currently-deferred gate does not discharge (partial coverage refused)", () => {
+    const run: DeferralRun = {
+      gameId: "mine-run",
+      lane: "solo-chase",
+      day: "2026-08-15",
+      suite: "nightly",
+      measuredGates: ["strongVsRandomRatio"], // missing the other 7
+    };
+    const anchor = resolveDischargeAnchor(deferredNames, [run], "2026-08-07", "2026-08-15");
+    expect(anchor.anchorDay).toBe("2026-08-07"); // still anchored at `since` — undischarged
+    expect(anchor.dischargedBy).toBeUndefined();
+  });
+
+  it("the MOST RECENT covering run wins when several exist", () => {
+    const older: DeferralRun = {
+      gameId: "mine-run",
+      lane: "solo-chase",
+      day: "2026-08-10",
+      suite: "nightly",
+      measuredGates: [...deferredNames],
+    };
+    const newer: DeferralRun = { ...older, day: "2026-08-14" };
+    const anchor = resolveDischargeAnchor(deferredNames, [older, newer], "2026-08-07", "2026-08-15");
+    expect(anchor.anchorDay).toBe("2026-08-14");
+  });
+
+  it("rejects a malformed `since` (InvalidDeferralSinceError) rather than silently misdating the anchor", () => {
+    expect(() => resolveDischargeAnchor(deferredNames, [], "08/07/2026", "2026-08-15")).toThrow(InvalidDeferralSinceError);
+  });
+});
+
+describe("PLANTED VIOLATIONS — annotateDeferralAging end to end, driven entirely by committed DeferralRun evidence (requirements 2 and 3)", () => {
+  it("PLANTED VIOLATION, DISCHARGED: a nightly run that covers the currently-deferred set resets age to 0", () => {
+    const run: DeferralRun = {
+      gameId: "mine-run",
+      lane: "solo-chase",
+      day: "2026-08-15",
+      suite: "nightly",
+      measuredGates: measuredGateNames(mineRunNightlyMeasuredRows()),
+    };
+    const aging = annotateDeferralAging("mine-run", mineRunShapedRows(), [run], "2026-08-07", "2026-08-15")!;
+    expect(aging.rows[0]!.ageDays).toBe(0);
     expect(aging.forcesFail).toBe(false);
   });
 
-  it("PLANTED VIOLATION — MATERIAL FRACTION (requirement 3, the real Mine Run 8/10 shape): once stale, 8/10 = 80% >= the 50% materiality bar forces a fail even with NO row individually overdue yet", () => {
-    const ledger = observeDeferral(
-      {},
-      { gameId: "mine-run", lane: "solo-chase", gates: [...MINE_RUN_DEFERRED_GATES], since: "2026-08-07" },
-      "2026-08-15" // age 8d — stale (>=7), well under fatal (30)
-    );
-    const aging = annotateDeferralAging("mine-run", mineRunShapedRows(), ledger["mine-run"], "2026-08-15")!;
+  it("PLANTED VIOLATION, MATERIAL FRACTION (requirement 3, real Mine Run 8/10 shape): never discharged, 8 days old — 80% >= 50% materiality forces a fail with no row individually overdue", () => {
+    const aging = annotateDeferralAging("mine-run", mineRunShapedRows(), [], "2026-08-07", "2026-08-15")!;
     expect(aging.staleOrOverdueFraction).toBeCloseTo(0.8, 10);
-    expect(aging.staleOrOverdueFraction).toBeGreaterThanOrEqual(DEFERRAL_MATERIAL_FRACTION);
     expect(aging.anyOverdue).toBe(false);
     expect(aging.materialityBreached).toBe(true);
     expect(aging.forcesFail).toBe(true);
   });
 
-  it("PLANTED VIOLATION — AGED PAST FATAL (requirement 2): 30+ days undischarged is overdue and forces a fail on its own, independent of materiality", () => {
-    const ledger = observeDeferral(
-      {},
-      { gameId: "mine-run", lane: "solo-chase", gates: [...MINE_RUN_DEFERRED_GATES], since: "2026-08-07" },
-      "2026-09-06" // 30 days later, still never discharged
-    );
-    const aging = annotateDeferralAging("mine-run", mineRunShapedRows(), ledger["mine-run"], "2026-09-06")!;
+  it("PLANTED VIOLATION, AGED PAST FATAL (requirement 2): 30+ days undischarged is overdue on its own", () => {
+    const aging = annotateDeferralAging("mine-run", mineRunShapedRows(), [], "2026-08-07", "2026-09-06")!;
     expect(aging.rows.every((r) => r.severity === "overdue")).toBe(true);
     expect(aging.anyOverdue).toBe(true);
     expect(aging.forcesFail).toBe(true);
   });
 
-  it("a NON-material fraction (1/10) does not force a fail even once stale — the materiality gate is about a MAJORITY of a game's gates going dark together, not any single stale row", () => {
+  it("an OLD, stale-covering run followed by tonight re-declaring the deferral still measures age from the discharge, not from `since`", () => {
+    const oldDischarge: DeferralRun = {
+      gameId: "mine-run",
+      lane: "solo-chase",
+      day: "2026-08-15",
+      suite: "nightly",
+      measuredGates: measuredGateNames(mineRunNightlyMeasuredRows()),
+    };
+    // Tomorrow's "ci" run re-declares the same deferral (Strong is still unaffordable at "ci").
+    const aging = annotateDeferralAging("mine-run", mineRunShapedRows(), [oldDischarge], "2026-08-07", "2026-08-17")!;
+    expect(aging.rows[0]!.ageDays).toBe(2); // 2026-08-15 -> 2026-08-17
+    expect(aging.forcesFail).toBe(false); // fresh again, well under material
+  });
+
+  it("no deferred rows at all: undefined — a no-op for games with no active deferral", () => {
+    const rows = [{ name: "pass-1", status: "pass" }];
+    expect(annotateDeferralAging("fadeout", rows, [], undefined, "2026-08-15")).toBeUndefined();
+  });
+
+  it("a NON-material fraction (1/10) does not force a fail even once stale", () => {
     const rows = [
       { name: "solo-x", status: "deferred" },
       ...Array.from({ length: 9 }, (_, i) => ({ name: `pass-${i}`, status: "pass" })),
     ];
-    const ledger = observeDeferral({}, { gameId: "one-row-game", lane: "solo-chase", gates: ["solo-x"], since: "2026-08-01" }, "2026-08-15");
-    const aging = annotateDeferralAging("one-row-game", rows, ledger["one-row-game"], "2026-08-15")!;
+    const aging = annotateDeferralAging("one-row-game", rows, [], "2026-08-01", "2026-08-15")!;
     expect(aging.staleOrOverdueFraction).toBeCloseTo(0.1, 10);
-    expect(aging.materialityBreached).toBe(false);
-    expect(aging.anyOverdue).toBe(false);
-    expect(aging.forcesFail).toBe(false);
-  });
-
-  it("a missing ledger entry for an active deferral is treated as age 0 (fresh), never as an instant failure — the conservative direction for a caller that has not yet persisted its first observation", () => {
-    const aging = annotateDeferralAging("mine-run", mineRunShapedRows(), undefined, "2026-08-15")!;
     expect(aging.forcesFail).toBe(false);
   });
 });
 
 describe("effectiveOk — the exit-code combinator", () => {
-  it("true when the report was already ok and aging is absent (no deferrals) — untouched behavior", () => {
+  it("true when the report was already ok and aging is absent", () => {
     expect(effectiveOk(true, undefined)).toBe(true);
   });
-
-  it("true when aging exists but has not forced a fail (fresh or non-material stale)", () => {
-    expect(effectiveOk(true, { forcesFail: false } as never)).toBe(true);
-  });
-
-  it("false when aging forces a fail, even though the underlying gate report itself was ok (report.ok=true, no `fail` row) — this is exactly C70's 'OK with exit 0' defect", () => {
+  it("false when aging forces a fail, even though report.ok=true", () => {
     expect(effectiveOk(true, { forcesFail: true } as never)).toBe(false);
   });
-
-  it("stays false when the underlying report already failed, aging or not", () => {
+  it("stays false when the underlying report already failed", () => {
     expect(effectiveOk(false, undefined)).toBe(false);
-    expect(effectiveOk(false, { forcesFail: false } as never)).toBe(false);
   });
 });
 
-describe("ledger I/O — checked-in JSON, atomic write, ENOENT-as-empty (mirrors certify.ts's own convention)", () => {
-  it("readDeferralLedger returns {} for a file that does not exist yet", async () => {
-    const os = await import("node:os");
-    const path = await import("node:path");
-    const dir = path.join(os.tmpdir(), `deferral-ledger-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    const ledger = await readDeferralLedger(path.join(dir, "deferral-ledger.json"));
-    expect(ledger).toEqual({});
+describe("DeferralRun storage — committed, per-day, immutable evidence (mirrors certify.ts's certificate convention exactly)", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "deferral-runs-test-"));
   });
 
-  it("round-trips a ledger written by writeDeferralLedger", async () => {
-    const os = await import("node:os");
-    const path = await import("node:path");
-    const dir = path.join(os.tmpdir(), `deferral-ledger-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    const file = path.join(dir, "nested", "deferral-ledger.json");
-    const ledger = observeDeferral(
-      {},
-      { gameId: "mine-run", lane: "solo-chase", gates: [...MINE_RUN_DEFERRED_GATES], since: "2026-08-07" },
-      "2026-08-15"
-    );
-    await writeDeferralLedger(file, ledger);
-    const roundTripped = await readDeferralLedger(file);
-    expect(roundTripped).toEqual(ledger);
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
   });
 
-  it("writes deterministically (sorted keys) so a re-run with unchanged content produces a byte-identical file — no unnecessary git churn", async () => {
-    const os = await import("node:os");
-    const path = await import("node:path");
-    const dir = path.join(os.tmpdir(), `deferral-ledger-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    const file = path.join(dir, "deferral-ledger.json");
-    let ledger: DeferralLedger = {};
-    ledger = observeDeferral(ledger, { gameId: "zzz-game", lane: "solo-chase", gates: ["a"], since: "2026-08-01" }, "2026-08-15");
-    ledger = observeDeferral(ledger, { gameId: "aaa-game", lane: "two-player", gates: ["b"], since: "2026-08-01" }, "2026-08-15");
-    await writeDeferralLedger(file, ledger);
-    const first = await (await import("node:fs/promises")).readFile(file, "utf8");
-    await writeDeferralLedger(file, ledger);
-    const second = await (await import("node:fs/promises")).readFile(file, "utf8");
-    expect(second).toBe(first);
-    expect(first.indexOf("aaa-game")).toBeLessThan(first.indexOf("zzz-game"));
+  const sampleRun: DeferralRun = {
+    gameId: "mine-run",
+    lane: "solo-chase",
+    day: "2026-08-15",
+    suite: "nightly",
+    measuredGates: [...MINE_RUN_DEFERRED_GATES],
+  };
+
+  it("readDeferralRun returns undefined for a day that was never written (ENOENT)", async () => {
+    expect(await readDeferralRun(dir, "mine-run", "2026-08-15")).toBeUndefined();
+  });
+
+  it("round-trips a written run", async () => {
+    await writeDeferralRun(dir, sampleRun);
+    expect(await readDeferralRun(dir, "mine-run", "2026-08-15")).toEqual(sampleRun);
+  });
+
+  it("readAllDeferralRuns returns every stored day for a game, sorted ascending", async () => {
+    await writeDeferralRun(dir, { ...sampleRun, day: "2026-08-20" });
+    await writeDeferralRun(dir, { ...sampleRun, day: "2026-08-07" });
+    await writeDeferralRun(dir, { ...sampleRun, day: "2026-08-15" });
+    const all = await readAllDeferralRuns(dir, "mine-run");
+    expect(all.map((r) => r.day)).toEqual(["2026-08-07", "2026-08-15", "2026-08-20"]);
+  });
+
+  it("readAllDeferralRuns returns [] for a game with no stored runs at all", async () => {
+    expect(await readAllDeferralRuns(dir, "no-such-game")).toEqual([]);
+  });
+
+  it("throws MalformedDeferralRunError on a corrupted/hand-edited file — fails LOUD, never silently 'fresh' (C81's A3 fix)", async () => {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    const filePath = deferralRunPath(dir, "mine-run", "2026-08-15");
+    await mkdir(path.dirname(filePath), { recursive: true });
+    await writeFile(filePath, JSON.stringify({ gameId: "mine-run", day: "not-a-date" }), "utf8");
+    await expect(readDeferralRun(dir, "mine-run", "2026-08-15")).rejects.toThrow(MalformedDeferralRunError);
+  });
+
+  it("throws MalformedDeferralRunError when the stored `day` disagrees with the filename it's stored under (mirrors CertificateDayMismatchError)", async () => {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    const filePath = deferralRunPath(dir, "mine-run", "2026-08-15");
+    await mkdir(path.dirname(filePath), { recursive: true });
+    await writeFile(filePath, JSON.stringify({ ...sampleRun, day: "2026-08-16" }), "utf8");
+    await expect(readDeferralRun(dir, "mine-run", "2026-08-15")).rejects.toThrow(MalformedDeferralRunError);
+  });
+
+  it("defaultDeferralRunsBaseDir points at data/deferral-runs under the repo root", () => {
+    expect(defaultDeferralRunsBaseDir("/repo")).toBe(path.join("/repo", "data/deferral-runs"));
   });
 });

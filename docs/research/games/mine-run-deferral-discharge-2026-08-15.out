@@ -1,4 +1,3 @@
-$ tsx scripts/ci-gates.ts -- --suite ci --game mine-run
 solo-ci (score-chase) for "mine-run" — STALLED — 8/10 applicable gates (80%) undischarged past 7d — at or past the 50% materiality bar (platform-corrections.md C70)
   [DEFER] strongVsRandomRatio: measured at nightly (Strong-dependent; ~165s/seed at soloChaseCiRollouts=750 on the real 10x10/20-mine board (up to 83min/seed at higher search) — ~4.6h at seedCount=100 in CI — platform-corrections.md C27) — undischarged 8d (STALE; warn>=7d, fatal>=30d)
   [DEFER] distributionOverlap: measured at nightly (Strong-dependent; ~165s/seed at soloChaseCiRollouts=750 on the real 10x10/20-mine board (up to 83min/seed at higher search) — ~4.6h at seedCount=100 in CI — platform-corrections.md C27) — undischarged 8d (STALE; warn>=7d, fatal>=30d)
@@ -21,4 +20,3 @@ solo-ci (score-chase) for "mine-run" — STALLED — 8/10 applicable gates (80%)
   [N/A ] fogDeductionOnly: score-chase format — no daily certificate, no guess-free requirement to check
 
 ci-gates: 1/1 game(s) failed their gate table (ci).
-[ELIFECYCLE] Command failed with exit code 1.

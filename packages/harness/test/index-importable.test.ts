@@ -117,9 +117,9 @@ describe("@twist-arcade/harness's public barrel", () => {
     expect(soloStatus).toBe("pass");
   });
 
-  it("exports the deferral-discharge ledger (deferral-ledger.ts, platform-corrections.md C70)", () => {
-    expect(typeof harness.observeDeferral).toBe("function");
-    expect(typeof harness.recordDischarge).toBe("function");
+  it("exports the deferral-discharge mechanism (deferral-ledger.ts, platform-corrections.md C70/C81)", () => {
+    expect(typeof harness.resolveDischargeAnchor).toBe("function");
+    expect(typeof harness.measuredGateNames).toBe("function");
     expect(typeof harness.deferralAgeDays).toBe("function");
     expect(typeof harness.deferralSeverity).toBe("function");
     expect(typeof harness.annotateDeferralAging).toBe("function");
@@ -127,14 +127,15 @@ describe("@twist-arcade/harness's public barrel", () => {
     expect(typeof harness.effectiveOk).toBe("function");
     expect(typeof harness.gateRowsFromReport).toBe("function");
     expect(typeof harness.laneOfReport).toBe("function");
-    expect(typeof harness.defaultLedgerPath).toBe("function");
-    expect(typeof harness.readDeferralLedger).toBe("function");
-    expect(typeof harness.writeDeferralLedger).toBe("function");
+    expect(typeof harness.defaultDeferralRunsBaseDir).toBe("function");
+    expect(typeof harness.deferralRunPath).toBe("function");
+    expect(typeof harness.readDeferralRun).toBe("function");
+    expect(typeof harness.readAllDeferralRuns).toBe("function");
+    expect(typeof harness.writeDeferralRun).toBe("function");
     expect(typeof harness.InvalidDeferralSinceError).toBe("function");
+    expect(typeof harness.MalformedDeferralRunError).toBe("function");
     expect(harness.DEFERRAL_WARN_DAYS).toBe(7);
     expect(harness.DEFERRAL_FATAL_DAYS).toBe(30);
     expect(harness.DEFERRAL_MATERIAL_FRACTION).toBe(0.5);
-    expect(harness.STRONG_DEPENDENT_CHASE_GATES).toContain("alwaysSafeVsStrong");
-    expect(harness.DEFERRABLE_CI_GATES).toContain("strong-vs-random");
   });
 });

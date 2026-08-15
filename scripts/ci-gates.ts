@@ -33,21 +33,18 @@ import type { Json } from "@twist-arcade/engine";
 import type { Registry } from "@twist-arcade/game-spec";
 import {
   annotateDeferralAgingForReport,
-  defaultLedgerPath,
-  DEFERRABLE_CI_GATES,
+  defaultDeferralRunsBaseDir,
   effectiveOk,
   formatGameCiGateReportWithAging,
   gateRowsFromReport,
   laneOfReport,
-  observeDeferral,
-  readDeferralLedger,
-  recordDischarge,
+  measuredGateNames,
+  readAllDeferralRuns,
   runGameCiGate,
   selectGateKind,
-  STRONG_DEPENDENT_CHASE_GATES,
-  writeDeferralLedger,
+  writeDeferralRun,
   type DeferralAgingReport,
-  type DeferralLedger,
+  type DeferralRun,
   type GameCiGateReport,
   type SafeMoveFn,
 } from "@twist-arcade/harness";
@@ -205,30 +202,25 @@ export async function runAllGates(
 }
 
 // ---------------------------------------------------------------------------------------
-// platform-corrections.md C70 — the deferral-discharge ledger, wired to THIS script because
-// the ledger's own real location (`data/deferral-ledger.json`) and "what day is it" are repo-
-// layout/clock concerns, exactly like `CERT_BASE_DIR`/`todayUtc()` above (this file's own
-// module doc: repo-layout conventions the harness dispatcher deliberately does not know
-// about). `@twist-arcade/harness`'s deferral-ledger.ts owns every actual decision (identity,
-// aging, materiality); this function only feeds it real reports and real manifests and persists
-// the result — same "pure logic vs thin wiring" split cli.ts/this file already follow.
+// platform-corrections.md C70/C81 — the deferral-discharge mechanism, wired to THIS script
+// because the evidence directory's own real location (`data/deferral-runs/`) and "what day is
+// it" are repo-layout/clock concerns, exactly like `CERT_BASE_DIR`/`todayUtc()` above (this
+// file's own module doc: repo-layout conventions the harness dispatcher deliberately does not
+// know about). `@twist-arcade/harness`'s deferral-ledger.ts owns every actual decision
+// (coverage, aging, materiality); this function only feeds it real reports and real manifests.
+//
+// C81's stage-6 review found the FIRST version of this wiring self-defeating: it wrote a
+// discharge date into a single mutable ledger file during suite "nightly", but `nightly.yml`
+// runs in an ephemeral GitHub Actions workspace with no commit-back step, so that write was
+// discarded every night — a kept promise could never discharge. THIS version instead writes
+// one small, dated `DeferralRun` evidence file per still-deferring game, at suite "nightly"
+// only, exactly like a certified daily (certify.ts). Whether that write survives past THIS run
+// is not this script's concern or a correctness requirement — it becomes load-bearing only once
+// a HUMAN commits it, the documented manual path: run `pnpm harness:ci-gates -- --suite
+// nightly [--game <id>]` locally, then `git add data/deferral-runs/... && git commit`, the same
+// two-step operator flow `certifyDay` already requires. `--suite ci` never writes anything at
+// all — it only READS whatever `DeferralRun` files are already committed to compute aging.
 // ---------------------------------------------------------------------------------------
-
-export interface DeferralLedgerIoDeps {
-  readonly ledgerPath: string;
-  readonly today: string;
-  readonly readLedger: (filePath: string) => Promise<DeferralLedger>;
-  readonly writeLedger: (filePath: string, ledger: DeferralLedger) => Promise<void>;
-}
-
-export function defaultDeferralLedgerDeps(): DeferralLedgerIoDeps {
-  return {
-    ledgerPath: defaultLedgerPath(REPO_ROOT),
-    today: todayUtc(),
-    readLedger: readDeferralLedger,
-    writeLedger: writeDeferralLedger,
-  };
-}
 
 export interface GatedGameReport {
   readonly report: GameCiGateReport;
@@ -237,16 +229,19 @@ export interface GatedGameReport {
 }
 
 /**
- * Feeds every game's already-computed `GameCiGateReport` through the deferral-discharge ledger:
- * at suite "ci", a game whose manifest still declares `ciGateBudget.deferGatesToNightly` and
- * whose report actually shows `"deferred"` rows gets `observeDeferral`d (self-registering — no
- * separate step to remember, this module's own doc, property 1); at suite "nightly", a game
- * whose manifest STILL declares a deferral gets `recordDischarge`d using this lane's canonical
- * gate-name list (`DEFERRABLE_CI_GATES` / `STRONG_DEPENDENT_CHASE_GATES`) — nightly's own report
- * never shows `"deferred"` to read the list back off of (it structurally never accepts a
- * partial roster), so the canonical list is what recognizes "this IS the discharging run"
- * (requirement 1). The ledger is written back to disk ONLY if something actually changed — an
- * unaffected run (no deferrals in this registry slice) touches nothing.
+ * Feeds every game's already-computed `GameCiGateReport` through the deferral-discharge
+ * mechanism:
+ *
+ * - At suite "nightly", a game whose manifest STILL declares `ciGateBudget.deferGatesToNightly`
+ *   gets a `DeferralRun` written under `runsBaseDir`, recording exactly which gate names THIS
+ *   run measured for real (`measuredGateNames`, derived from the report's own rows — never a
+ *   hardcoded canonical list, C81's A2 fix). Nightly's own report never shows `"deferred"`
+ *   (structurally enforced upstream), so every non-"n/a" row is, by construction, something
+ *   measured for real tonight.
+ * - At any suite, aging is computed by READING every already-committed `DeferralRun` for that
+ *   game and checking coverage against whatever is currently `"deferred"` in the live report
+ *   (`resolveDischargeAnchor`'s superset check) — never by trusting a suite-tagged write from
+ *   this same invocation to have persisted anywhere.
  *
  * Games with no active deferral pass straight through with `aging: undefined` and
  * `effectiveOk === report.ok` — untouched, by construction (`annotateDeferralAgingForReport`
@@ -256,10 +251,10 @@ export async function applyDeferralLedger(
   reports: readonly GameCiGateReport[],
   registry: Registry,
   suite: "ci" | "nightly",
-  deps: DeferralLedgerIoDeps = defaultDeferralLedgerDeps()
+  runsBaseDir: string = defaultDeferralRunsBaseDir(REPO_ROOT),
+  today: string = todayUtc()
 ): Promise<GatedGameReport[]> {
-  let ledger = await deps.readLedger(deps.ledgerPath);
-  let ledgerChanged = false;
+  const runsByGame = new Map<string, DeferralRun[]>();
 
   for (const report of reports) {
     const lane = laneOfReport(report);
@@ -271,37 +266,26 @@ export async function applyDeferralLedger(
 
     if (suite === "nightly") {
       // Nightly always measures the full roster for real (structurally enforced upstream —
-      // SoloDeferredGateAtNightlyError / TwoPlayerDeferredGateAtNightlyError). If this
-      // manifest still declares a deferral, THIS run is exactly what discharges it.
-      const gates = lane === "two-player" ? [...DEFERRABLE_CI_GATES] : [...STRONG_DEPENDENT_CHASE_GATES];
-      ledger = recordDischarge(
-        ledger,
-        { gameId: report.gameId, lane, gates, ...(deferral.since !== undefined ? { since: deferral.since } : {}) },
-        deps.today
-      );
-      ledgerChanged = true;
-      continue;
+      // SoloDeferredGateAtNightlyError / TwoPlayerDeferredGateAtNightlyError). Record exactly
+      // what THIS run measured — a human commits the resulting file afterward (module doc).
+      const run: DeferralRun = {
+        gameId: report.gameId,
+        lane,
+        day: today,
+        suite: "nightly",
+        measuredGates: measuredGateNames(gateRowsFromReport(report)),
+      };
+      await writeDeferralRun(runsBaseDir, run);
     }
 
-    const deferredNames = gateRowsFromReport(report)
-      .filter((r) => r.status === "deferred")
-      .map((r) => r.name);
-    if (deferredNames.length > 0) {
-      ledger = observeDeferral(
-        ledger,
-        { gameId: report.gameId, lane, gates: deferredNames, ...(deferral.since !== undefined ? { since: deferral.since } : {}) },
-        deps.today
-      );
-      ledgerChanged = true;
-    }
-  }
-
-  if (ledgerChanged) {
-    await deps.writeLedger(deps.ledgerPath, ledger);
+    runsByGame.set(report.gameId, await readAllDeferralRuns(runsBaseDir, report.gameId));
   }
 
   return reports.map((report) => {
-    const aging = annotateDeferralAgingForReport(report, ledger, deps.today);
+    const entry = registry[report.gameId];
+    const deferral = entry?.manifest.ciGateBudget?.deferGatesToNightly;
+    const runs = runsByGame.get(report.gameId) ?? [];
+    const aging = annotateDeferralAgingForReport(report, runs, deferral?.since, today);
     return { report, aging, effectiveOk: effectiveOk(report.ok, aging) };
   });
 }

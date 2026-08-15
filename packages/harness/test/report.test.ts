@@ -16,7 +16,7 @@ import type { CiSuiteReport, GateResult } from "../src/suites";
 import type { MatchupReport } from "../src/runner";
 import type { GameCiGateReport } from "../src/ci-gates";
 import type { GateResult as SoloGateResult } from "../src/solo-gates";
-import { annotateDeferralAging, observeDeferral, type DeferralAgingReport } from "../src/deferral-ledger";
+import { annotateDeferralAging, type DeferralAgingReport } from "../src/deferral-ledger";
 
 function fakeMatchupReport(): MatchupReport {
   return {
@@ -361,12 +361,9 @@ function mineRunShapedSoloGates(): SoloGateResult[] {
 function agingFor(ageDays: number): DeferralAgingReport | undefined {
   const today = "2026-08-15";
   const since = new Date(Date.parse(`${today}T00:00:00Z`) - ageDays * 86_400_000).toISOString().slice(0, 10);
-  const ledger = observeDeferral(
-    {},
-    { gameId: "mine-run-fixture", lane: "solo-chase", gates: [...MINE_RUN_DEFERRED_GATES], since },
-    today
-  );
-  return annotateDeferralAging("mine-run-fixture", mineRunShapedSoloGates(), ledger["mine-run-fixture"], today);
+  // No committed DeferralRun evidence exists — undischarged since `since` (platform-
+  // corrections.md C81: discharge is derived from committed artifacts, never a mutable ledger).
+  return annotateDeferralAging("mine-run-fixture", mineRunShapedSoloGates(), [], since, today);
 }
 
 describe("formatXWithAging — no aging (undefined) is byte-identical to the un-aged formatter", () => {

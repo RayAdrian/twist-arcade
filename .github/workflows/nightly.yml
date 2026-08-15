@@ -38,6 +38,15 @@ jobs:
         # manifest.solo.format — C2), run at NIGHTLY_GAMES/NIGHTLY_SEED_COUNT instead of the
         # PR budget (scripts/ci-gates.ts) — the "ruthless-vs-standard" gate additionally goes
         # from a warn to a hard fail at this tier (roadmap §6).
+        #
+        # platform-corrections.md C70/C81: this step ALSO writes data/deferral-runs/<gameId>/
+        # <today>.json for any game still declaring a C27 deferral — but this workspace is
+        # ephemeral and this job has no commit-back step, so that write never leaves the
+        # runner and is NOT load-bearing for anything (deliberately: C81's stage-6 review
+        # found the prior design load-bearing on exactly this write, which made discharge
+        # unreachable). Discharging a deferral for real requires the documented MANUAL path —
+        # data/deferral-runs/README.md — a human running this same command locally and
+        # committing the resulting file, same as a certified daily.
 
       - name: Certificate re-verification sweep (every stored day, every puzzle game)
         run: pnpm harness:verify-certificates
