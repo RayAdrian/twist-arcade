@@ -51,6 +51,9 @@
     },
     {
       "path": "./packages/shell"
+    },
+    {
+      "path": "./packages/daily"
     }
   ]
 }

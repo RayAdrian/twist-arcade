@@ -608,6 +608,48 @@ describe("GameShell — restart count in the share text is gated to daily/solo c
     expect(writeText.mock.calls[0]?.[0]).not.toMatch(/restart/i);
   });
 
+  it("defaults the shared URL to an absolute, site-origin-qualified path — never a bare '/play/{id}' (C91: plan §4.4's literal artifacts are domain-qualified, e.g. 'twistarcade.game/d/fadeout')", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+
+    const registryEntry = makeRegistryEntry();
+    render(
+      <GameShell
+        gameId={tttManifest.id}
+        registryEntry={registryEntry}
+        manifests={[tttManifest]}
+        mode="solo-bot"
+        botDriver={scriptedBotDriver([{ cell: 3 }, { cell: 5 }, { cell: 3 }, { cell: 5 }])}
+      />
+    );
+    await waitFor(() => expect(screen.getAllByRole("gridcell").length).toBe(9));
+
+    async function clickCell(index: number) {
+      const cell = screen.getAllByRole("gridcell")[index]!;
+      await act(async () => {
+        cell.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+        cell.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 0, clientY: 0 }));
+      });
+    }
+    await clickCell(0);
+    await waitFor(() => expect(screen.getAllByRole("gridcell")[3]?.textContent).toBe("O"));
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    await clickCell(1);
+    await waitFor(() => expect(screen.getAllByRole("gridcell")[5]?.textContent).toBe("O"));
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    await clickCell(2);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /share/i })).toBeInTheDocument(), { timeout: 2000 });
+    await user.click(screen.getByRole("button", { name: /share/i }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    // jsdom's default test origin is "http://localhost:3000" (matching .env.example's own
+    // NEXT_PUBLIC_SITE_URL default) — getSiteUrl() falls back to it here since this suite never
+    // stubs NEXT_PUBLIC_SITE_URL. The point under test is "origin-qualified", not the exact host.
+    expect(writeText.mock.calls[0]?.[0]).toMatch(new RegExp(`https?://[^\\s/]+/play/${tttManifest.id}$`, "m"));
+  });
+
   it("still includes the attempt count (inline on the header, C8) for a daily game (orchestrator addendum §15.3 — comparability is sacred, even in a casual-shaped mode)", async () => {
     // See the identical note in the test above: userEvent.setup() must run BEFORE
     // vi.stubGlobal("navigator", ...) or its own clipboard stub silently wins.
