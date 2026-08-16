@@ -5744,3 +5744,75 @@ vague category. The code half is mine and is being done.
 **And the general rule, which is cheap and which I did not apply for an entire session: audit the
 task, not the task's title.** Every other correction here came from checking a claim against reality;
 this one came from finally checking a label.
+
+## C92 — The search question has an answer, and the component metric pointed the wrong way.
+
+C76 made the head-to-head mandatory for any search claim. It has run on C90's configuration —
+DUCT selection + leaf evaluation + C85's corrected heuristic — against `mctsPolicyLegacy`, the
+byte-identity-verified pre-DUCT policy as it actually ships. n=200 per cell, two seeds, mirrored.
+Raw output: `docs/research/games/c90-duct-leaf-vs-legacy-head-to-head.out`.
+
+| budget | candidate | draws | legacy | seeds |
+|---|---|---|---|---|
+| 1,000 | **235W (58.8%)** | 77D (19.3%) | 88W (22.0%) | 59.0/21.0 and 58.5/23.0 — agree |
+| 10,000 | **347W (86.8%)** | 0D | 53W (13.3%) | 85.0/15.0 and 88.5/11.5 — agree |
+
+**The candidate wins decisively at both budgets, and more decisively at the shipped one.**
+
+### The comparison that matters
+
+C76 measured **DUCT + rollout evaluation** against this same legacy baseline at 10k and it **lost
+22.3% to 75.0%** — 300–89. The same selection rule, paired with leaf evaluation instead, now **wins
+86.8% to 13.3%.**
+
+**The pairing was the whole thing.** DUCT was rejected in C76 as a failed remedy; it was in fact half
+of a working one, and the other half sat refuted since C78 on grounds that expired when C85 fixed the
+heuristic. **The plan's §4 recommended exactly this pairing and nobody ran it for four corrections**,
+because each intervening verdict was read as unconditional when every one of them was
+configuration-specific. C89 caught that; this is what was behind the door.
+
+### And the component metric pointed the wrong way
+
+For this identical configuration, C90 measured oracle agreement collapsing **1.000 → 0.000** across
+the same budget range where the head-to-head win rate **rose 58.8% → 86.8%**.
+
+**Agreement with the exact oracle and performance against a real opponent are anti-correlated here.**
+Every prior instance of the component-versus-system gap was "component improves, system does not"
+(C73→C76, C88). This is the opposite: **the component metric got maximally worse while the system got
+much better.**
+
+The likely reason, stated as hypothesis rather than fact: the oracle's optimal bid is the
+**draw-securing maximin** play. Against a *flawed* opponent, deviating from maximin to exploit its
+weaknesses wins more games than securing a draw. **Oracle agreement measures optimality; a head-to-head
+measures exploitation, and they are not the same quantity.** That would explain both the
+anti-correlation and why 10k — which searches deeper for exploitable structure — wins more while
+agreeing less.
+
+**If that hypothesis is right, then a search that agreed 1.000 with the oracle at every budget would
+be worse at winning games than this one**, which is worth sitting with before anyone reaches for
+oracle agreement as a target again.
+
+### The caveat, which the measuring team raised unprompted and is right about
+
+**Legacy is a known-flawed opponent** — it is the algorithm DUCT was built to replace. "Beats legacy
+decisively" is a materially lower bar than "plays near-optimally," and the anti-correlation above is
+consistent with the candidate having become *better at beating this specific opponent* rather than
+better in general. A stronger claim needs a stronger opponent, and none exists in this project yet.
+
+### Also: the legacy policy was untracked, again
+
+`mctsPolicyLegacy` did not exist in the measuring worktree. It survived only as an **untracked file**
+in a sibling worktree — the exact C67 shape, on the very artifact whose byte-identity verification
+C76's validity rested on. It was copied in and **re-verified in place** (reproducing all three
+pre-fix baselines byte-for-byte) rather than trusted. Committed now.
+
+### Ruling
+
+**#14's original blocker is discharged.** "The search is broken" was true of every configuration
+measured before this one and is not true of DUCT+leaf. The search question that opened at C55 and ran
+through C57, C58, C73–C78, C88–C90 has an answer: **decoupled selection with leaf evaluation and a
+corrected heuristic beats the shipped search at both budgets.**
+
+**That is not yet a decision to ship Bid-Tac-Toe**, and the remaining work is now ordinary rather than
+mysterious: this configuration is unmerged, its gate table has never been run, and beating a flawed
+opponent is not the same as being good. But #14 no longer waits on a defect nobody understands.

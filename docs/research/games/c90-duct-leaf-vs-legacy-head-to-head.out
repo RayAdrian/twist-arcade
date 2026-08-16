@@ -1,0 +1,19 @@
+C76's head-to-head protocol, run against C90's configuration.
+docs/plans/platform-corrections.md C76, C88, C89, C90.
+games=200 per (budget,seed) cell; 2 seeds; mirrorSeats=true (default).
+Candidate = DUCT selection + leaf evaluation (rolloutCapPlies:0), C85-fixed heuristic.
+Legacy = mctsPolicyLegacy default (rolloutCapPlies:200) — max-max, as shipped.
+Report is W/D/L — never a bare win rate (Bid-Tac-Toe draws heavily).
+
+=== bid-tac-toe: Candidate (DUCT+leaf, C90) vs Legacy (mctsPolicyLegacy, pre-DUCT max-max) ===
+budgets=[1000, 10000] seeds=[c90-h2h-seed0, c90-h2h-seed1] games/seed=200
+
+  rollouts=1000 seed="c90-h2h-bid-tac-toe-b1000-c90-h2h-seed0": n=200  Candidate(DUCT+leaf) 118W (59.0%) / 40D (20.0%) / Legacy(max-max) 42W (21.0%)  meanPlies=12.3 capHitRate=0.00%  [24.2s]
+  rollouts=1000 seed="c90-h2h-bid-tac-toe-b1000-c90-h2h-seed1": n=200  Candidate(DUCT+leaf) 117W (58.5%) / 37D (18.5%) / Legacy(max-max) 46W (23.0%)  meanPlies=12.8 capHitRate=0.00%  [25.4s]
+  rollouts=1000 POOLED (2 seeds): n=400  Candidate(DUCT+leaf) 235W (58.8%) / 77D (19.3%) / Legacy(max-max) 88W (22.0%)  meanPlies=12.6 capHitRate=0.00%
+
+  rollouts=10000 seed="c90-h2h-bid-tac-toe-b10000-c90-h2h-seed0": n=200  Candidate(DUCT+leaf) 170W (85.0%) / 0D (0.0%) / Legacy(max-max) 30W (15.0%)  meanPlies=7.9 capHitRate=0.00%  [168.7s]
+  rollouts=10000 seed="c90-h2h-bid-tac-toe-b10000-c90-h2h-seed1": n=200  Candidate(DUCT+leaf) 177W (88.5%) / 0D (0.0%) / Legacy(max-max) 23W (11.5%)  meanPlies=7.6 capHitRate=0.00%  [164.7s]
+  rollouts=10000 POOLED (2 seeds): n=400  Candidate(DUCT+leaf) 347W (86.8%) / 0D (0.0%) / Legacy(max-max) 53W (13.3%)  meanPlies=7.8 capHitRate=0.00%
+
+Report only. No ruling made here — the decision belongs to whoever asked for this experiment.
