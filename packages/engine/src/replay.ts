@@ -20,7 +20,13 @@ export interface ReplayRecord {
   engineVersion: string; // @twist-arcade/engine package version (see §10 freeze policy)
   numPlayers: number; // 1 for solo
   seed: string; // matchSeed; rng for step k = rngFor(seed, k)
-  steps: StepRecord[];
+  // readonly, not StepRecord[]: `replay`/`replayTo` only ever read by index/length, and
+  // `replayTo`/`appendStep` build a NEW record via spread rather than mutating this one
+  // in place (see both below) — the mutable type was never honest about how this is used,
+  // and it is what let a `readonly StepRecord[]` (GameOutcome.moves — metrics.ts) get
+  // rejected here (TS4104) instead of the reverse (C79 addendum; docs/plans/platform-
+  // corrections.md).
+  steps: readonly StepRecord[];
 }
 
 export class IllegalReplayMoveError extends Error {
