@@ -16,11 +16,16 @@
 // of what resolves, which is the exact failure mode C83 diagnosed.
 //
 // C84: the guard's first real run found four undeclared resolutions, all at
-// packages/harness/src/cli.ts:151 -- and the obvious fix (declare them) would create a real
-// cycle for two of the four (crackstep, fadeout both already depend on @twist-arcade/harness).
-// The ruling was to allowlist the four specific (file, line, package) findings, printed and
-// explicit, WITHOUT blanket-skipping templated-import detection -- a new/different resolution
-// must still fail. That's tested below alongside the original C83 acceptance test.
+// packages/harness/src/cli.ts:151 -- and the obvious fix (declare them) would have created a
+// real cycle for two of the four (crackstep, fadeout both already depend on
+// @twist-arcade/harness). The ruling was to allowlist the four specific (file, line, package)
+// findings, printed and explicit, WITHOUT blanket-skipping templated-import detection, while
+// the real fix (inverting the CLI's game resolution to injection) was registered as its own
+// work. That real fix is DONE: packages/harness/src/cli.ts no longer resolves a game package
+// by name at all -- the real wiring moved to scripts/harness-cli.ts, which resolves cleanly
+// against the ALREADY-declared root package.json (scripts/ is checked against it), so the
+// allowlist that used to carry the four cli.ts:151 entries is now empty. Tested below alongside
+// the original C83 acceptance test.
 
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
@@ -75,33 +80,28 @@ describe("scripts/check-declared-deps.mjs", () => {
   );
 
   it(
-    "passes cleanly on the tree as it stands (C84): the four packages/harness/src/cli.ts:151 " +
-      "resolutions are explicit, reviewable ALLOWLIST entries, not a silent pass or a fixed manifest",
+    "passes cleanly on the tree as it stands (C84, fixed): packages/harness no longer resolves a " +
+      "game package by name at all, so the ALLOWLIST that used to carry the four " +
+      "packages/harness/src/cli.ts:151 findings is empty -- a clean pass, not an exemption",
     () => {
       const result = runScript();
       expect(result.status).toBe(0);
       const out = result.stdout + result.stderr;
-      expect(out).toMatch(/packages\/harness\/src\/cli\.ts:151/);
-      for (const pkg of ["crackstep", "fadeout", "nine-grids", "tilt"]) {
-        expect(out).toMatch(new RegExp(`@twist-arcade/${pkg}`));
-      }
-      expect(out).toMatch(/LAYERING VIOLATION, not a missing declaration/);
-      expect(out).toMatch(/C84/);
-      // The cyclic pair is named specifically (crackstep, fadeout), not just asserted in general.
-      expect(out).toMatch(/crackstep and fadeout are the cyclic pair/);
-      expect(out).toMatch(/harness -> crackstep -> harness/);
-      expect(out).toMatch(/harness -> fadeout -> harness/);
-      // The task tracking the real fix (inverting the CLI to injection, matching
-      // scripts/ci-gates.ts's RunAllGatesDeps) is named, not left implicit.
-      expect(out).toMatch(/invert the CLI's game resolution to injection/);
-      expect(out).toMatch(/RunAllGatesDeps/);
+      // No cli.ts:151 templated resolution exists anymore -- packages/harness's dispatch()
+      // takes an injected CliDeps and performs no dynamic import of a game package itself.
+      expect(out).not.toMatch(/packages\/harness\/src\/cli\.ts:151/);
+      expect(out).toMatch(/0 exact \(file, line, resolved package\) finding\(s\)/);
+      expect(out).toMatch(/✓ packages\/harness -- every import resolved against a declared dependency/);
+      // The real wiring now lives in scripts/, resolving against the ALREADY-declared root
+      // package.json (no allowlist needed there either).
+      expect(out).toMatch(/✓ scripts\/ .* -- every import resolved against a declared dependency/);
     },
     30_000
   );
 
   it(
     "does NOT declare packages/harness's dependencies to force this green -- packages/harness/package.json " +
-      "still omits crackstep, fadeout, nine-grids, and tilt (the allowlist is the fix, not the manifest)",
+      "still omits crackstep, fadeout, nine-grids, and tilt (the fix was inversion to injection, not the manifest)",
     () => {
       const pkg = JSON.parse(readFileSync(join(repoRoot, "packages/harness/package.json"), "utf8"));
       const declared = new Set([
@@ -117,8 +117,8 @@ describe("scripts/check-declared-deps.mjs", () => {
   );
 
   it(
-    "the allowlist does NOT blanket-skip templated-import detection: a NEW resolution at a " +
-      "different call site (same resolved package, different file/line) still fails (C84 ruling 3)",
+    "the (now-empty) allowlist mechanism does NOT blanket-skip templated-import detection: a NEW " +
+      "resolution planted directly in packages/harness still fails (C84 ruling 3's posture, still enforced)",
     () => {
       const plantPath = join(repoRoot, "packages/harness/src/__qa_layering_probe__.ts");
       writeFileSync(

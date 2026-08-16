@@ -1,4 +1,5 @@
-// packages/harness/src/cli.ts — `pnpm harness <command> ...` entry point (plan §7.1).
+// packages/harness/src/cli.ts — `pnpm harness <command> ...`'s PURE dispatch logic (plan §7.1;
+// C84). The real process entry point is scripts/harness-cli.ts — see that file's module doc.
 //
 // SCOPE NOTE for `solve`/`run`: `resolveFixture` below only knows about a small built-in map of
 // @twist-arcade/engine's OWN testkit fixtures (currently classic-ttt-fixture) — enough to
@@ -10,27 +11,37 @@
 // `suite`, however, is exactly the command platform-corrections.md C13 named: "harness suite
 // hard-refuses anything outside the built-in testkit fixtures, so it cannot run against a real
 // registered game at all" — a game team's own ship/no-ship check had nowhere to go but a
-// hand-written throwaway script. Fixed here: a gameId that isn't a built-in fixture is now
-// resolved against `games/registry.ts` (dynamic import, mirroring scripts/ci-gates.ts's own
-// `loadRegistry()` — the same repo-layout convention that script's module doc says it owns,
-// since the harness dispatcher deliberately knows nothing about repo layout), and run through
-// `runGameCiGate`/`selectGateKind` — the SAME game-agnostic dispatcher scripts/ci-gates.ts uses
-// for the whole registry, just for one game. Nothing about that dispatcher was wrong; only the
-// two callers (this CLI and scripts/ci-gates.ts before its own C13 fix) were.
+// hand-written throwaway script. Fixed here: a gameId that isn't a built-in fixture is resolved
+// against `games/registry.ts` and run through `runGameCiGate`/`selectGateKind` — the SAME
+// game-agnostic dispatcher scripts/ci-gates.ts uses for the whole registry, just for one game.
+//
+// C84 — THE LAYERING FIX: this file used to ALSO own the real `games/registry.ts` dynamic
+// import and the real `import(`@twist-arcade/${gameId}`)` templated dynamic import, both inside
+// `defaultCliDeps()`, living in packages/harness. That is a platform package reaching into leaf
+// game packages by name — undeclarable in packages/harness/package.json without a real cycle
+// (crackstep and fadeout both already depend on @twist-arcade/harness) — and it resolved at all
+// only because pnpm hoists workspace packages to the root node_modules and the CLI happened to
+// run from the repo root (the identical accident as C83's stale fadeout symlink, one layer in).
+//
+// This module now knows NOTHING about repo layout or game packages: `dispatch()` takes an
+// injected `CliDeps`, exactly like scripts/ci-gates.ts's `runAllGates`/`RunAllGatesDeps`. The
+// real wiring (the actual dynamic imports) lives in scripts/harness-cli.ts, the layer that
+// legitimately owns repo-layout knowledge — matching that script's own `defaultDeps()`/
+// `loadRegistry()` split precisely. `dispatch()`'s own default CliDeps (used only when a caller
+// omits the parameter) is `unwiredCliDeps()` below: an inert stub that throws rather than
+// resolving anything, so packages/harness cannot reach into a game package by name even by
+// accident via a forgotten argument.
 //
 // TESTED BY CALLING THE PURE FUNCTIONS DIRECTLY (see cli.test.ts) — the same boundary-testing
 // pattern packages/bots/src/worker/host.ts uses for the analogous reason: fast, in-process, and
-// it exercises the exact logic `main()` calls without needing a child_process spawn. Real
-// registry/safeMove resolution is injected via `CliDeps` (defaulted to the real dynamic-import
-// wiring in `defaultCliDeps()`) — the same "pure logic vs thin main()" DI seam
-// scripts/ci-gates.ts's `runAllGates`/`RunAllGatesDeps` already established — so a test never
-// needs a real games/registry.ts entry or a real npm-linked game package.
+// it exercises the exact logic scripts/harness-cli.ts's `main()` calls without needing a
+// child_process spawn or a real npm-linked game package.
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GameEngine, Json } from "@twist-arcade/engine";
 import { classicTicTacToe } from "@twist-arcade/engine/testkit/fixtures/classic-ttt";
-import type { Registry, RegistryEntry } from "@twist-arcade/game-spec";
+import type { RegistryEntry } from "@twist-arcade/game-spec";
 import { solveTwoPlayerGame } from "./solver/solve";
 import { runMatchup } from "./runner";
 import { resolveNamedAgent } from "./roster";
@@ -127,8 +138,10 @@ const REPO_ROOT = fileURLToPath(REPO_ROOT_URL);
 
 /** Injected dependencies for the `suite` command's real-game resolution — mirrors
  *  scripts/ci-gates.ts's `RunAllGatesDeps` DI seam so this stays testable without a real
- *  games/registry.ts entry or a real npm-linked game package. `defaultCliDeps()` is the only
- *  place either of these touches the filesystem/a real dynamic import. */
+ *  games/registry.ts entry or a real npm-linked game package. The REAL wiring for both methods
+ *  (an actual `games/registry.ts` dynamic import, an actual
+ *  `import(`@twist-arcade/${gameId}`)`) lives in scripts/harness-cli.ts, never here (C84) — see
+ *  this file's own module doc for why packages/harness cannot own that resolution itself. */
 export interface CliDeps {
   resolveRegisteredGame(gameId: string): Promise<RegistryEntry | undefined>;
   /** Mirrors scripts/ci-gates.ts's `resolveSafeMove`: a solo score-chase game's `safeMove` hook
@@ -139,18 +152,27 @@ export interface CliDeps {
   resolveSafeMove(gameId: string): Promise<SafeMoveFn<Json, any> | undefined>;
 }
 
-function defaultCliDeps(): CliDeps {
+/** `dispatch()`'s own default `CliDeps` (used only when a caller omits the parameter entirely).
+ *  Deliberately inert — it names no package and performs no dynamic import of any kind, so
+ *  packages/harness cannot reach into a leaf game package (or `games/registry.ts`) by name even
+ *  by accident via a forgotten argument (C84). Every existing `solve`/`run` call site, and every
+ *  `suite` call against a KNOWN built-in fixture, never reaches this — `dispatch()` resolves (or
+ *  refuses) those synchronously before ever consulting `deps`. The real wiring lives in
+ *  scripts/harness-cli.ts, injected explicitly at the real process entry point. */
+function unwiredCliDeps(): CliDeps {
+  const reject = (gameId: string): Promise<never> =>
+    Promise.reject(
+      new Error(
+        `harness cli: dispatch() was called without CliDeps for gameId "${gameId}" — ` +
+          "packages/harness never resolves games/registry.ts or a leaf game package by name " +
+          "itself (C84, docs/plans/platform-corrections.md). The real process entry point " +
+          "(scripts/harness-cli.ts) injects the real CliDeps; tests must inject an explicit " +
+          "CliDeps too."
+      )
+    );
   return {
-    async resolveRegisteredGame(gameId) {
-      const registryUrl = new URL("games/registry.ts", REPO_ROOT_URL).href;
-      const mod = (await import(registryUrl)) as { registry: Registry };
-      return mod.registry[gameId];
-    },
-    async resolveSafeMove(gameId) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const mod = (await import(`@twist-arcade/${gameId}`)) as { safeMove?: SafeMoveFn<Json, any> };
-      return mod.safeMove;
-    },
+    resolveRegisteredGame: (gameId) => reject(gameId),
+    resolveSafeMove: (gameId) => reject(gameId),
   };
 }
 
@@ -227,7 +249,7 @@ async function dispatchSuite(gameId: string, flags: Record<string, string>, asJs
  *  is a dynamic import); `solve`/`run` against a built-in fixture, and `suite` against a KNOWN
  *  built-in fixture id (refused synchronously below), both stay fully synchronous — so every
  *  existing caller of those is unaffected. */
-export function dispatch(argv: readonly string[], deps: CliDeps = defaultCliDeps()): DispatchResult | Promise<DispatchResult> {
+export function dispatch(argv: readonly string[], deps: CliDeps = unwiredCliDeps()): DispatchResult | Promise<DispatchResult> {
   const parsed = parseArgs(argv);
   const asJson = parsed.flags.json !== undefined;
 
@@ -272,30 +294,6 @@ export function dispatch(argv: readonly string[], deps: CliDeps = defaultCliDeps
   return { exitCode: 0, output: asJson ? toMatchupReportJson(report) : formatMatchupTable(report) };
 }
 
-function main(): void {
-  const result = dispatch(process.argv.slice(2));
-  const finish = ({ exitCode, output }: DispatchResult): void => {
-    console.log(output);
-    process.exitCode = exitCode;
-  };
-  const fail = (err: unknown): void => {
-    const error = err instanceof Error ? err : new Error(String(err));
-    console.error(error.message);
-    process.exitCode = 1;
-  };
-  if (result instanceof Promise) {
-    result.then(finish).catch(fail);
-    return;
-  }
-  try {
-    finish(result);
-  } catch (err) {
-    fail(err);
-  }
-}
-
-// Only run when this file is the actual process entry point (`tsx src/cli.ts ...`), never when
-// a test imports it to exercise `parseArgs`/`dispatch` directly.
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main();
-}
+// No `main()` / self-invoking block here (C84) — this module is no longer a process entry
+// point. scripts/harness-cli.ts owns `main()`, the real `CliDeps` wiring, and the
+// `import.meta.url === process.argv[1]` guard; see its module doc.
