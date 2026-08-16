@@ -5677,3 +5677,70 @@ rather than an answer to the old one.
 **#14 stays undecided**, and now for a better-stated reason than before: not "the search is broken"
 but **"the search's correctness depends on budget in a way no one can currently explain."** Deciding a
 game's fate on a search with that property would be deciding on noise.
+
+## C91 — "User-owned setup" was hiding unbuilt work behind configured-looking env vars.
+
+Task #7 has sat pending all session labelled *"User-owned setup: domain, Vercel, Supabase, Umami"* —
+and I have repeated that framing a dozen times as the thing only the user can do. Auditing it found
+that framing is **wrong in a way that matters**.
+
+`.env.example` declares four variables:
+
+```
+NEXT_PUBLIC_SITE_URL
+NEXT_PUBLIC_UMAMI_WEBSITE_ID
+NEXT_PUBLIC_UMAMI_SCRIPT_URL
+NEXT_PUBLIC_ADSENSE_CLIENT_ID
+```
+
+**Not one is read by any code.** Verified across `app/` and every `packages/*/src` — zero consumers.
+
+`daily-and-share.md` §Q1 specifies *"Umami Cloud free tier, behind a provider-agnostic wrapper."* The
+wrapper exists at `packages/daily/src/metrics.ts`. **The app never calls it.** The only `metrics` hit
+in `app/` is an unrelated comment about font metrics.
+
+### Why this is the session's own defect, one more time
+
+A user who did **everything** on their side — bought the domain, created the Vercel project, opened
+the Umami account, pasted the website ID into their environment — would deploy and get **no
+analytics**, with nothing anywhere reporting a problem. The environment file describes a capability
+that does not exist, and describes it well enough to be convincing.
+
+That is C64 (a probe nothing called), C83 (a dependency nothing declared), and C69/C72 (a compiler
+manifest excluding real source), arriving in the deployment layer: **a declaration that looks like
+wiring and is not.** The tell is identical every time — *something documented as configured, with no
+consumer anywhere.*
+
+**And it hid inside a task label.** Calling #7 "user-owned" made it invisible: I read the title,
+concluded it was blocked on someone else, and repeated that conclusion all session without once
+checking whether the code half existed. **A task's name is a claim about who is blocked, and it is
+exactly as untested as any other claim.**
+
+### The honest split
+
+**Genuinely the user's** — no code can substitute:
+- Purchase the domain.
+- Create the Vercel project and connect the repo.
+- Create the Umami Cloud account and obtain a website ID.
+- **Resolve GitHub Actions billing** — C68: nightly has never run once in eight attempts, and no code
+  change fixes it.
+- Decide whether the remote Supabase project stays deny-all (C21 ruled zero policies the end state).
+
+**Mine, and previously invisible:**
+- Wire the metrics wrapper into the app behind `NEXT_PUBLIC_UMAMI_*`, so setting those variables
+  actually does something — and so that leaving them unset is a **deliberate no-op**, not an
+  accident.
+- Either consume `NEXT_PUBLIC_SITE_URL` or delete it; a declared variable with no reader is the
+  defect this correction is about.
+- `NEXT_PUBLIC_ADSENSE_CLIENT_ID` is **month-2 scope** by the user's own decision (ads at month two,
+  end screen only). It should be marked as not-yet-wired **in the file itself**, not left looking
+  ready.
+
+### Ruling
+
+**#7 is split.** The user-owned half stays with the user and is now a precise list rather than a
+vague category. The code half is mine and is being done.
+
+**And the general rule, which is cheap and which I did not apply for an entire session: audit the
+task, not the task's title.** Every other correction here came from checking a claim against reality;
+this one came from finally checking a label.
