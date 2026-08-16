@@ -5946,3 +5946,100 @@ Two expensive jobs now compete for one machine, and running both halves both. Th
 A shipped game failing its gates outranks an unshipped game's ship/kill evidence, so mine-run
 gets the machine first. Recording this because "both are running" was quietly making both
 slower, and an unstated priority is how the C62 thrash happened: load 107, 40 bytes of output.
+
+---
+
+## C95 — The named option is unreachable, C92's cross-budget claim is confounded, and my hypothesis has a hole.
+
+The sweep plan commissioned by C94 came back with three findings against the brief I wrote.
+All three verified independently before being recorded here.
+
+### 1. `leafEvaluation` cannot be reached by anything that runs a gate
+
+C92 identified DUCT + leaf evaluation as the winning configuration. C94's fix gave leaf
+evaluation a name (`MctsOptions.leafEvaluation`), a test proving equivalence with the old
+magic spelling, a byte-identity check, and documentation. What it did not do is make the
+option reachable:
+
+```ts
+export type PolicySpec =
+  | { kind: "mcts"; explorationC?: number }        // packages/game-spec/src/manifest.ts:20
+```
+```ts
+    case "mcts":
+      return mctsPolicy<S, M>(spec.explorationC !== undefined ? { explorationC: spec.explorationC } : {});
+```
+
+A manifest declares its bots as `PolicySpec`s. `PolicySpec`'s mcts arm has no
+`leafEvaluation` field, and `buildPolicy` forwards only `explorationC`. Every gate, every
+suite, and `compareBudgets` itself construct their agents through this path. **The sweep I
+was about to commission would have measured DUCT + rollout evaluation** — the configuration
+C90's own control shows is still broken (agreement 0.000) — and reported it as the fixed one.
+
+My commit message for the naming change said "Default `false`, so no shipped game changes."
+That is true and it is half the sentence. The other half is that no game *can* change, because
+the schema has no arm to say it in. I verified the default-off claim and never asked the
+adjacent question.
+
+This is C64/C79/C83/C84/C91's shape, and I have now written the correction for it five times:
+a thing exists, is tested, is documented, and the path that actually executes cannot see it.
+What is new is *where* I was standing. In every prior instance I found the gap by auditing
+someone else's layer. Here I built the named option myself, verified it against the strongest
+evidence I had (byte-identical gate dumps), and the verification passed **because** the option
+was unreachable — an unreachable flag changes nothing, so a byte-identity check is exactly
+the test it cannot fail. The evidence that satisfied me was evidence of the defect.
+
+Ruling: recorded as P1 in `bid-tac-toe-budget-sweep.md` §2, blocking, with the verification
+specified as a planted check (a fixed-seed run through the tier path must reproduce a
+script-level `mctsPolicy({leafEvaluation: true})` run byte-for-byte) rather than a code
+reading. A `PolicySpec` schema change is orchestrator-routed; it is not the game's to make.
+
+### 2. C92's cross-budget comparison is seed-confounded — a correction to what I reported
+
+C24 forbids the swept variable from entering the seed. C92's head-to-head instrument embeds
+it:
+
+```
+seed="c90-h2h-bid-tac-toe-b1000-c90-h2h-seed0"
+seed="c90-h2h-bid-tac-toe-b10000-c90-h2h-seed0"
+```
+
+So the 1,000 and 10,000 cells played **different game sets**. What survives: the within-budget
+results, where two independent seeds agree closely (1k: 59.0%/58.5%; 10k: 85.0%/88.5%). What
+does not: the cross-budget trend "58.8% → 86.8%, more decisive at 10k", which I reported to
+the user as a finding. A 28pp gap is unlikely to be pure seed artifact, but C24 exists because
+"unlikely" is not a measurement. The confirmation head-to-head in the new plan removes the
+budget from the seed string.
+
+### 3. Perfect root agreement coexists with a 22% loss rate — my hypothesis has a hole
+
+C92 recorded a hypothesis, explicitly as a hypothesis: the oracle's optimal bid is the
+draw-securing maximin play, so at low budget the search plays maximin (agreement 1.000) and at
+high budget it deviates to exploit a flawed opponent (agreement 0.000, win rate up).
+
+At 1,000 rollouts, where root oracle agreement is **1.000 for both seats**, the candidate
+still **lost 88 of 400 games (22.0%)** to legacy. Bid-Tac-Toe at `STARTING_BUDGET=8` is a
+proven exact draw. A player actually playing the maximin line loses zero games, ever. So the
+"maximin pole" of my hypothesis is not maximin — it is something that agrees with the oracle
+on move one and then loses a fifth of its games over the following ~8 auctions.
+
+Root agreement is a **ply-1 component metric**, and I let it stand in for full-game
+optimality. That is the component-vs-system gap this document has now recorded at least four
+times, and C92 itself claimed to be the first instance pointing the *other* way. It was not
+pointing either way; it was measuring one decision out of nine.
+
+The correct reading of the anti-correlation is weaker and less interesting than the story I
+told: agreement at ply 1 rises and falls with budget, full-game strength does something else,
+and neither endpoint has been shown to play the game well. The sweep is therefore designed to
+select on `solved-value-reached` — full-game self-play attainment of the proven draw — with
+head-to-head *losses* as a disqualifier and head-to-head *wins* never counted. Selecting on
+either pole of my hypothesis would have encoded the hypothesis into the instrument.
+
+### Why this one was catchable and I did not catch it
+
+C94 recorded "the gate table needs a budget the manifest never set" and I treated that as the
+whole blocker. The planner found three more by reading the code the plan would have to run
+through, rather than the code the fix had touched. My brief asked for a plan and got an audit,
+because it also asked to be told where the brief was wrong — the same instruction that
+produced the analytics worktree-registration catch. That instruction is now the highest-yield
+line in any brief I write.
