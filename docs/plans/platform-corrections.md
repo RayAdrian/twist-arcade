@@ -5364,3 +5364,69 @@ more often is not yet a search that wins more games**, and C73→C76 is four cor
 that gap between a component improving and a system improving.
 
 Bid-Tac-Toe remains undecided.
+
+## C86 — The parity amendment survives its own refutation test, and one of its claims was wrong.
+
+§1.1's amendment named a condition that would kill it: **if healthy, symmetric Tilt scores ≥40%
+parity, the recovered 0.40/0.50 bands do not transfer and the amendment goes back.** That experiment
+ran before a line of it was implemented — C78's discipline, where a candidate remedy died in 6.6
+seconds because the cheap test came first. Raw output:
+`docs/research/games/mirror-parity-refutation-2026-08-16.out`. Mirror-vs-ruthless only, n=100, two
+seeds, ci-effective budgets, ~9.4 minutes total.
+
+| game | seed | win | draw | **parity** | fallback |
+|---|---|---|---|---|---|
+| tilt | a / b | 0.0% / 0.0% | 0.0% / 0.0% | **0.0% / 0.0%** | 0.0% / 0.0% |
+| fadeout | a / b | 0.0% / 0.0% | 0.0% / 0.0% | **0.0% / 0.0%** | 29.3% / 26.6% |
+| nine-grids | a / b | 0.0% / 0.0% | 0.0% / 0.0% | **0.0% / 0.0%** | 88.7% / 90.0% |
+
+### Tilt: NOT REFUTED
+
+0.0% parity on both seeds, nowhere near the 40% bar, both seeds agreeing exactly. **The recovered
+bands survive the transfer to a parity metric** on the one game carrying a hard falsifiability
+condition. Consistent with the amendment's own reasoning: fixed-CW Tilt is not reflection-invariant,
+so mirroring never forces the draw that would inflate parity.
+
+### Fadeout: the amendment's own prediction was wrong, exactly where it said it might be
+
+§1.1 stated plainly that *"parity without relief false-fires on Fadeout"* was a **prediction, never
+measured** — and flagged that if Fadeout's mirror mostly loses rather than draws, "mandatory" honestly
+downgrades to "cheap insurance."
+
+**It loses.** 0.0% draws across 200 games. Despite the shipped ruleset's exact value being a proven
+draw under correct play, mirror never gets near the drawing line against ruthless. **Relief remains
+correct and is now cheap insurance rather than a necessity.**
+
+That is the amendment's honesty paying off directly: it marked its weakest claim as unmeasured, the
+measurement refuted it, and nothing downstream was built on the false half.
+
+### Nine Grids: the fallback rate cross-validates from a third direction
+
+88.7% / 90.0%, against C81's game-internal 85.7% and #26's harness-counted 91.5% — **three
+independently-derived measurements agreeing.** At ~90% fallback this row's parity measures
+first-legal-vs-ruthless play, not mirroring. The number is real and it is **not informative about
+mirroring**, which is precisely why #26 made the fallback rate visible in the first place.
+
+### The finding nobody predicted: the metric change is currently a no-op
+
+**All six cells are 0.0% win, 0.0% draw, 0.0% parity.** Every shipped game's mirror loses every
+single game. So under either metric — win rate or parity — every current row scores 0 and passes.
+
+**The amendment fixes a real blind spot that no current game exercises.** That is worth stating
+plainly rather than letting the change look like a correction to a live defect: it is *protective*,
+not *corrective*. A future symmetric game whose mirror forces draws would have passed silently under
+win rate; it will now fail. Nothing on the shelf today changes.
+
+This also means the metric change **cannot** be validated by watching a number move — there is no
+number to move. Its planted evaluator tests (a `(win 0, draw 1.0)` input scoring 0.5 and firing) are
+the only evidence it works, which raises rather than lowers their importance.
+
+### Ruling
+
+**Implement the amendment.** Its refutation condition did not fire, its bands transfer, and its one
+false claim was caught by its own honesty and costs nothing — relief stays, reclassified as
+insurance. The implementation is judged by planted evaluator tests, not by a moving gate number.
+
+**S5 is now unblocked on this front** (#26 and #27 are merged), but S5 must record mirror's win rate,
+draw rate **and** parity per cell, plus the fallback rate, plus the pinned metric version — because a
+baseline of six identical zeroes tells a future reader nothing about which metric produced it.
