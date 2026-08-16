@@ -1,0 +1,21 @@
+Solving createExactOracle(8)...
+  solved in 5.9s
+
+=== ROOT (B=8, star held by seat 1) ===
+seat 0: top induced-value bid(s) = {3}, optimalBids = {3}, agree = true, spread = 0.999909
+seat 1: top induced-value bid(s) = {2*, 3, 3*, 4}, optimalBids = {2*, 3, 3*}, agree = true, spread = 0.999909
+
+Sampling reachable bid-phase states (target 4000, cap 20000 trajectories)...
+  746 trajectories -> 4003 distinct bid-phase states
+
+Sample depth distribution (marks-on-board : count): 0:1, 1:173, 2:614, 3:713, 4:714, 5:661, 6:546, 7:388, 8:193
+
+=== SAMPLED STATES (excludes root, reported separately above) ===
+seat 0: n=4003, disagreements=634 (15.84%), spread min=0.000000 median=0.999909 mean=0.993417 max=1.999998
+seat 1: n=4003, disagreements=520 (12.99%), spread min=0.000000 median=0.999909 mean=0.993592 max=1.999998
+
+=== R1 VERDICT ===
+root disagreement (either seat): false
+sample disagreement > 20% (either seat): false
+R1 FIRES: false
+EXIT=0

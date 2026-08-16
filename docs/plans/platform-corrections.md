@@ -5307,3 +5307,60 @@ And each guard found the next one's territory only after being pointed at it. Th
 could not see package manifests; the dependency guard cannot see layering direction — it inferred it
 here only because a human read the cycle. **The guard after this one is whatever notices that a
 platform package imports a leaf package by name.**
+
+## C85 — The heuristic is fixed, and the diagnosis was a proof rather than a guess.
+
+C78 measured Bid-Tac-Toe's `heuristic()` disagreeing with the exact oracle on 35.97% / 37.97% of
+sampled reachable auction states, with both seats ranking bid **0** top where the oracle says **3**.
+The function priced chips and treated the board as a rounding error.
+
+**Fixed and independently verified** (I re-ran the unmodified fitness function against the edited
+file myself; output at `docs/research/games/bid-tac-toe-heuristic-postfix-verified.out`):
+
+| | before | after |
+|---|---|---|
+| seat 0 root | top `{0}` vs optimal `{3}` — **disagree** | top **`{3}`** vs `{3}` — **agree** |
+| seat 1 root | top `{0}` vs `{2*, 3, 3*}` — **disagree** | top `{2*, 3, 3*, 4}` — **agree** |
+| seat 0 sampled | **35.97%** | **15.84%** |
+| seat 1 sampled | **37.97%** | **12.99%** |
+| R1 | **FIRES** | **does not fire** |
+
+### The diagnosis is the durable part
+
+Before revising anything, the team established two facts about the fitness matrix itself:
+
+**The old line term was provably inert for ranking bids.** The matrix evaluates the leaf
+*immediately after bid resolution, before the winner's placement ply*, so `board` is identical across
+every cell for a given state. Adding a constant to every cell cannot change an argmax. The positional
+term therefore contributed **nothing** to bid selection — not "too little," nothing.
+
+**And rescaling the chip term alone could never have fixed it.** Bid-0's worst case carries zero chip
+cost; any positive bid's worst case is "you win and pay your own bid" — an unopposed cost that grows
+with the bid. No positive weight on a linear chip term makes bid 3 beat bid 0 under maximin.
+
+**So the fix had to be structural, and the diagnosis proved it before a single weight was tried.**
+That is the difference between this and tuning: the team could state in advance which changes were
+incapable of working.
+
+### The fix, and why its constant is derived rather than fitted
+
+A third, **price-independent** term: a fixed bonus/penalty for having just won or lost the most recent
+auction — pricing the *placement right* that the line term structurally cannot see at that leaf.
+Chip weight halved, per C78's order-of-magnitude finding.
+
+`AUCTION_OUTCOME_BONUS = 3.5` sets the model's implied breakeven price at **3.5 — the midpoint of the
+solve report's documented draw price (3) and first losing price (4)** at B=8. That is one constant
+read off the game's published structure, **not a value fitted against the 4,003-state sample.** A
+function that memorises those samples would be worthless on the other ~1.37 million, and the
+distinction is the whole reason this is not C55-banned tuning.
+
+### What this is not
+
+**It is not a game verdict.** Oracle agreement was the only scoreboard; no gate table, no b3 sweep,
+no head-to-head was run, and this must never be judged against the gate table. The remaining
+disagreement — 15.84% / 12.99% — is real and unexplained, and the head-to-head against
+`mctsPolicyLegacy` (C76's mandatory bar) has not been run. **A heuristic that agrees with an oracle
+more often is not yet a search that wins more games**, and C73→C76 is four corrections about exactly
+that gap between a component improving and a system improving.
+
+Bid-Tac-Toe remains undecided.
