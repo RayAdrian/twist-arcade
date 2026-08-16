@@ -25,6 +25,7 @@ import {
   runProbeSuite,
   type ProbeGateInputs,
 } from "../src/probes-two-player";
+import { agentParityScore, agentWinRate } from "../src/metrics";
 
 // classic-ttt's own point-reflection mirror: cell -> 8 - cell (identical shape to Fadeout's real
 // mirrorMove on the same 3x3 board — games/fadeout/probes.ts). A local test fixture, not a
@@ -40,7 +41,7 @@ function tttMirrorMove(_state: TTTState, lastOppMove: TTTMove | null, legalMoves
 // from a clone of this and perturbs exactly one field, so a test failure always isolates to the
 // one threshold it claims to be testing (mirrors suites.test.ts's own HEALTHY convention).
 const HEALTHY: ProbeGateInputs = {
-  mirror: { kind: "available", winRate: 0.1, drawRate: 0.1, mirrorFallbackRate: 0 },
+  mirror: { kind: "available", winRate: 0.1, drawRate: 0.1, parityScore: 0.15, mirrorFallbackRate: 0 },
   stallCapHitRate: 0,
   stallWinRate: 0.05,
   rushScore: 0.2,
@@ -89,7 +90,7 @@ describe("evaluateProbeGates() — mirror-probe exclusivity (plan §4.3)", () =>
     for (const mirror of [
       { kind: "suppressed" as const },
       { kind: "unavailable" as const, reason: "x" },
-      { kind: "available" as const, winRate: 0.1, drawRate: 0.1, mirrorFallbackRate: 0 },
+      { kind: "available" as const, winRate: 0.1, drawRate: 0.1, parityScore: 0.15, mirrorFallbackRate: 0 },
     ]) {
       const gates = evaluateProbeGates({ ...HEALTHY, mirror }, DEFAULT_HARNESS_THRESHOLDS, [], "ci");
       const rows = gates.filter((g) => g.gate === "mirror-probe");
@@ -99,36 +100,102 @@ describe("evaluateProbeGates() — mirror-probe exclusivity (plan §4.3)", () =>
 });
 
 describe("evaluateProbeGates() — planted violations, one gate at a time", () => {
-  it("mirror-probe: win rate < 40% passes", () => {
+  it("mirror-probe: parity score < 40% passes", () => {
     expect(statusOf(HEALTHY, "mirror-probe")).toBe("pass"); // control
-    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.39, drawRate: 0.1, mirrorFallbackRate: 0 } }, "mirror-probe")).toBe("pass");
+    expect(
+      statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.1, drawRate: 0.58, parityScore: 0.39, mirrorFallbackRate: 0 } }, "mirror-probe")
+    ).toBe("pass");
   });
 
-  it("mirror-probe: win rate in [40%, 50%) warns", () => {
-    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.4, drawRate: 0.1, mirrorFallbackRate: 0 } }, "mirror-probe")).toBe("warn"); // boundary inclusive
-    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.49, drawRate: 0.1, mirrorFallbackRate: 0 } }, "mirror-probe")).toBe("warn");
-  });
-
-  it("mirror-probe: win rate >= 50% fails at nightly, but WARNS at ci (severity split, plan §1.4)", () => {
-    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.5, drawRate: 0.1, mirrorFallbackRate: 0 } }, "mirror-probe", "nightly")).toBe("fail");
-    expect(statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.5, drawRate: 0.1, mirrorFallbackRate: 0 } }, "mirror-probe", "ci")).toBe("warn");
-  });
-
-  // STAGE-6 FINDING (recorded, not fixed in-branch — see MirrorProbeInput's own doc): the
-  // canonical mirror pathology (game-theory-lens §5.4: "P2 copying P1's move through the center
-  // can force a draw") is invisible to wins/games. Pinned here as an executable, honest
-  // "known gap" — a mirror that draws EVERY game still reports a clean PASS, and the draw rate
-  // is recorded in the detail (not gated on).
-  it("KNOWN GAP: a mirror that draws 100% of its games (the exact pathology game-theory-lens §5.4 names) still PASSES — wins/games cannot see it; the draw rate is recorded in the detail only", () => {
+  // §1.1 AMENDED 2026-08-16 (C81/C86): planted test #4 from the amendment's own verification
+  // list — boundary at exactly 0.40, no relief active, must WARN (band inclusivity, §3.4).
+  it("mirror-probe: PLANTED — parity score of EXACTLY 0.40 (boundary, no relief) warns", () => {
     const gates = evaluateProbeGates(
-      { ...HEALTHY, mirror: { kind: "available", winRate: 0, drawRate: 1.0, mirrorFallbackRate: 0 } },
+      { ...HEALTHY, mirror: { kind: "available", winRate: 0, drawRate: 0.8, parityScore: 0.4, mirrorFallbackRate: 0 } },
       DEFAULT_HARNESS_THRESHOLDS,
       [],
       "ci"
     );
     const mirror = gates.find((g) => g.gate === "mirror-probe")!;
-    expect(mirror.status).toBe("pass"); // the gap: this SHOULD be actionable and isn't, today
-    expect(mirror.detail).toContain("100.0%"); // the draw rate is at least visible in the report
+    expect(mirror.status).toBe("warn");
+    expect(mirror.detail).toContain("gated on parity score");
+  });
+
+  it("mirror-probe: parity score in (40%, 50%) warns", () => {
+    expect(
+      statusOf({ ...HEALTHY, mirror: { kind: "available", winRate: 0.1, drawRate: 0.78, parityScore: 0.49, mirrorFallbackRate: 0 } }, "mirror-probe")
+    ).toBe("warn");
+  });
+
+  it("mirror-probe: parity score >= 50% fails at nightly, but WARNS at ci (severity split, plan §1.4)", () => {
+    const input = { ...HEALTHY, mirror: { kind: "available" as const, winRate: 0, drawRate: 1.0, parityScore: 0.5, mirrorFallbackRate: 0 } };
+    expect(statusOf(input, "mirror-probe", "nightly")).toBe("fail");
+    expect(statusOf(input, "mirror-probe", "ci")).toBe("warn");
+  });
+
+  // §1.1 AMENDED 2026-08-16 (closing C81, confirmed by C86's refutation experiment): the four
+  // planted evaluator tests the amendment names as its own verification mechanism — the metric
+  // change is a no-op on every shipped game today (C86: all six mirror-vs-ruthless cells measure
+  // 0.0% win, 0.0% draw, 0.0% parity), so these planted tests, not a moving gate number, are the
+  // evidence the fix works.
+
+  // Planted test #1: (winRate 0, drawRate 1.0) -> parity 0.5 -> FIRES (fail at nightly, warn at
+  // ci) — the exact game-theory-lens §5.4 pathology the old wins/games binding could not see
+  // (C81: a mirror that draws 100% of its games used to score a clean 0% PASS).
+  it("PLANTED #1 (C81/C86, was RED before the fix): a mirror that draws 100% of its games now FIRES via the draw-inclusive parity score — fails at nightly, warns at ci", () => {
+    const drawEveryGame = { ...HEALTHY, mirror: { kind: "available" as const, winRate: 0, drawRate: 1.0, parityScore: 0.5, mirrorFallbackRate: 0 } };
+    const nightly = evaluateProbeGates(drawEveryGame, DEFAULT_HARNESS_THRESHOLDS, [], "nightly");
+    const ci = evaluateProbeGates(drawEveryGame, DEFAULT_HARNESS_THRESHOLDS, [], "ci");
+    expect(nightly.find((g) => g.gate === "mirror-probe")!.status).toBe("fail");
+    expect(ci.find((g) => g.gate === "mirror-probe")!.status).toBe("warn");
+    // The report still shows win rate, draw rate AND parity, whichever branch gated, and why.
+    const detail = ci.find((g) => g.gate === "mirror-probe")!.detail;
+    expect(detail).toContain("0.0% win rate");
+    expect(detail).toContain("100.0% draw rate");
+    expect(detail).toContain("50.0% parity score");
+    expect(detail).toContain("gated on parity score");
+  });
+
+  // Planted test #2: the SAME input, but with proven-draw relief active -> PASSES. "Relief
+  // relieves draws" — a mirror that draws a proven-draw game is health, not degeneracy.
+  it("PLANTED #2 (C81/C86): the SAME 100%-draw input, WITH proven-draw relief active, PASSES", () => {
+    const drawEveryGame = { ...HEALTHY, mirror: { kind: "available" as const, winRate: 0, drawRate: 1.0, parityScore: 0.5, mirrorFallbackRate: 0 } };
+    const gates = evaluateProbeGates(drawEveryGame, DEFAULT_HARNESS_THRESHOLDS, [], "nightly", undefined, {
+      reached: true,
+      proof: "probes-two-player.test.ts: fixture proof — a proven, reached draw",
+    });
+    const mirror = gates.find((g) => g.gate === "mirror-probe")!;
+    expect(mirror.status).toBe("pass");
+    expect(mirror.detail).toContain("gated on win rate");
+  });
+
+  // Planted test #3: relief is active AND the mirror actually WINS -> still FAILS. The win
+  // signal survives relief — a mirror that draws a proven-draw game is health, but one that WINS
+  // means the strong bot is exploitable by copying, which is still degeneracy.
+  it("PLANTED #3 (C81/C86): winRate 0.55 WITH relief reached still FAILS — the win signal survives relief", () => {
+    const winsAnyway = { ...HEALTHY, mirror: { kind: "available" as const, winRate: 0.55, drawRate: 0, parityScore: 0.55, mirrorFallbackRate: 0 } };
+    const gates = evaluateProbeGates(winsAnyway, DEFAULT_HARNESS_THRESHOLDS, [], "nightly", undefined, {
+      reached: true,
+      proof: "probes-two-player.test.ts: fixture proof — a proven, reached draw",
+    });
+    const mirror = gates.find((g) => g.gate === "mirror-probe")!;
+    expect(mirror.status).toBe("fail");
+    expect(mirror.detail).toContain("gated on win rate");
+    expect(mirror.detail).toContain("exploitable");
+  });
+
+  it("mirror-probe: relief omitted (the default) grants no relief — a would-be-relieved input still gates on parity", () => {
+    const drawEveryGame = { ...HEALTHY, mirror: { kind: "available" as const, winRate: 0, drawRate: 1.0, parityScore: 0.5, mirrorFallbackRate: 0 } };
+    expect(statusOf(drawEveryGame, "mirror-probe", "nightly")).toBe("fail");
+  });
+
+  it("mirror-probe: relief present but NOT reached grants no relief — still gates on parity", () => {
+    const drawEveryGame = { ...HEALTHY, mirror: { kind: "available" as const, winRate: 0, drawRate: 1.0, parityScore: 0.5, mirrorFallbackRate: 0 } };
+    const gates = evaluateProbeGates(drawEveryGame, DEFAULT_HARNESS_THRESHOLDS, [], "nightly", undefined, {
+      reached: false,
+      proof: "not actually reached",
+    });
+    expect(gates.find((g) => g.gate === "mirror-probe")!.status).toBe("fail");
   });
 
   // platform-corrections.md C81 / task #26: the Nine Grids finding — a mirror row that scores
@@ -139,20 +206,20 @@ describe("evaluateProbeGates() — planted violations, one gate at a time", () =
   // `drawRate` above: this is disclosure, not a new pass/fail condition).
   it("mirror-probe detail discloses mirror content vs. fallback rate (recorded only, never gated on)", () => {
     const mostlyFallback = evaluateProbeGates(
-      { ...HEALTHY, mirror: { kind: "available", winRate: 0.05, drawRate: 0.1, mirrorFallbackRate: 0.857 } },
+      { ...HEALTHY, mirror: { kind: "available", winRate: 0.05, drawRate: 0.1, parityScore: 0.1, mirrorFallbackRate: 0.857 } },
       DEFAULT_HARNESS_THRESHOLDS,
       [],
       "ci"
     );
     const mirror = mostlyFallback.find((g) => g.gate === "mirror-probe")!;
-    // Still governed entirely by winRate (5% < 40% warn threshold) — mirrorFallbackRate never
-    // changes the verdict, only the detail text.
+    // Still governed entirely by parityScore (10% < 40% warn threshold) — mirrorFallbackRate
+    // never changes the verdict, only the detail text.
     expect(mirror.status).toBe("pass");
     expect(mirror.detail).toContain("mirror content 14.3%");
     expect(mirror.detail).toContain("85.7% of this agent's own moves were the harness's null-target fallback");
 
     const allMirroring = evaluateProbeGates(
-      { ...HEALTHY, mirror: { kind: "available", winRate: 0.05, drawRate: 0.1, mirrorFallbackRate: 0 } },
+      { ...HEALTHY, mirror: { kind: "available", winRate: 0.05, drawRate: 0.1, parityScore: 0.1, mirrorFallbackRate: 0 } },
       DEFAULT_HARNESS_THRESHOLDS,
       [],
       "ci"
@@ -444,6 +511,47 @@ describe("runProbeSuite() — real self-play wiring", () => {
     // the wiring is REAL: a genuinely measured, non-NaN win rate feeding a real gate decision.
     expect(report.matchups!.stall!.metrics.games).toBe(30);
     expect(["pass", "warn", "fail"]).toContain(stall.status);
+  });
+
+  // §1.1 AMENDED 2026-08-16 (closing C81, confirmed by C86): S3's real-wiring posture — a
+  // sabotaged threshold trips off a REAL matchup through the parity path, proving the evaluator
+  // is fed `agentParityScore` (metrics.ts), not a stale win rate. Uses a weak ("random" policy)
+  // ruthless opponent so the real mirror-vs-ruthless matchup produces genuine draws on TTT — the
+  // daylight between win rate and parity that a decisive-only matchup would not exercise. Rather
+  // than hand-coding an expected numeric reading (this is real, seeded self-play, not a
+  // hand-built input), the test measures the REAL outcomes with the SAME public functions
+  // production code uses (`agentWinRate`/`agentParityScore`), asserts there genuinely IS daylight
+  // (parity > win rate, i.e. real draws occurred — the precondition for this test to prove
+  // anything), then sabotages `mirrorProbeScoreWarn` to sit strictly BETWEEN the two real
+  // readings and re-runs with the identical seed (so the matchup outcome is unchanged). If the
+  // evaluator were still fed win rate (the pre-amendment binding), this would PASS; fed parity,
+  // it must WARN.
+  it("PLANTED — a sabotaged mirrorProbeScoreWarn between the REAL win rate and REAL parity score trips mirror-probe through the parity path (C81/C86 real-wiring proof)", () => {
+    const weakManifest = baseManifest({
+      difficultyTiers: [{ id: "ruthless", policy: { kind: "random" }, budget: { kind: "rollouts", n: 1 }, minReplyMs: 0 }],
+    });
+    const seed = "probes-two-player:mirror-parity-real-wiring";
+    const games = 60;
+
+    const measured = runProbeSuite(classicTicTacToe, weakManifest, { seed, games, mirrorMove: tttMirrorMove });
+    const mirrorMatchup = measured.matchups!.mirror!;
+    const realWinRate = agentWinRate(mirrorMatchup.outcomes, "mirror");
+    const realParityScore = agentParityScore(mirrorMatchup.outcomes, "mirror");
+
+    // Precondition: real draws occurred against this weak opponent — otherwise sabotaging a
+    // threshold strictly between win rate and parity proves nothing (the two would be equal).
+    expect(realParityScore).toBeGreaterThan(realWinRate);
+
+    const sabotagedThreshold = (realWinRate + realParityScore) / 2;
+    const sabotagedManifest = baseManifest({
+      difficultyTiers: weakManifest.difficultyTiers,
+      thresholds: { mirrorProbeScoreWarn: sabotagedThreshold, mirrorProbeScoreFail: 1.1 }, // fail unreachable
+    });
+
+    const sabotagedReport = runProbeSuite(classicTicTacToe, sabotagedManifest, { seed, games, mirrorMove: tttMirrorMove });
+    const mirror = sabotagedReport.gates.find((g) => g.gate === "mirror-probe")!;
+    expect(mirror.status).toBe("warn");
+    expect(mirror.detail).toContain("gated on parity score");
   });
 
   it("C27 deferral: no self-play at all when manifest.ciGateBudget.deferGatesToNightly is active at suite 'ci'", () => {
