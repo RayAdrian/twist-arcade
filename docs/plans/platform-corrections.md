@@ -5430,3 +5430,51 @@ insurance. The implementation is judged by planted evaluator tests, not by a mov
 **S5 is now unblocked on this front** (#26 and #27 are merged), but S5 must record mirror's win rate,
 draw rate **and** parity per cell, plus the fallback rate, plus the pinned metric version — because a
 baseline of six identical zeroes tells a future reader nothing about which metric produced it.
+
+## C87 — The heuristic fix is inert until candidate A is revived, and C78's refutation was conditional.
+
+Two facts from tonight, which nobody has put together:
+
+1. **C73/V3 established the heuristic is never invoked in the shipped configuration.** Rollouts reach
+   real terminals at ~7.7 plies against a 200-ply cap, so `valueOfStatus`'s "ongoing" branch — the
+   only place `tanh(heuristic)` is evaluated — never fires. **`heuristic()` is dead code during
+   normal play.**
+2. **C85 fixed that dead code.** Oracle disagreement fell 35.97%/37.97% → 15.84%/12.99%, with both
+   seats now agreeing at the root.
+
+**So C85 changes nothing about how Bid-Tac-Toe actually plays.** A better evaluation function that is
+never evaluated is worth exactly zero at the table. That is not a criticism of the fix — it is the
+precondition the fix was always for.
+
+### What it unlocks
+
+C78 refuted **candidate A** — heuristic leaf evaluation, expressible today as `rolloutCapPlies: 0` —
+on a single, explicitly conditional ground: *"the gradient exists but points off the optimal set."*
+R1 fired at 35.97%/37.97% against a 20% ceiling.
+
+**That condition no longer holds.** At 15.84%/12.99% R1 does not fire. C78's own ruling named the
+sequence: refute A, fix the heuristic, and A becomes viable again — *"the plan's third listed option
+is now the indicated one."* The third option has now been executed, so **candidate A must be
+re-tested rather than left refuted by a verdict whose premise expired.**
+
+This is a case worth naming: **a refutation is only as durable as the condition it rested on.** C78's
+finding was correct and is still correct about the state it measured. Treating it as permanent would
+be reading a conditional result as an unconditional one — the same error as reading a single-seed
+gate verdict as settled (C71).
+
+### Pre-registered predictions, written before the re-test runs
+
+Under `rolloutCapPlies: 0` with the corrected heuristic, versus C73's post-DUCT baseline:
+
+1. **`P(chosen ∈ optimal)` rises materially above 0.000 at 10k.** The leaf now carries a gradient that
+   points at the optimal set rather than away from it; if agreement stays at zero, the leaf value is
+   not reaching selection at all and the mechanism claim is wrong.
+2. **Mean chosen bid moves toward 3**, from post-DUCT's 7.28/7.14 drift. The heuristic's implied
+   breakeven is 3.5 by construction, so a search reading it should centre near there.
+3. **Root value stays near 0** on the proven-draw position. If honest value estimation regresses,
+   leaf evaluation has traded one defect for another.
+
+**And the standing bar, unchanged: none of this is a game verdict until the head-to-head runs**
+(C76). A component agreeing with an oracle more often is not a system winning more games — C73→C76
+are four corrections about precisely that gap, and the only thing that closed the DUCT question was
+300–89 head-to-head, not any component metric.
