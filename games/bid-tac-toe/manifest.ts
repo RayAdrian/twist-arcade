@@ -38,24 +38,29 @@ export const manifest: GameManifest = {
   // simultaneous engines by design (packages/bots/src/minimax.ts), and flat-mc's per-player
   // apply is meaningless for a simultaneous ply. STARTING values only, unchanged from the
   // plan's own table: "B3 tunes until tier ordering holds at *shipped* budgets."
+  //
+  // leafEvaluation: true (platform-corrections.md C92/C95, bid-tac-toe-budget-sweep.md §2 P1):
+  // DUCT + leaf evaluation is the winning search configuration this branch exists to measure —
+  // C95 found the flag was previously unreachable from any manifest (PolicySpec's mcts arm had
+  // no field for it), so setting it here is this game's half of P1's fix.
   difficultyTiers: [
     {
       id: "casual",
-      policy: { kind: "mcts" },
+      policy: { kind: "mcts", leafEvaluation: true },
       budget: { kind: "rollouts", n: 300 },
       minReplyMs: 250,
       blunder: { epsilon: 0.3, temperature: 1.5 },
     },
     {
       id: "standard",
-      policy: { kind: "mcts" },
+      policy: { kind: "mcts", leafEvaluation: true },
       budget: { kind: "rollouts", n: 1500 },
       minReplyMs: 250,
       blunder: { epsilon: 0.08, temperature: 1.0 },
     },
     {
       id: "ruthless",
-      policy: { kind: "mcts" },
+      policy: { kind: "mcts", leafEvaluation: true },
       budget: { kind: "rollouts", n: 10000 },
       minReplyMs: 250,
     },

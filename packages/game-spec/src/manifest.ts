@@ -17,7 +17,11 @@ export type SearchBudget =
 export type PolicySpec =
   | { kind: "random" }
   | { kind: "minimax"; maxDepth?: number } // requires engine.heuristic
-  | { kind: "mcts"; explorationC?: number }
+  // leafEvaluation forwards to MctsOptions.leafEvaluation (packages/bots/src/mcts.ts): skip the
+  // post-tree rollout and score the newly-expanded leaf directly. Omitted (the default) is
+  // byte-identical to today — platform-corrections.md C95: this was previously a named,
+  // tested MctsOptions field with NO PolicySpec arm to carry it, so no manifest could reach it.
+  | { kind: "mcts"; explorationC?: number; leafEvaluation?: boolean }
   | { kind: "beam"; width?: number } // solo Strong (also the hint/ghost feature)
   | { kind: "flat-mc"; rolloutsPerAction?: number }
   | { kind: "mix"; components: { weight: number; policy: PolicySpec }[] };
