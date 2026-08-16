@@ -5,17 +5,14 @@
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
-  "bin": {
-    "harness": "./src/cli.ts"
-  },
   "exports": {
     ".": "./src/index.ts",
-    "./solver": "./src/solver/generic-solo.ts"
+    "./solver": "./src/solver/generic-solo.ts",
+    "./cli": "./src/cli.ts"
   },
   "scripts": {
     "typecheck": "tsc -b --pretty false",
-    "test": "vitest run",
-    "harness": "tsx src/cli.ts"
+    "test": "vitest run"
   },
   "dependencies": {
     "@twist-arcade/bots": "workspace:*",

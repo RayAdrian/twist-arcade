@@ -112,23 +112,27 @@
 // against this repo's actual code today, but it is printed as a boundary, not assumed silently.
 //
 // -----------------------------------------------------------------------------------------
-// C84: THE FIRST REAL RUN FOUND A LAYERING VIOLATION, NOT A MISSING DECLARATION.
+// C84: THE FIRST REAL RUN FOUND A LAYERING VIOLATION, NOT A MISSING DECLARATION -- NOW FIXED.
 //
-// packages/harness/src/cli.ts:151 has the identical templated-dynamic shape
-// (`import(\`@twist-arcade/${gameId}\`)`), and packages/harness/package.json declares none of
+// packages/harness/src/cli.ts:151 USED TO have the identical templated-dynamic shape
+// (`import(\`@twist-arcade/${gameId}\`)`), and packages/harness/package.json declared none of
 // crackstep/fadeout/nine-grids/tilt. The obvious fix -- declare them -- was tried and
 // rejected: crackstep and fadeout both already depend on @twist-arcade/harness, so declaring
-// the reverse edge would be a real cycle (harness -> crackstep -> harness). The missing
+// the reverse edge would have been a real cycle (harness -> crackstep -> harness). The missing
 // declaration was load-bearing: it was the only thing keeping the cycle from being real. The
-// actual defect is a platform package (packages/harness) reaching into leaf game packages by
-// name at all -- scripts/ci-gates.ts already solves this correctly via INJECTED
+// actual defect was a platform package (packages/harness) reaching into leaf game packages by
+// name at all -- scripts/ci-gates.ts already solved this correctly via INJECTED
 // resolveSafeMove/resolveMirrorMove (RunAllGatesDeps); the CLI never got the same treatment,
-// and resolves today only because pnpm hoists workspace packages to the root node_modules and
-// the CLI happens to run from the repo root -- the identical accident as C83's fadeout
-// symlink, one layer in. Inverting the CLI's game resolution to injection is the real fix; it
-// is registered as its own work in C84, not folded into this branch. See the ALLOWLIST section
-// below for the four specific, reviewable exemptions this required -- an exact (file, line,
-// resolved package) allowlist, never a blanket skip of templated-import detection.
+// and resolved only because pnpm hoists workspace packages to the root node_modules and the
+// CLI happened to run from the repo root -- the identical accident as C83's fadeout symlink,
+// one layer in.
+//
+// FIXED by inverting the CLI's game resolution to injection, matching scripts/ci-gates.ts:
+// packages/harness/src/cli.ts's `dispatch()` now takes an injected `CliDeps` and performs NO
+// dynamic import of a game package or games/registry.ts itself; the real wiring moved to
+// scripts/harness-cli.ts (the real `pnpm harness` process entry point), which is checked
+// against the ROOT package.json -- already declaring every registered game. The four findings
+// this guard used to allowlist no longer occur at all; ALLOWLIST (below) is empty.
 //
 // Run via `pnpm check:deps`. Wired into .github/workflows/ci.yml for when CI resumes (C68:
 // CI has not run in 12 days as of this writing, nightly never) -- do not assume CI runs this;
@@ -430,90 +434,31 @@ const EXPANSION_RESOLVERS = {
 
 // ---------------------------------------------------------------------------------------
 // Explicit, reviewable allowlist for KNOWN templated-resolution findings that are LAYERING
-// VIOLATIONS, not missing declarations (C84).
+// VIOLATIONS, not missing declarations (C84) -- the mechanism, not a specific exemption.
 //
 // This guard's first real run found four undeclared resolutions, all at
-// packages/harness/src/cli.ts:151 (`import(\`@twist-arcade/${gameId}\`)`, resolveSafeMove).
-// The obvious fix -- declare crackstep/fadeout/nine-grids/tilt as dependencies of
-// packages/harness -- was tried and rejected: crackstep and fadeout BOTH already depend on
-// @twist-arcade/harness, so declaring the reverse edge creates a real cycle
-// (harness -> crackstep -> harness, harness -> fadeout -> harness). The missing declaration
-// was not an oversight; it was the only thing keeping the cycle from being real.
+// packages/harness/src/cli.ts:151 (`import(\`@twist-arcade/${gameId}\`)`, resolveSafeMove) --
+// a platform package (packages/harness) reaching into leaf game packages by name, which could
+// not be fixed by declaring the dependency: crackstep and fadeout both already depend on
+// @twist-arcade/harness, so the reverse edge would be a real cycle
+// (harness -> crackstep -> harness). C84's ruling was to allowlist those four findings
+// (below, until fixed) rather than exempt-and-forget, and to register the real fix as its own
+// work: invert the CLI's game resolution to injection, matching scripts/ci-gates.ts's own
+// injected `RunAllGatesDeps`.
 //
-// The actual defect is that packages/harness/src/cli.ts resolves a leaf game package BY NAME
-// at all -- a platform package reaching into packages that depend on it, the exact inversion
-// the registry pattern exists to prevent. scripts/ci-gates.ts already solves this correctly
-// (`resolveSafeMove`/`resolveMirrorMove` are INJECTED via `RunAllGatesDeps`, never imported by
-// name); the CLI never got the same treatment and resolves today only because pnpm hoists
-// workspace packages to the root node_modules and the CLI happens to run from the repo root --
-// the identical accident as C83's fadeout symlink, one layer in. Inverting the CLI's game
-// resolution to injection is the real fix; it is bigger than this branch and is registered as
-// its own work (C84, docs/plans/platform-corrections.md).
-//
-// Every entry below is an EXACT (file, line, resolved package name) tuple, per C84 ruling 3:
-// this must never blanket-skip templated-import detection, since that detection is the most
-// valuable thing this guard does and is what caught this in the first place. A NEW undeclared
-// templated resolution -- a different file, a different line, or a different package name at
-// this same line -- still fails. See the "does not blanket-skip" test in
-// scripts/test/check-declared-deps.test.ts for the proof.
+// C84 IS NOW FIXED: packages/harness/src/cli.ts no longer contains ANY dynamic import of a
+// game package or games/registry.ts -- `dispatch()` takes an injected `CliDeps` (see that
+// file's own module doc), and the real wiring (the actual
+// `import(\`@twist-arcade/${gameId}\`)`) moved to scripts/harness-cli.ts, the real process
+// entry point. scripts/ is checked against the ROOT package.json, which already declares every
+// registered game as a devDependency -- so that templated import now resolves against a REAL
+// declared dependency with no allowlist needed. ALLOWLIST is therefore empty; it stays
+// declared (rather than deleted outright) as the reviewable escape hatch C84 established for
+// the next genuine layering violation this guard finds, per ruling 3: an exemption here is an
+// EXACT (file, line, resolved package name) tuple, never a blanket skip of templated-import
+// detection -- see the "does not blanket-skip" test in scripts/test/check-declared-deps.test.ts.
 // ---------------------------------------------------------------------------------------
-const CLI_LAYERING_VIOLATION_REASON_PREFIX =
-  "LAYERING VIOLATION, not a missing declaration (C84, docs/plans/platform-corrections.md). " +
-  "packages/harness/src/cli.ts's `suite` command resolves a game's safeMove via " +
-  "`import(\\`@twist-arcade/${gameId}\\`)` -- a platform package (packages/harness) reaching " +
-  "into a leaf game package by name, the exact inversion the registry pattern (and " +
-  "scripts/ci-gates.ts's injected RunAllGatesDeps) exists to prevent. The real fix is to " +
-  "invert the CLI's game resolution to injection, matching scripts/ci-gates.ts -- registered " +
-  "as its own work in C84, not folded into this branch. It resolves TODAY only because pnpm " +
-  "hoists workspace packages to the root node_modules and the CLI happens to run from the " +
-  "repo root -- the identical accident as C83's fadeout symlink, one layer in.";
-
-const ALLOWLIST = [
-  {
-    file: "packages/harness/src/cli.ts",
-    line: 151,
-    pkgName: "@twist-arcade/crackstep",
-    reason:
-      `${CLI_LAYERING_VIOLATION_REASON_PREFIX} Declaring THIS one would create a REAL CYCLE: ` +
-      "games/crackstep/package.json already depends on @twist-arcade/harness, so declaring " +
-      "@twist-arcade/crackstep back in packages/harness/package.json would be " +
-      "harness -> crackstep -> harness. crackstep and fadeout are the cyclic pair (C84).",
-  },
-  {
-    file: "packages/harness/src/cli.ts",
-    line: 151,
-    pkgName: "@twist-arcade/fadeout",
-    reason:
-      `${CLI_LAYERING_VIOLATION_REASON_PREFIX} Declaring THIS one would create a REAL CYCLE: ` +
-      "games/fadeout/package.json already depends on @twist-arcade/harness, so declaring " +
-      "@twist-arcade/fadeout back in packages/harness/package.json would be " +
-      "harness -> fadeout -> harness. crackstep and fadeout are the cyclic pair (C84).",
-  },
-  {
-    file: "packages/harness/src/cli.ts",
-    line: 151,
-    pkgName: "@twist-arcade/nine-grids",
-    reason:
-      `${CLI_LAYERING_VIOLATION_REASON_PREFIX} games/nine-grids does not itself depend on ` +
-      "@twist-arcade/harness today, so declaring this one specifically would not form a " +
-      "literal cycle -- but it is the SAME layering violation as its crackstep/fadeout " +
-      "siblings, and C84 ruling 2 allowlists all four resolutions at this call site together " +
-      "rather than patching the two currently-cyclic ones and leaving this one's shape " +
-      "undocumented.",
-  },
-  {
-    file: "packages/harness/src/cli.ts",
-    line: 151,
-    pkgName: "@twist-arcade/tilt",
-    reason:
-      `${CLI_LAYERING_VIOLATION_REASON_PREFIX} games/tilt does not itself depend on ` +
-      "@twist-arcade/harness today, so declaring this one specifically would not form a " +
-      "literal cycle -- but it is the SAME layering violation as its crackstep/fadeout " +
-      "siblings, and C84 ruling 2 allowlists all four resolutions at this call site together " +
-      "rather than patching the two currently-cyclic ones and leaving this one's shape " +
-      "undocumented.",
-  },
-];
+const ALLOWLIST = [];
 
 function allowlistKey(file, line, pkgName) {
   return `${file}:${line}:${pkgName}`;

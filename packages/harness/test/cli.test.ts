@@ -268,3 +268,19 @@ describe("dispatch() — suite resolves a REAL registered game (platform-correct
     ).toThrow(CliUsageError);
   });
 });
+
+// platform-corrections.md C84: packages/harness must never reach into a leaf game package (or
+// games/registry.ts) BY NAME itself -- that resolution is real repo-layout wiring that belongs
+// to scripts/harness-cli.ts (mirroring scripts/ci-gates.ts's own defaultDeps()/loadRegistry()
+// split), injected here exactly like every other CliDeps test above. dispatch()'s own default
+// (used only when a caller omits CliDeps entirely) must therefore be an inert stub that throws
+// a clear, typed error rather than performing a real `import("@twist-arcade/" + gameId)` or a
+// real `import("games/registry.ts")" -- proving packages/harness never does that resolution on
+// its own, even by accident via an unwired default parameter.
+describe("dispatch() — suite with NO CliDeps injected at all (C84: packages/harness must never resolve a game package by name itself)", () => {
+  it("rejects with a clear error naming CliDeps, rather than reaching into a real game package or games/registry.ts", async () => {
+    const result = dispatch(["suite", "some-real-registered-game"]);
+    expect(result).toBeInstanceOf(Promise);
+    await expect(result).rejects.toThrow(/CliDeps/);
+  });
+});
