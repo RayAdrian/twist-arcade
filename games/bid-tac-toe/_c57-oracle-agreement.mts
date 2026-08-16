@@ -58,21 +58,30 @@
 //
 // SEEDING RULE (C22/C24, non-negotiable — `_b3-sweep.mts`'s own precedent, "ONE fixed seed
 // across every candidate so every budget played identical games"): the seed string is built
-// from the seat and the seed INDEX only. The budget never enters it — a per-budget seed would
-// confound the very curve E-A measures.
+// from the seat and the seed INDEX only. Neither the budget nor `rolloutCapPlies` ever enters
+// it — a per-budget or per-mode seed would confound the very curve E-A measures.
+//
+// `rolloutCapPlies` IS A CLI PARAMETER (`--rolloutCapPlies=N`, default 200 — mcts.ts's own
+// default), per docs/plans/rollout-evaluation.md §4/C89: this worktree composes DUCT
+// selection with leaf evaluation (`rolloutCapPlies: 0`), and both the clone's own rollout
+// (`rolloutToHorizonLocal`) and the real `mctsPolicy` it is checked against (in
+// `assertCloneAgrees`) must run under the IDENTICAL mode or the self-check would compare two
+// different algorithms and could still spuriously agree on some seeds. It is a MODE, not a
+// tuned value — plan §4's "no tuning" rule governs `explorationC`/budgets/thresholds, not this
+// switch between evaluation regimes.
 
 import type { Json, PlayerId, Rng, Status } from "@twist-arcade/engine";
 import { rngFromSeed, stableStringify } from "@twist-arcade/engine";
 import { mctsPolicy } from "@twist-arcade/bots";
 import { bidTacToe, STARTING_BUDGET, type BidTacToeMove, type BidTacToeState, type Seat } from "./engine";
 import { bidMoveKey, createExactOracle } from "./solver/backward-induction";
+import { heuristic } from "./heuristic";
 
 const NULL_CLOCK = { now: (() => { let t = 0; return () => (t += 1); })() };
 
 // Pinned to mcts.ts's own defaults (packages/bots/src/mcts.ts's MctsOptions defaults) — NEVER
 // tuned here (plan §4: "No tuning of explorationC, any budget, or any gate threshold").
 const EXPLORATION_C = 1.4;
-const ROLLOUT_CAP_PLIES = 200;
 
 function rootState(): BidTacToeState {
   return {
@@ -189,23 +198,32 @@ function edgeOwnerAtLocal(state: BidTacToeState, rootPlayer: PlayerId): PlayerId
   return active.mode === "sequential" ? active.player : rootPlayer;
 }
 
-/** Mirrors search-utils.ts's `valueOfStatus` for exactly the cases bid-tac-toe ever produces
- *  (won/draw — never lost/scored, and V3's own finding is that every rollout reaches a real
- *  terminal well under the 200-ply cap, so the "ongoing"/horizon-estimate branch is never
- *  exercised in this regime). Throws rather than guessing if that assumption is ever violated —
- *  see the module doc: an unvalidated code path here must not silently produce a number. */
-function valueOfStatusLocal(status: Status, player: PlayerId): number {
+/** Mirrors search-utils.ts's `valueOfStatus`, restricted to the cases bid-tac-toe can ever
+ *  produce (won/draw/ongoing — never lost/scored, since bid-tac-toe has no `score()`).
+ *  At `rolloutCapPlies: 200` (C73/C88's control), V3's own finding is that every rollout
+ *  reaches a real terminal well under the cap, so "ongoing" was never exercised there. Under
+ *  leaf evaluation (`rolloutCapPlies: 0`, C89's fourth cell) "ongoing" is the COMMON case — the
+ *  rollout takes zero plies, so the freshly-expanded leaf is almost never itself terminal — and
+ *  must be handled exactly as search-utils.ts's own "ongoing" branch does: bid-tac-toe
+ *  implements `heuristic()` but not `score()`, so the un-squashed estimate is squashed via
+ *  `Math.tanh` (order-preserving, bounded strictly inside (-1, 1) — search-utils.ts's own
+ *  comment on why: an un-squashed heuristic could let a horizon-capped estimate outrank an
+ *  actual averaged win). Any OTHER status kind still throws — see the module doc: an
+ *  unvalidated code path here must not silently produce a number. */
+function valueOfStatusLocal(status: Status, state: BidTacToeState, player: PlayerId): number {
   switch (status.kind) {
     case "won":
       return status.winner === player ? 1 : -1;
     case "draw":
       return 0;
+    case "ongoing":
+      return Math.tanh(heuristic(state, player));
     default:
       throw new Error(
         `valueOfStatusLocal: unexpected status.kind="${status.kind}" — bid-tac-toe is assumed ` +
-          "(V3) to always reach a real won/draw terminal well under the rollout cap; this " +
-          "clone's handling of any other case is unvalidated against the real search-utils.ts " +
-          "and must not be trusted."
+          "to only ever reach won/draw terminals or hit the rollout horizon while ongoing; " +
+          "this clone's handling of any other case is unvalidated against the real " +
+          "search-utils.ts and must not be trusted."
       );
   }
 }
@@ -241,7 +259,13 @@ interface InstrumentedResult {
   jointRootVisits: { own: BidTacToeMove; opp: BidTacToeMove; visits: number }[];
 }
 
-function runInstrumentedMcts(state: BidTacToeState, player: PlayerId, rollouts: number, rng: Rng): InstrumentedResult {
+function runInstrumentedMcts(
+  state: BidTacToeState,
+  player: PlayerId,
+  rollouts: number,
+  rng: Rng,
+  rolloutCapPlies: number
+): InstrumentedResult {
   const rootStatus = bidTacToe.status(state);
   if (rootStatus.kind !== "ongoing") throw new Error("runInstrumentedMcts: chooseMove called on a terminal state");
   const root = makeCloneNode(state);
@@ -296,11 +320,11 @@ function runInstrumentedMcts(state: BidTacToeState, player: PlayerId, rollouts: 
       node = selected.child;
     }
 
-    const { status: leafStatus } = rolloutToHorizonLocal(node.state, rng, ROLLOUT_CAP_PLIES);
+    const { status: leafStatus, state: leafState } = rolloutToHorizonLocal(node.state, rng, rolloutCapPlies);
 
     for (let i = path.length - 1; i >= 0; i--) {
       const owner = i === 0 ? player : owners[i - 1]!;
-      const value = valueOfStatusLocal(leafStatus, owner);
+      const value = valueOfStatusLocal(leafStatus, leafState, owner);
       path[i]!.visits += 1;
       path[i]!.totalValue += value;
     }
@@ -320,7 +344,7 @@ function runInstrumentedMcts(state: BidTacToeState, player: PlayerId, rollouts: 
           from.seatMoveStats.set(p, table);
         }
         const seatKey = stableStringify(ownMove as unknown as Json);
-        const seatValue = valueOfStatusLocal(leafStatus, p);
+        const seatValue = valueOfStatusLocal(leafStatus, leafState, p);
         const existing = table.get(seatKey);
         if (existing) {
           existing.visits += 1;
@@ -388,9 +412,10 @@ function assertCloneAgrees(
   seedLabel: string,
   player: PlayerId,
   rollouts: number,
-  clone: InstrumentedResult
+  clone: InstrumentedResult,
+  rolloutCapPlies: number
 ): void {
-  const real = mctsPolicy().chooseMove({
+  const real = mctsPolicy({ explorationC: EXPLORATION_C, rolloutCapPlies }).chooseMove({
     engine: bidTacToe,
     state: rootState(),
     player,
@@ -462,10 +487,19 @@ function argmaxAmountCombined(byAmount: Map<number, number>): number {
 // small values now; the full sweep later reuses this same script unedited).
 // ---------------------------------------------------------------------------------------
 
-function parseArgs(argv: readonly string[]): { budgets: number[]; seedCount: number; seats: Seat[]; verbose: boolean } {
+function parseArgs(argv: readonly string[]): {
+  budgets: number[];
+  seedCount: number;
+  seats: Seat[];
+  rolloutCapPlies: number;
+  verbose: boolean;
+} {
   let budgets = [1000, 2000, 5000, 10000, 20000]; // plan §2's full sweep
   let seedCount = 20; // plan §2's full sweep
   let seats: Seat[] = [0, 1];
+  // mcts.ts's own default — an un-flagged run reproduces the historical (200-ply, "normal
+  // rollouts") regime, not leaf evaluation (C89: --rolloutCapPlies=0).
+  let rolloutCapPlies = 200;
   let verbose = false;
   for (const arg of argv) {
     const budgetsMatch = /^--budgets=(.+)$/.exec(arg);
@@ -474,9 +508,11 @@ function parseArgs(argv: readonly string[]): { budgets: number[]; seedCount: num
     if (seedsMatch) seedCount = Number(seedsMatch[1]);
     const seatsMatch = /^--seats=(.+)$/.exec(arg);
     if (seatsMatch) seats = seatsMatch[1]!.split(",").map((s) => Number(s.trim()) as Seat);
+    const capMatch = /^--rolloutCapPlies=(\d+)$/.exec(arg);
+    if (capMatch) rolloutCapPlies = Number(capMatch[1]);
     if (arg === "--verbose") verbose = true;
   }
-  return { budgets, seedCount, seats, verbose };
+  return { budgets, seedCount, seats, rolloutCapPlies, verbose };
 }
 
 // ---------------------------------------------------------------------------------------
@@ -549,20 +585,20 @@ function summarize(records: readonly RunRecord[]): void {
 // ---------------------------------------------------------------------------------------
 
 function main(): void {
-  const { budgets, seedCount, seats, verbose } = parseArgs(process.argv.slice(2));
+  const { budgets, seedCount, seats, rolloutCapPlies, verbose } = parseArgs(process.argv.slice(2));
   process.stderr.write(
     `E-A: budgets=[${budgets.join(",")}] seeds=${seedCount} seats=[${seats.join(",")}] ` +
-      `at the real initial state (B=${STARTING_BUDGET}, star=1)\n`
+      `rolloutCapPlies=${rolloutCapPlies} at the real initial state (B=${STARTING_BUDGET}, star=1)\n`
   );
 
   // Seeding-rule demonstration (C22/C24): for a FIXED seed index, the seed string is
-  // IDENTICAL across every budget — printed once, up front, before any budget-dependent
-  // work happens, so it cannot be confused with per-run output.
-  console.log("==== seed-string check (budget must NEVER appear here) ====");
+  // IDENTICAL across every budget AND every rolloutCapPlies value — printed once, up front,
+  // before any budget-dependent work happens, so it cannot be confused with per-run output.
+  console.log("==== seed-string check (budget/rolloutCapPlies must NEVER appear here) ====");
   for (const seat of seats) {
     for (let seedIndex = 0; seedIndex < Math.min(seedCount, 5); seedIndex++) {
       const label = `c57-ea-seat${seat}-seed${seedIndex}`;
-      console.log(`  seat=${seat} seedIndex=${seedIndex} -> "${label}" (reused unchanged across every budget in [${budgets.join(",")}])`);
+      console.log(`  seat=${seat} seedIndex=${seedIndex} -> "${label}" (reused unchanged across every budget in [${budgets.join(",")}] and any rolloutCapPlies)`);
     }
   }
   console.log("");
@@ -589,11 +625,11 @@ function main(): void {
     for (let seedIndex = 0; seedIndex < seedCount; seedIndex++) {
       if (verbose) console.log(`==== budget=${budget} seedIndex=${seedIndex} ====`);
       for (const seat of seats) {
-        // C22/C24: the seed varies by seat and seed index, NEVER by budget.
+        // C22/C24: the seed varies by seat and seed index, NEVER by budget or rolloutCapPlies.
         const seedLabel = `c57-ea-seat${seat}-seed${seedIndex}`;
         const rng = rngFromSeed(seedLabel);
-        const result = runInstrumentedMcts(root, seat, budget, rng);
-        assertCloneAgrees(seedLabel, seat, budget, result);
+        const result = runInstrumentedMcts(root, seat, budget, rng, rolloutCapPlies);
+        assertCloneAgrees(seedLabel, seat, budget, result, rolloutCapPlies);
         runCount += 1;
 
         const chosenKey = bidMoveKey(result.move as unknown as { amount: number; star?: boolean });

@@ -84,8 +84,36 @@ export interface MctsOptions {
   explorationC?: number;
   /** Hard ply cap on the random-rollout phase beyond the tree (never the tree itself, which
    *  stops growing once budget runs out) — mirrors the engine contract's own termination
-   *  cap. Default 200. */
+   *  cap. Default 200.
+   *
+   *  IGNORED when `leafEvaluation` is `true` (see below) — the rollout phase does not run at
+   *  all in that mode, so there is no cap to apply. Setting this to `0` (with `leafEvaluation`
+   *  left unset) is still fully supported and still deterministic: `rolloutToHorizon`'s own
+   *  `plies < maxPlies` loop guard makes a 0-ply rollout a no-op, which lands on the exact same
+   *  `valueOfStatus` "ongoing" estimate `leafEvaluation: true` computes directly — the two
+   *  spellings are mathematically equivalent by construction, not merely coincidentally equal
+   *  (platform-corrections.md C90/C92's "DUCT + leaf evaluation" cell was measured under this
+   *  exact `rolloutCapPlies: 0` spelling, before `leafEvaluation` existed as its own name). This
+   *  numeric value remains the honest way to express "cap the rollout at N plies" for any N,
+   *  including zero, in code that genuinely wants the parameter (e.g. a research sweep across
+   *  cap values) rather than the leaf-evaluation INTENT. */
   rolloutCapPlies?: number;
+  /**
+   * Skip the post-tree rollout phase entirely and score the newly-expanded leaf directly via
+   * `valueOfStatus`'s "ongoing" branch (an engine's `score()`/`heuristic()`, per its declared
+   * `horizonValue` — see search-utils.ts) instead of simulating forward with random play.
+   *
+   * This is the NAMED spelling of what was previously reachable only as the side effect of
+   * `rolloutCapPlies: 0` (platform-corrections.md C87–C90/C92: "DUCT selection + leaf
+   * evaluation"). That old spelling worked by accident of `rolloutToHorizon`'s loop guard
+   * (`plies < maxPlies`) happening to run zero iterations at exactly that value — a fact about
+   * the rollout helper's control flow, not a stated intent at the call site. `leafEvaluation`
+   * makes the branch explicit in `mctsPolicy` itself, and takes precedence over `rolloutCapPlies`
+   * when both are set (the cap is meaningless once there is no rollout to cap). Default `false`
+   * — preserves every currently shipped game's behavior unconditionally, since none of them sets
+   * this option.
+   */
+  leafEvaluation?: boolean;
 }
 
 type JointMove<M> = ReadonlyMap<PlayerId, M>;
@@ -269,6 +297,7 @@ function selectDuctChild<S extends WithEffects, M extends Json>(
 export function mctsPolicy<S extends WithEffects, M extends Json>(opts: MctsOptions = {}): Policy<S, M> {
   const explorationC = opts.explorationC ?? 1.4;
   const rolloutCapPlies = opts.rolloutCapPlies ?? 200;
+  const leafEvaluation = opts.leafEvaluation ?? false;
 
   return {
     chooseMove({ engine, state, player, rng, budget, clock }) {
@@ -339,7 +368,13 @@ export function mctsPolicy<S extends WithEffects, M extends Json>(opts: MctsOpti
         }
 
         // --- ROLLOUT (simulate randomly from the new leaf to a terminal/horizon) ---
-        const { status: leafStatus, state: leafState } = rolloutToHorizon(engine, node.state, rng, rolloutCapPlies);
+        // Branches on the NAMED option (module doc's MctsOptions.leafEvaluation), not on a zero
+        // comparison against rolloutCapPlies — see that field's own doc for why `rolloutCapPlies:
+        // 0` still reaches the identical numeric outcome via the `else` arm below rather than
+        // being special-cased here too.
+        const { status: leafStatus, state: leafState } = leafEvaluation
+          ? { status: node.status, state: node.state }
+          : rolloutToHorizon(engine, node.state, rng, rolloutCapPlies);
 
         // --- BACKPROPAGATE ---
         // UNCHANGED: still the single fixed-edge-owner accumulation (module doc's VALUE
