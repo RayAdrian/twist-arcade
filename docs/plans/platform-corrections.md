@@ -5890,3 +5890,59 @@ running, because that is when the next team reads it to pick a port block.
 Ruling: register the team before the first delegation into the worktree, not before the
 merge. Both teams active at the time of writing (31 `cell4`, 32 `analytics`) are now
 registered with their port blocks verified free by `lsof` **and** `docker ps` per C62.
+
+---
+
+## C94 — The gate table cannot be run yet, and the manifest said so four weeks ago.
+
+C92 closed the search question, and I planned the obvious next step: run Bid-Tac-Toe's gate
+table under the winning configuration and hand the user a verdict. The manifest refuses that
+step, deliberately, in a comment written long before C92:
+
+> `ciGateBudget.twoPlayerCiRollouts` is left UNSET (still). B3's own budget sweep ran
+> candidates 1,600 through 10,000 and found `solved-value-reached` failing (0% — self-play
+> never draws) at EVERY one, with `strong-vs-random` getting WORSE as rollouts rise — a
+> platform-level MCTS defect on simultaneous nodes, not a signal about which budget is safe.
+> Every number in that sweep describes a badly-played game — setting this field now would be
+> tuning a broken measurement. **Revisit once the search defect is fixed** (not this game's
+> own scope to fix — `packages/bots` is shared platform code).
+
+The gate table needs a rollout budget. The budget field is unset. It is unset because every
+measurement that could have chosen it was taken through a broken search. So "run the gate
+table" is not one step; it is: choose a budget by sweeping under the FIXED search (C22/C24
+seeding rules apply — one fixed seed, the swept variable never in the seed), then set the
+field, then run the table. The comment named this moment as the trigger and named the
+precondition as the thing that just became true.
+
+Ruling: #14's remaining work is a budget sweep followed by a gate table, not a gate table.
+Any gate verdict produced without first setting `twoPlayerCiRollouts` from a post-fix sweep
+would be a verdict at an arbitrary budget, which is the same error B3 refused to commit.
+
+### Two near-misses on the way here, both from the same root
+
+The subagent running this work stalled mid-task. That was luck, because the worktree it was
+running in had forked at C68 and was **78 commits behind main** — it predated C71's
+multi-seed gating, C80's z-quantile-on-a-t-problem fix, and C81's probe-metric corrections.
+Had it reached the gate table, it would have produced Bid-Tac-Toe's first-ever gate verdict
+using gate machinery that main has since corrected, and I would have relayed that verdict as
+evidence for a ship decision. CLAUDE.md §4 already requires rebasing on `main` before the
+final pass; the rule is usually read as hygiene, and here it was load-bearing for whether the
+number meant anything. Rebased (12 commits, clean); `check:deps` and `check:tsconfig-coverage`
+did not even EXIST on the old base, which is a cheap way to notice you are running old code.
+
+Second: I reported to the user that the gate table was "still running, ~20 minutes" at a
+point when the agent had already stalled. I had not checked it; I inferred it from having
+launched it. Same shape as C88 — asserting the state of something instead of reading it.
+
+### Sequencing, stated as a decision rather than left implicit
+
+Two expensive jobs now compete for one machine, and running both halves both. The ranking:
+
+  1. **mine-run's nightly discharge** — a SHIPPED game currently FAILING its gate table, with
+     8 of 10 applicable gates (80%) never once measured. ~276 min of CPU, ~14% done.
+  2. **Bid-Tac-Toe's sweep + gate table** — an UNSHIPPED game, informing a decision the user
+     has not yet been asked to make.
+
+A shipped game failing its gates outranks an unshipped game's ship/kill evidence, so mine-run
+gets the machine first. Recording this because "both are running" was quietly making both
+slower, and an unstated priority is how the C62 thrash happened: load 107, 40 bytes of output.
