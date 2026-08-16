@@ -484,6 +484,66 @@ describe("runTwoPlayerCiGate — C81 / task #27: rush-probe's proven-draw relief
 });
 
 // ---------------------------------------------------------------------------------------
+// §1.1 AMENDED 2026-08-16 (closing C81, confirmed by C86): "one source, two consumers" — the
+// SAME `drawAttainment` value computed once in `runTwoPlayerCiGate` (from `solved-value-reached`)
+// now also gates mirror-probe's relief branch, not just rush-probe's `n/a` relief. Proven here
+// through the FULL composition (real self-play, real mirrorMove, the same `provenDrawManifest`
+// fixture already used to prove rush's relief threading above), not a hand-built input.
+// ---------------------------------------------------------------------------------------
+describe("runTwoPlayerCiGate — §1.1/C81/C86: mirror-probe's proven-draw relief consumes the SAME drawAttainment as rush-probe", () => {
+  const provenDrawManifestForMirror: GameManifest = {
+    id: "classic-ttt-fixture",
+    title: "Classic TTT (proven draw, mirror-relief fixture)",
+    classic: "Tic-Tac-Toe",
+    ruleSentence: "ci-gates.test.ts §1.1 fixture — proven draw, mirrorMove supplied, proving mirror-probe's OWN relief threading.",
+    tags: [],
+    estMinutes: 1,
+    modes: { bot: true, hotseat: false, asyncLink: false },
+    players: { min: 2, max: 2 },
+    difficultyTiers: [
+      { id: "ruthless", policy: { kind: "mcts" }, budget: { kind: "rollouts", n: 2000 }, minReplyMs: 0 },
+    ],
+    solvedValue: { value: "draw", proof: "ci-gates.test.ts: classic tic-tac-toe is a textbook proven draw under optimal play" },
+  };
+
+  it("mirror-probe gates on WIN RATE (not parity), citing the proof, when the SAME reached proven-draw attainment rush-probe consumes is active", () => {
+    const report = runTwoPlayerCiGate(classicTicTacToe, provenDrawManifestForMirror, {
+      seed: "ci-gates:c86:mirror-draw-relief",
+      games: 40,
+      mirrorMove: tttMirrorMoveFixture,
+    });
+
+    // Sanity: the proof really was reached — the SAME source both probes' relief now reads.
+    expect(report.gates.find((g) => g.gate === "solved-value-reached")!.status).toBe("pass");
+
+    // rush-probe: already-proven relief (unaffected by this change) — n/a, citing the proof.
+    const rush = report.gates.find((g) => g.gate === "rush-probe")!;
+    expect(rush.status).toBe("n/a");
+    expect(rush.detail).toContain("proven, reached draw");
+
+    // mirror-probe: the NEW relief consumer — never n/a (mirror-probe has no n/a-via-attainment
+    // branch, only rush does), but its detail must show it gated on win rate, not parity, citing
+    // the SAME proof text.
+    const mirror = report.gates.find((g) => g.gate === "mirror-probe")!;
+    expect(mirror.detail).toContain("gated on win rate");
+    expect(mirror.detail).toContain("ci-gates.test.ts: classic tic-tac-toe is a textbook proven draw under optimal play");
+  });
+
+  it("single-seed control WITHOUT a proven solvedValue: mirror-probe gates on PARITY, not win rate — the relief branch only activates off the real attainment source", () => {
+    const noReliefBase: { solvedValue?: GameManifest["solvedValue"] } & GameManifest = { ...provenDrawManifestForMirror };
+    delete noReliefBase.solvedValue;
+    const noRelief: GameManifest = noReliefBase;
+    const report = runTwoPlayerCiGate(classicTicTacToe, noRelief, {
+      seed: "ci-gates:c86:mirror-no-relief-control",
+      games: 40,
+      mirrorMove: tttMirrorMoveFixture,
+    });
+    const mirror = report.gates.find((g) => g.gate === "mirror-probe")!;
+    expect(mirror.detail).toContain("gated on parity score");
+  });
+});
+
+// ---------------------------------------------------------------------------------------
 // Solo score-chase lane — real roster, real probes, against bank-run.
 // ---------------------------------------------------------------------------------------
 

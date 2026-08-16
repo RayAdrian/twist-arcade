@@ -294,18 +294,39 @@ it does not. See C68 — nightly has never once run.)*
 
 - **Crackstep, Mine Run:** solo, out of scope, unchanged.
 - **Tilt:** mirror and stall already measured at this exact configuration — 0.0% / 0.0%, 0 cap hits
-  (`tilt-t3-budget-validation.md:196–198`). Rush never measured. Expected: all pass.
+  (`tilt-t3-budget-validation.md:196–198`). Rush never measured. Expected: all pass. **Measured
+  (C86, mirror-only refutation pass):** 0.0% win, 0.0% draw, 0.0% parity, both seeds — confirms the
+  prediction and, since Tilt is the amendment's own falsifiability condition (fixed-CW, not
+  reflection-invariant, so mirroring never forces the draw that would inflate parity toward the 40%
+  bar), this is what NOT REFUTED looks like.
 - **Fadeout:** proven exact draw reached 100% of the time. Mirror/stall cannot *win* against a bot
-  playing a proven draw, so those pass near 0%. **Rush will hit the proven-draw shape** — drawing
-  everything yields a parity-looking score meaning "correctly drawn," not "flat." The `n/a`-via-
-  attainment branch exists for exactly this, and its first real exercise is itself a finding about
-  gate design.
+  playing a proven draw, so those pass near 0% under either metric. Mirror-probe (§1.1 AMENDED
+  2026-08-16, closing C81) now scores the draw-inclusive parity score by default, with a
+  proven-draw relief branch (win rate instead of parity) reused from rush's own
+  `solvedValueAttainment` — **one source, two consumers**. **Rush will hit the proven-draw shape**
+  — drawing everything yields a parity-looking score meaning "correctly drawn," not "flat." The
+  `n/a`-via-attainment branch exists for exactly this, and its first real exercise is itself a
+  finding about gate design. **Measured (C86):** mirror's Fadeout draw rate is 0.0% across 200
+  games — it *loses*, it does not draw — so §1.1's own honestly-flagged prediction ("parity without
+  relief false-fires on Fadeout") was WRONG, caught by the amendment's own stated uncertainty
+  before anything downstream depended on it. Relief remains correct; it downgrades from
+  "mandatory" to "cheap insurance," exactly as §1.1 said it would if this happened.
 - **Nine Grids — most likely to fire, on rush at ci tier.** Its ci "strong" is the weakest: the
   1,500-rollout override already produced scaled ruthless *losing* to standard at 42% (C26); UTTT's
   must-follow rule makes many replies forced local tactics, which a 1-ply win/block policy converts
   well and shallow MCTS wastes rollouts rediscovering; and its 30% draw rate pads a score-based
   metric toward 45%. Expected shape: **warn at ci, likely recovering at nightly's shipped 10k** — a
-  genuine measurement of how thin the ci yardstick is for that game, either way.
+  genuine measurement of how thin the ci yardstick is for that game, either way. Mirror-probe's own
+  row is a separate, orthogonal concern: at ~90% mirror-fallback rate (C81's 85.7%, #26's 91.5%,
+  C86's 88.7%/90.0% — three independently-derived measurements agreeing), the row is mostly
+  first-legal-vs-ruthless play under EITHER metric, so a mirror-probe pass/fail here is not
+  informative about mirroring regardless of the parity-vs-win-rate binding.
+- **The metric change is currently a no-op (C86).** All three games' mirror-vs-ruthless matchups
+  measure 0.0% win, 0.0% draw, 0.0% parity — every current mirror-probe row scores 0 and passes
+  under either metric. The amendment is protective (closes a blind spot no shipped game exercises
+  today), not corrective. It cannot be validated by watching a gate number move; its planted
+  evaluator tests are the evidence (§1.1's own verification list, four planted cases plus a
+  real-wiring test).
 
 ---
 
