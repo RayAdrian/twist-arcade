@@ -69,7 +69,18 @@ have already been killed in this project.
 - **P0 — machine.** Do not start while mine-run's discharge job runs (C94's stated priority:
   a shipped game failing gates outranks an unshipped game's evidence). Verify by reading
   process state, not by recalling having launched something (C88/C94).
-- **P1 — wire `leafEvaluation` through the tier path.** Schema change, orchestrator-routed:
+- **P1 — DISCHARGED 2026-08-16, commit `e4b7a0f` on `feature/duct-leaf-eval`.** `PolicySpec`'s
+  mcts arm now carries `leafEvaluation?: boolean`, `buildPolicy` forwards it via an independent
+  conditional spread (absent stays absent), and Bid-Tac-Toe's three mcts tiers set it true.
+  Verified by planting the violation rather than by reading the code: removing the forwarding
+  line fails exactly two tests — `rolloutToHorizon` called 25 times when it should be zero, and
+  the tier-path move `{cell:2}` diverging from a direct `mctsPolicy({leafEvaluation:true})`
+  `{cell:4}` on an identical seed — and restoring it returns 3/3 green with a byte-clean tree.
+  That divergence is the direct demonstration of C95's claim: before this change the tier path
+  ran a different algorithm than the one C92 measured. The shipped-game byte-identity check was
+  deliberately NOT treated as evidence here (C95: it is the check that passed while the feature
+  was broken); it is a regression guard only. Original text follows.
+- ~~**P1 — wire `leafEvaluation` through the tier path.**~~ Schema change, orchestrator-routed:
   `PolicySpec` gains `leafEvaluation?: boolean` (default absent = current behaviour,
   byte-identical for every shipped game — none sets it); `tierPolicy` forwards it;
   Bid-Tac-Toe's manifest sets it on all three tiers. Verification: (a) unit test that
