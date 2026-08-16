@@ -5544,3 +5544,63 @@ remains max-max with ordinary rollouts, whose mean bid (3.08) sits essentially o
 improvement to play — it is a corrected component whose only consumer was refuted twice. Keeping it is
 right (an evaluation function that disagrees with a proof is a latent trap), but Bid-Tac-Toe's
 prospects are **not** improved by it, and #14 must not be decided as though they were.
+
+## C89 — Correcting C88: the plan predicted the seat asymmetry, and the decisive cell was never run.
+
+C88 called the seat-asymmetric failure "the finding nobody predicted" and said "no hypothesis on
+record explains it." **Both statements are wrong**, and the correction matters more than the error.
+
+### The plan predicted it exactly
+
+`docs/plans/rollout-evaluation.md` §4, line 134, written before any of this ran:
+
+> under leaf evaluation, seat 0's best **joint** arm is literally *"opponent overpays 8, I bid 0"*
+> (≈ +1 after tanh), a stronger co-operator fantasy than the one DUCT killed
+
+The measurement found precisely that. At the post-bid-resolution leaf, `tanh(heuristic)` is **tied at
+≈0.9993 across seat 0's bids 0–7 under maximax**, every one achieved at opponent-bids-8 — saturated,
+therefore indistinguishable. Maximin ranks bid 3 top correctly; the non-DUCT joint-UCB1 selection
+optimises toward the tied maximax value instead. That is why seat 0 sits at **exactly 0.000 across
+all four budgets, below the 1/9 random baseline** — selection among tied arms is arbitrary.
+
+### The correction is on me, and it is the session's own recurring error
+
+I read the measurement, found it surprising, and asserted no explanation existed — **without checking
+the plan that had predicted it.** That is C77's defect (asserting a mechanism claim without testing
+it) inverted: asserting the *absence* of a mechanism without looking. The plan was three directories
+away and one grep would have found it.
+
+### The consequence, which is larger than the correction
+
+The plan's §4 proposed a **2×2 factorial** — {max-max, DUCT} × {rollout, leaf evaluation} — precisely
+because it expected selection and evaluation to interact. Three cells are now measured:
+
+| | rollout evaluation | leaf evaluation |
+|---|---|---|
+| **max-max** | 0.350 / 0.350 (C71) | **0.000 / 0.620** (C88) |
+| **DUCT** | 0.000 / 0.000 (C73) | **NEVER RUN** |
+
+**The cell the plan actually recommended has never been measured.** §4's recommendation was to land the
+evaluation fix *on top of DUCT*, and its stated reason was exactly the co-operator saturation that
+C88 then observed under max-max. C88's refutation of candidate A therefore refutes it **under
+max-max selection only** — the configuration the plan predicted would fail.
+
+This does not resurrect DUCT: C76 rejected it 300–89 head-to-head **under rollout evaluation**, and
+that verdict stands for that configuration. But DUCT+leaf is a fourth configuration, and every
+verdict so far has been configuration-specific.
+
+### Ruling
+
+**C88's refutation is narrowed, not withdrawn.** Candidate A does not ship under max-max, its numbers
+stand, and normal rollouts remain the best measured configuration. But "candidate A is refuted" must
+be written as **"refuted under max-max selection"** wherever it appears, because the plan's own
+recommended pairing is untested.
+
+**The fourth cell is owed.** It is cheap — both mechanisms already exist, DUCT on
+`feature/sim-search-residue` and leaf evaluation via `rolloutCapPlies: 0`, needing no new code.
+Whether it is worth running before Bid-Tac-Toe's fate is decided is a scheduling question; whether it
+is *unmeasured* is not, and #14 must not be decided as though the factorial were complete.
+
+**And the general rule this session keeps paying for:** a verdict inherits every condition of the
+configuration that produced it. C71 taught it about seeds, C76 about opponents, C87 about premises,
+and C89 about the selection rule underneath an evaluation experiment.
