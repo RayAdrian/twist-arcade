@@ -18,25 +18,18 @@ export interface HarnessThresholds {
   // already carries (warn at "ci", fail for real at "nightly") and are exceptionable
   // (EXCEPTIONABLE_GATES in suites.ts).
   //
-  // MIRROR — §1.1 AMENDED 2026-08-16, closing C81, confirmed by C86's refutation experiment.
-  // C81 found the original wins/games binding could not fire on the pathology its own source
-  // most emphasizes: `game-theory-lens` §5.4 names the canonical mirror degeneracy as "P2
-  // copying P1's move through the center can force a draw (or worse)," but a mirror that draws
-  // 100% of its games scores a 0% win rate under wins/games — a clean PASS. The binding is now
-  // `agentParityScore` (metrics.ts) — (wins + 0.5*draws)/games, the SAME function rush-probe's
-  // own input is built from, never a second hand-recomposed derivation (C55's drift shape) — with
-  // a proven-draw relief branch (reused from rush-probe's `solvedValueAttainment`, one source, two
-  // consumers): when the manifest's solvedValue is a proven, REACHED draw, the gate scores win
-  // rate instead of parity against these SAME bands, because a mirror that draws a proven-draw
-  // game is health but a mirror that outright WINS means the strong bot is exploitable by
-  // copying — still degeneracy, so the win signal stays live and only the draw half-credit is
-  // relieved. THE NUMBERS THEMSELVES are unchanged and remain RECOVERED (roadmap.md:258,
-  // game-theory-lens §2.7/§3.4); only the field names and the metric they bind to changed — C86
-  // (docs/plans/platform-corrections.md) ran the amendment's own pre-registered refutation
-  // experiment (healthy, non-reflection-invariant Tilt at 0.0% parity, nowhere near 40%) and the
-  // bands survived the transfer. See docs/plans/degeneracy-probes.md §1.1 for the full amendment.
-  mirrorProbeScoreWarn: number; // warn >= 0.40 (mirror as P2: parity score, or win rate under proven-draw relief)
-  mirrorProbeScoreFail: number; // fail >= 0.50
+  // MIRROR — CORRECTED (stage-6 review): the THRESHOLD NUMBERS below are RECOVERED
+  // (roadmap.md:258, game-theory-lens §2.7/§3.4) — that re-check stands. But the METRIC
+  // BINDING — gating on wins/games AT ALL, rather than a parity-style score with the same
+  // proven-draw relief rush-probe has — is PROPOSED, a plan amendment (not an in-branch
+  // redesign): `game-theory-lens` §5.4 names the canonical mirror degeneracy as "P2 copying
+  // P1's move through the center can force a draw (or worse)," but a mirror that draws 100% of
+  // its games scores a 0% win rate under wins/games — a clean PASS on the exact pathology its
+  // own source document most emphasizes. The mirror matchup's draw rate is recorded in the
+  // gate's detail string (probes-two-player.ts) so a future S5 baseline captures it even though
+  // this metric cannot act on it today.
+  mirrorProbeWinRateWarn: number; // warn >= 0.40 (mirror as P2's win rate: wins/all games)
+  mirrorProbeWinRateFail: number; // fail >= 0.50
   stallProbeCapHitFail: number; // fail > 0.01 (any nonzero cap-hit rate warns below this)
   stallProbeWinRateWarn: number; // warn >= 0.20 (stall as P2's win rate: wins/all games)
   stallProbeWinRateFail: number; // fail >= 0.40
@@ -69,8 +62,8 @@ export const DEFAULT_HARNESS_THRESHOLDS: HarnessThresholds = {
   ruthlessVsStandardMinWinRate: 0.6,
   maxBundleKb: 75,
 
-  mirrorProbeScoreWarn: 0.4,
-  mirrorProbeScoreFail: 0.5,
+  mirrorProbeWinRateWarn: 0.4,
+  mirrorProbeWinRateFail: 0.5,
   stallProbeCapHitFail: 0.01,
   stallProbeWinRateWarn: 0.2,
   stallProbeWinRateFail: 0.4,

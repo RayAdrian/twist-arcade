@@ -66,43 +66,35 @@ import {
  *      posture `ruthless-vs-standard`'s "no standard tier" branch takes ahead of deferral in
  *      suites.ts).
  *    - `"available"`: not declared, a `mirrorMove` WAS resolved — `winRate` is the measured P2
- *      win rate (wins/all games), `drawRate` is the SAME matchup's draw rate, and `parityScore`
- *      is `agentParityScore` (metrics.ts) over that SAME matchup — (wins + 0.5*draws)/games, the
- *      SAME function rush-probe's own input is built from, never a second hand-recomposed
- *      derivation (C55's drift shape). All three are always real numbers once `kind:
- *      "available"` (never independently NaN — see the evaluator's own doc for which of the
- *      three the gate actually scores on, and when). `mirrorFallbackRate` (platform-
+ *      win rate (wins/all games — see the gate's own detail-string comment for why "draws
+ *      excluded" is the wrong way to say this), `drawRate` is the SAME matchup's draw rate,
+ *      recorded (not gated on) per the stage-6 finding below. `mirrorFallbackRate` (platform-
  *      corrections.md C81 / task #26) is the SAME matchup's `MatchupMetrics.mirrorFallbackRate`
  *      — the fraction of the mirror agent's own moves that were the harness's null-target
  *      fallback substitution rather than an actual reflection (runner.ts's `playOneGame`), always
  *      a real number here (never `null`) because `kind: "available"` only exists once a mirror
- *      matchup genuinely ran, so `mirrorMoveCount` is always > 0. All four NaN-poisoned (C4)
+ *      matchup genuinely ran, so `mirrorMoveCount` is always > 0. All three NaN-poisoned (C4)
  *      when unreachable (deferred).
  *
- *  METRIC BINDING (§1.1 AMENDED 2026-08-16, closing C81, confirmed by C86): the gate scores
- *  `parityScore` by default — `game-theory-lens` §5.4 names the canonical mirror degeneracy as
- *  "P2 copying P1's move through the center can force a draw (or worse)," and a mirror that
- *  draws 100% of its games now scores exactly 50% parity and fires, where the old wins/games
- *  binding scored it a clean 0% PASS. When the manifest's `solvedValue` is a proven, REACHED
- *  draw (the SAME `drawAttainment` rush-probe below consumes — one source, two consumers, never
- *  a second derivation), the gate scores `winRate` instead against the SAME bands: a mirror that
- *  DRAWS a proven-draw game is health (parity would false-fire on it), but a mirror that
- *  outright WINS means the strong bot is exploitable by copying — still degeneracy — so the win
- *  signal stays live and only the draw half-credit is relieved. `drawRate` and whichever metric
- *  was NOT gated on are still recorded in the detail string, so a report always shows win rate,
- *  draw rate, parity, which branch gated, and why. `mirrorFallbackRate` is a SEPARATE finding
- *  (C81) — it says how much of the row is real mirror content at all, orthogonal to which metric
- *  the gate scores. */
+ *  STAGE-6 FINDING, RECORDED NOT FIXED HERE: `game-theory-lens` §5.4 names the canonical mirror
+ *  degeneracy as "P2 copying P1's move through the center can force a draw (or worse)" — but
+ *  wins/games scores a mirror that draws 100% of its games as a 0% win rate, i.e. a clean PASS,
+ *  so this metric cannot fire on the exact pathology its own source document most emphasizes
+ *  (and strong-self-play's draw-rate gate does not catch it either, since that measures a
+ *  DIFFERENT matchup). The threshold NUMBERS (`mirrorProbeWinRateWarn`/`Fail`) are RECOVERED
+ *  (roadmap.md:258, game-theory-lens §2.7/§3.4); the METRIC BINDING — using wins/games at all,
+ *  rather than a parity-style score with the same proven-draw relief rush-probe has — is
+ *  PROPOSED, a plan amendment the coordinator is recording, not an in-branch redesign (a
+ *  parity-style metric would false-fire on Fadeout, where a drawing mirror is health, without
+ *  the SAME relief rush-probe gets). `drawRate` is recorded in the gate detail below so a future
+ *  S5 baseline captures this even though today's gate cannot act on it. `mirrorFallbackRate`
+ *  is a SEPARATE finding from this one (C81, not this stage-6 metric-binding gap) — it says how
+ *  much of the row is real mirror content at all, not whether wins/games can see a forced draw;
+ *  fixing one does not fix the other. */
 export type MirrorProbeInput =
   | { readonly kind: "suppressed" }
   | { readonly kind: "unavailable"; readonly reason: string }
-  | {
-      readonly kind: "available";
-      readonly winRate: number;
-      readonly drawRate: number;
-      readonly parityScore: number;
-      readonly mirrorFallbackRate: number;
-    };
+  | { readonly kind: "available"; readonly winRate: number; readonly drawRate: number; readonly mirrorFallbackRate: number };
 
 /** The already-computed numbers `evaluateProbeGates` gates on — kept separate from real
  *  `MatchupReport`s so the pure evaluator can be tested with hand-built values, no real self-play
@@ -121,15 +113,12 @@ export interface ProbeGateInputs {
   readonly rushScore: number;
 }
 
-/** Reuses suites.ts's OWN `solvedValueAttainment` computation (plan §1.1/§1.3 / the plan's own
- *  named C55-shape risk: "re-deriving instead of sharing it lets the probe relief and
- *  solved-value-reached drift") — never re-derived here. **One source, two consumers** (plan
- *  §1.1's "Relief mechanism" section): mirror-probe's proven-draw relief branch and rush-probe's
- *  `n/a` relief both read the SAME `ProvenDrawAttainment` value, computed exactly ONCE. The
- *  composing caller (`ci-gates.ts`'s `runTwoPlayerCiGate`) computes this ONCE from `runCiSuite`'s
- *  own `solved-value-reached` gate row and threads the result through `runProbeSuite`'s
- *  `drawAttainment` option — never a second, independently-derived copy for mirror. */
-export interface ProvenDrawAttainment {
+/** Reuses suites.ts's OWN `solvedValueAttainment` computation (plan §1.3 / the plan's own named
+ *  C55-shape risk: "re-deriving instead of sharing it lets the probe relief and
+ *  solved-value-reached drift") — never re-derived here. The composing caller (`ci-gates.ts`'s
+ *  `runTwoPlayerCiGate`) computes this ONCE from `runCiSuite`'s own strong-self-play numbers and
+ *  threads the result through `runProbeSuite`'s `rushDrawAttainment` option. */
+export interface RushDrawAttainment {
   readonly reached: boolean;
   readonly proof: string;
 }
@@ -181,10 +170,7 @@ export function evaluateProbeGates(
   exceptions: readonly ManifestException[] = [],
   suite: "ci" | "nightly" = "ci",
   deferral?: CiGateDeferral,
-  // §1.1's "one source, two consumers": the SAME attainment value gates BOTH mirror-probe's
-  // relief branch (below) and rush-probe's (further down) — never two independently-threaded
-  // parameters that could drift apart.
-  drawAttainment?: ProvenDrawAttainment
+  rushDrawAttainment?: RushDrawAttainment
 ): GateResult[] {
   validateExceptions(exceptions);
 
@@ -227,36 +213,24 @@ export function evaluateProbeGates(
   } else if (deferral?.active) {
     results.push(deferredGate("mirror-probe", deferral.reason));
   } else {
-    const { winRate, drawRate, parityScore, mirrorFallbackRate } = inputs.mirror;
-
-    // §1.1 AMENDED 2026-08-16 (closing C81, confirmed by C86): proven-draw relief gates on
-    // winRate instead of parityScore, against the SAME bands — a mirror that DRAWS a proven,
-    // reached draw is health (parity would false-fire on it), but a mirror that outright WINS
-    // means the strong bot is exploitable by copying, so the win signal must stay live. Reuses
-    // the SAME `drawAttainment` rush-probe consumes below — never a second derivation (C55).
-    const relief = drawAttainment?.reached === true;
-    const gatedMetric = relief ? winRate : parityScore;
-    const metricLabel = relief ? "win rate" : "parity score";
-    const raw: GateStatus =
-      gatedMetric >= thresholds.mirrorProbeScoreFail ? "fail" : gatedMetric >= thresholds.mirrorProbeScoreWarn ? "warn" : "pass";
-
-    // C81 / task #26: `mirrorFallbackRate` is recorded here too — NOT gated on — so the detail
-    // can finally say how much of this row is actual mirror content vs. the harness's own
-    // null-target fallback substitution (Nine Grids measured 85.7% fallback through the real
-    // matchup shape before games/nine-grids/probes.ts was aligned to the null convention; this
-    // is the number that would have disclosed it).
-    const mirrorContentPct = ((1 - mirrorFallbackRate) * 100).toFixed(1);
-    const fallbackPct = (mirrorFallbackRate * 100).toFixed(1);
-    const reliefExplanation = relief
-      ? `manifest.solvedValue is a proven, reached draw (${drawAttainment!.proof}) — a mirror that DRAWS is health, but a mirror that WINS is still exploitable by copying, so the win signal stays live and only the draw half-credit is relieved`
-      : "no proven-draw relief is active — gating on the draw-inclusive parity score so a mirror that forces a draw every game (game-theory-lens §5.4's canonical pathology) cannot pass silently (platform-corrections.md C81/C86)";
+    const wr = inputs.mirror.winRate;
+    const raw: GateStatus = wr >= thresholds.mirrorProbeWinRateFail ? "fail" : wr >= thresholds.mirrorProbeWinRateWarn ? "warn" : "pass";
+    // STAGE-6 FINDING: `drawRate` is recorded here — NOT gated on (see MirrorProbeInput's own
+    // doc for why this metric cannot fire on the canonical "mirror forces a draw" pathology
+    // today) — so a future S5 baseline captures it even though this gate cannot act on it yet.
+    //
+    // C81 / task #26: `mirrorFallbackRate` is recorded here too — NOT gated on, same posture —
+    // so the detail can finally say how much of this row is actual mirror content vs. the
+    // harness's own null-target fallback substitution (Nine Grids measured 85.7% fallback
+    // through the real matchup shape before games/nine-grids/probes.ts was aligned to the null
+    // convention; this is the number that would have disclosed it).
+    const mirrorContentPct = ((1 - inputs.mirror.mirrorFallbackRate) * 100).toFixed(1);
+    const fallbackPct = (inputs.mirror.mirrorFallbackRate * 100).toFixed(1);
     const detail =
-      `${(winRate * 100).toFixed(1)}% win rate as P2 (wins/all games), ` +
-      `${(drawRate * 100).toFixed(1)}% draw rate, ` +
-      `${(parityScore * 100).toFixed(1)}% parity score ((wins + 0.5*draws)/games), ` +
-      `gated on ${metricLabel} (${(gatedMetric * 100).toFixed(1)}%) because ${reliefExplanation}, ` +
+      `${(wr * 100).toFixed(1)}% win rate as P2 (wins/all games; draws count as non-wins, not excluded from the denominator), ` +
+      `mirror draw rate ${(inputs.mirror.drawRate * 100).toFixed(1)}% (recorded only — see the metric-binding note on MirrorProbeInput), ` +
       `mirror content ${mirrorContentPct}% (${fallbackPct}% of this agent's own moves were the harness's null-target fallback, not an actual reflection — platform-corrections.md C81), ` +
-      `(warn >= ${(thresholds.mirrorProbeScoreWarn * 100).toFixed(0)}%, fail >= ${(thresholds.mirrorProbeScoreFail * 100).toFixed(0)}%, ${suite})`;
+      `(warn >= ${(thresholds.mirrorProbeWinRateWarn * 100).toFixed(0)}%, fail >= ${(thresholds.mirrorProbeWinRateFail * 100).toFixed(0)}%, ${suite})`;
     pushSeverityAdjusted("mirror-probe", raw, detail);
   }
 
@@ -282,19 +256,17 @@ export function evaluateProbeGates(
 
   // -------------------------------------------------------------------------------------
   // rush-probe — plan §1.3's proven-draw relief, reusing solvedValueAttainment (see
-  // ProvenDrawAttainment's own doc) — the SAME `drawAttainment` value mirror-probe's own relief
-  // branch above reads (§1.1's "one source, two consumers"). Checked AFTER deferral (same
-  // reasoning as draw-rate/FPA's own proven-draw relief in suites.ts: whether the proof was
-  // reached is itself computed from self-play data that never ran this tier when deferred —
-  // unmeasured, not "known true").
+  // RushDrawAttainment's own doc). Checked AFTER deferral (same reasoning as draw-rate/FPA's
+  // own proven-draw relief in suites.ts: whether the proof was reached is itself computed from
+  // self-play data that never ran this tier when deferred — unmeasured, not "known true").
   // -------------------------------------------------------------------------------------
   if (deferral?.active) {
     results.push(deferredGate("rush-probe", deferral.reason));
-  } else if (drawAttainment?.reached) {
+  } else if (rushDrawAttainment?.reached) {
     results.push({
       gate: "rush-probe",
       status: "n/a",
-      detail: `manifest.solvedValue is a proven, reached draw (${drawAttainment.proof}) — a parity score is evidence of nothing once neither side can win`,
+      detail: `manifest.solvedValue is a proven, reached draw (${rushDrawAttainment.proof}) — a parity score is evidence of nothing once neither side can win`,
     });
   } else {
     const raw: GateStatus =
@@ -324,12 +296,11 @@ export interface RunProbeSuiteOptions<S extends WithEffects, M extends Json> {
   readonly games?: number;
   readonly suite?: "ci" | "nightly";
   readonly clock?: RunMatchupOptions["clock"];
-  /** See `ProvenDrawAttainment`'s own doc — the SAME value gates BOTH mirror-probe's relief
-   *  branch and rush-probe's `n/a` relief (§1.1's "one source, two consumers"). Omitted (the
-   *  default) when there is no proven `solvedValue`, or when the composing caller has no
-   *  self-play numbers yet to compute it from (e.g. a standalone `runProbeSuite` call): both
-   *  probes then measure for real, never granting unearned relief by default. */
-  readonly drawAttainment?: ProvenDrawAttainment;
+  /** See `RushDrawAttainment`'s own doc — omitted (the default) when there is no proven
+   *  `solvedValue`, or when the composing caller has no self-play numbers yet to compute it
+   *  from (e.g. a standalone `runProbeSuite` call): rush then measures for real, never granting
+   *  unearned relief by default. */
+  readonly rushDrawAttainment?: RushDrawAttainment;
 }
 
 export interface ProbeSuiteReport {
@@ -373,13 +344,7 @@ export function runProbeSuite<S extends WithEffects, M extends Json, V extends W
   const mirrorUnavailableInput: MirrorProbeInput = mirrorSuppressed
     ? { kind: "suppressed" }
     : opts.mirrorMove
-      ? {
-          kind: "available",
-          winRate: Number.NaN,
-          drawRate: Number.NaN,
-          parityScore: Number.NaN,
-          mirrorFallbackRate: Number.NaN,
-        } // placeholder — overwritten once self-play actually runs, below
+      ? { kind: "available", winRate: Number.NaN, drawRate: Number.NaN, mirrorFallbackRate: Number.NaN } // placeholder — overwritten once self-play actually runs, below
       : { kind: "unavailable", reason: "no mirrorMove was supplied to runProbeSuite for this game" };
 
   const shippedRuthlessTier = findTier(manifest, "ruthless");
@@ -409,7 +374,7 @@ export function runProbeSuite<S extends WithEffects, M extends Json, V extends W
       exceptions,
       suite,
       deferral,
-      opts.drawAttainment
+      opts.rushDrawAttainment
     );
     return {
       gameId: manifest.id,
@@ -438,13 +403,9 @@ export function runProbeSuite<S extends WithEffects, M extends Json, V extends W
     mirrorInput = {
       kind: "available",
       winRate: agentWinRate(mirrorMatchup.outcomes, "mirror"),
+      // Stage-6 finding: recorded so the gate detail (and a future S5 baseline) captures it,
+      // even though the gate itself does not act on it yet — see MirrorProbeInput's own doc.
       drawRate: mirrorMatchup.metrics.drawRate,
-      // §1.1 AMENDED 2026-08-16 (closing C81, confirmed by C86): the SAME `agentParityScore`
-      // function rush-probe's own input is built from — never a second, hand-recomposed
-      // `winRate + 0.5*drawRate` derivation (algebraically identical, but a second derivation is
-      // C55's drift shape). This is what the gate scores by default (see evaluateProbeGates's
-      // own mirror-probe branch for the proven-draw relief that scores winRate instead).
-      parityScore: agentParityScore(mirrorMatchup.outcomes, "mirror"),
       // C81 / task #26: `?? 0` only ever guards the pathological "mirror seat never moved in any
       // game this matchup" case (MatchupMetrics.mirrorFallbackRate is `null` there — see its own
       // doc) — every real shipped game moves the mirror seat at least once per game, so this is a
@@ -478,7 +439,7 @@ export function runProbeSuite<S extends WithEffects, M extends Json, V extends W
     rushScore: agentParityScore(rushMatchup.outcomes, "rush"),
   };
 
-  const gates = evaluateProbeGates(inputs, thresholds, exceptions, suite, undefined, opts.drawAttainment);
+  const gates = evaluateProbeGates(inputs, thresholds, exceptions, suite, undefined, opts.rushDrawAttainment);
 
   return {
     gameId: manifest.id,

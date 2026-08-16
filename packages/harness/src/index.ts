@@ -53,8 +53,8 @@ export type {
   MirrorProbeInput,
   ProbeGateInputs,
   ProbeSuiteReport,
-  ProvenDrawAttainment,
   RunProbeSuiteOptions,
+  RushDrawAttainment,
 } from "./probes-two-player";
 export { evaluateProbeGates, ProbeDeferredGateAtNightlyError, runProbeSuite } from "./probes-two-player";
 
