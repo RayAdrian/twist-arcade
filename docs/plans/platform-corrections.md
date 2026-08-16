@@ -5604,3 +5604,76 @@ is *unmeasured* is not, and #14 must not be decided as though the factorial were
 **And the general rule this session keeps paying for:** a verdict inherits every condition of the
 configuration that produced it. C71 taught it about seeds, C76 about opponents, C87 about premises,
 and C89 about the selection rule underneath an evaluation experiment.
+
+## C90 — The fourth cell is perfect at 1,000 rollouts and destroys itself by 10,000.
+
+C89 established that the pairing the plan actually recommended — DUCT selection with leaf evaluation
+— had never been measured. It has now. Raw output:
+`docs/research/games/bid-tac-toe-c89-duct-leaf-ea.out` and `...-duct-rollout-control-ea.out`.
+
+### The control confirms C88 for the third time
+
+DUCT + rollout evaluation with the **fixed** heuristic, at 10k: agreement 0.000/0.000, mean bid
+**7.280 / 7.140**, rootValue ~0.001. C73 measured the identical configuration with the **old**
+heuristic and got mean bid **7.28 / 7.14**. Identical to two decimals.
+
+**A third independent confirmation that the heuristic fix is inert under rollout evaluation** — the
+branch that evaluates it never runs, so correcting it changes nothing. C87 predicted this from a code
+reading; C88 measured it under max-max; this measures it under DUCT.
+
+### The fourth cell
+
+DUCT + leaf evaluation, 50 seeds per cell, both seats:
+
+| budget | agreement s0 / s1 | mean bid s0 / s1 | rootValue s0 / s1 |
+|---|---|---|---|
+| **1,000** | **1.000 / 1.000** | **3.000 / 2.980** | −0.184 / 0.181 |
+| 2,000 | 0.140 / 0.980 | 3.860 / 3.020 | −0.059 / 0.068 |
+| 5,000 | 0.000 / 0.340 | 4.000 / 4.080 | −0.043 / 0.045 |
+| 10,000 | 0.000 / 0.480 | 4.040 / 4.000 | −0.017 / 0.014 |
+
+**At 1,000 rollouts both seats agree with the exact oracle on every single seed.** Mean chosen bid is
+**3.000** — the proven draw price, exactly. No configuration measured in this project has ever done
+that; the best prior was 0.380.
+
+**And it degrades monotonically with budget to 0.000.** Mean bid drifts 3.000 → 4.040, crossing out of
+the draw price into the region the solve report says **loses**.
+
+### What this is
+
+**The C55 signature in its purest form yet: a configuration that is exactly correct and is destroyed
+by thinking harder.** Every prior instance was a search that was wrong and got worse. This one starts
+perfect. The thread that opened with "strong-vs-random declines with budget" ends with "perfect play
+declines with budget," which is the same defect with nowhere left to hide.
+
+The full factorial, agreement at 10k, seat 0 / seat 1:
+
+| | rollout evaluation | leaf evaluation |
+|---|---|---|
+| **max-max** | 0.350 / 0.350 | 0.000 / 0.620 |
+| **DUCT** | 0.000 / 0.000 | **0.000 / 0.480** |
+
+At 10k no cell is good. **The interesting axis turned out not to be selection or evaluation but
+budget**, and nothing in the plan predicted that — §4 reasoned entirely about which of the four cells
+would win, not about where in the budget range the answer lives.
+
+### What this is not
+
+**Not a game verdict, and the distinction is now load-bearing.** Oracle agreement is a *component*
+metric. C73→C76 are four corrections about the gap between a component improving and a system
+winning, and the only thing that ever settled the DUCT question was 300–89 head-to-head. **A
+configuration with 1.000 agreement at 1k has not been shown to win a single game.**
+
+It is also not a licence to ship Ruthless at 1,000 rollouts. That would be choosing a budget because
+it flatters a metric — C55's ruling in a new costume — and the honest reading is that **a search whose
+correctness is non-monotonic in its own budget is not understood well enough to tune.**
+
+### Ruling
+
+**Recorded, not acted on.** The fourth cell is measured, C89's gap is closed, and the factorial is
+complete. What it reveals is a **budget-dependence nobody planned for**, which is a new question
+rather than an answer to the old one.
+
+**#14 stays undecided**, and now for a better-stated reason than before: not "the search is broken"
+but **"the search's correctness depends on budget in a way no one can currently explain."** Deciding a
+game's fate on a search with that property would be deciding on noise.
