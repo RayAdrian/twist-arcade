@@ -16,7 +16,7 @@
 import type { Effect, GameEngine, Json, PlayerId, Rng, WithEffects } from "../src/types";
 import { rngFor, rngForSetup, rngFromSeed } from "../src/rng";
 import { stableStringify } from "../src/encode";
-import { replay, type ReplayRecord } from "../src/replay";
+import { replay, type ReplayRecord, type StepRecord } from "../src/replay";
 
 export interface ContractOptions {
   runs?: number; // fast-check-style iteration count per property (default: 20)
@@ -98,7 +98,11 @@ function randomPlayout<S extends WithEffects, M extends Json, V extends WithEffe
   const driverRng: Rng = rngFromSeed(`${matchSeed}:driver`);
   let state = engine.setup(numPlayers, rngForSetup(matchSeed));
   const states: S[] = [state];
-  const steps: ReplayRecord["steps"] = [];
+  // Mutable builder, NOT `ReplayRecord["steps"]` (that field is `readonly StepRecord[]` —
+  // see replay.ts): this array is genuinely pushed to across the loop below, then handed
+  // off once, unmutated from then on, as the finished record's `steps`. A mutable array is
+  // assignable to a readonly-typed field; the reverse is what TS4104 correctly rejects.
+  const steps: StepRecord[] = [];
 
   let ply = 0;
   for (; ply < maxPlies; ply++) {

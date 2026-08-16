@@ -4,11 +4,12 @@
     "outDir": "./dist",
     "rootDir": "."
   },
-  "include": ["*.ts", "test/**/*.ts"],
+  "include": ["*.ts", "test/**/*.ts", "research/**/*.ts"],
   "references": [
     { "path": "../packages/engine" },
     { "path": "../packages/game-spec" },
     { "path": "../packages/harness" },
-    { "path": "../games/crackstep" }
+    { "path": "../games/crackstep" },
+    { "path": "../games/tilt" }
   ]
 }

@@ -28,19 +28,38 @@
 // here, which is the whole reason C69/C72's manual audit was owed as automation in the
 // first place.
 //
-// scripts/, supabase/, templates/game*, and the root Next.js app (tsconfig.app.json) are
-// NOT covered by this scope. This used to be argued here in prose ("none of those are pnpm
-// workspace packages") — C79 ruling 1 refuted that argument directly: scripts/ is real,
-// shipped, typechecked-in-part code, and this guard's own scope excluding it is exactly
-// where the mirrorMove type lie (C79) was hiding, one layer below C69/C72's original
-// finding. C79 ruling 1 also names the root Next.js app as belonging in scope. Neither is
-// added here — the addendum (c522bcf) tried it directly and found the fix is bigger than a
-// glob (project-reference/rootDir restructuring, since scripts/research/ imports
-// games/tilt/), so it is routed to task #24, not folded into this branch. Per C79's own
-// rule — "an exemption that is printed is reviewable; one that lives in a header comment is
-// not" — the actual, current OUT_OF_SCOPE list below is a runtime-printed artifact, not
-// prose: run this script and read its own output for what it did not check and why, rather
-// than trusting this comment to stay accurate.
+// scripts/ and supabase/ ARE now covered (task #24, C79 ruling 1's actual close-out): both
+// are single, self-contained directories with their own tsconfig.json in the root `tsc -b`
+// graph, so the same on-disk-vs-compiler-covered diff that packages/games already get
+// applies to them unchanged — see EXTRA_CHECKED_DIRS below. Getting scripts/ here required
+// more than adding it to a list: scripts/research/ imports games/tilt/{engine,engine-
+// internal,manifest,probes} by relative path (outside scripts' own rootDir), which the
+// addendum (c522bcf) found surfaces TS6059/TS6307 project-structure errors, not just missing
+// coverage. Fixed by adding `research/**/*.ts` to scripts/tsconfig.json's `include` AND an
+// explicit `{ "path": "../games/tilt" }` project reference — the same pattern packages/
+// harness already uses for games/mine-run (reference exactly the game a project imports
+// from; never a blanket wildcard). That also caught two real defects the missing glob had
+// been hiding: TS2345 in tilt-t4-gates.ts:68 (the mirrorMove type lie C79 predicted — already
+// fixed by C81/#26's `M | null` correction, confirmed here as the compiler finding nothing
+// once the file entered scope) and TS4104 in tilt-kill-sweep.ts:40 (ReplayRecord.steps was
+// typed as mutable StepRecord[] though replay.ts never mutates it — fixed by making the type
+// honest, `readonly StepRecord[]`, not by casting the error away).
+//
+// The root Next.js app (tsconfig.app.json) is still NOT covered, and this is a real, distinct
+// gap from scripts/supabase's — not the same one, closed the same way. Its own `include`
+// spans TWO sibling directories (`app/**` and `games/**`), the latter deliberately
+// re-including every game's source that each game's OWN tsconfig.json already audits — so
+// there is no single self-contained `pkgDir` to walk and diff the way EXTRA_CHECKED_DIRS
+// assumes for scripts/ and supabase/. Doing this honestly means filtering `--listFiles`
+// output to the `app/` subset rather than reusing measurePackage() as-is: a real, if modest,
+// new code path, not a one-line addition — sized here, not built here, same posture as the
+// research/ glob was before this branch. templates/game*/ remains out of scope for the
+// reason already given below (scaffolding, not built by the root graph).
+//
+// Per C79's own rule — "an exemption that is printed is reviewable; one that lives in a
+// header comment is not" — the actual, current OUT_OF_SCOPE list below is a runtime-printed
+// artifact, not prose: run this script and read its own output for what it did not check and
+// why, rather than trusting this comment to stay accurate.
 //
 // Run via `pnpm check:tsconfig-coverage`. Wired into .github/workflows/ci.yml for when CI
 // resumes (C68: CI has not run in 11 days as of this writing) — do not assume CI runs this;
@@ -87,7 +106,25 @@ const ALLOWLIST = new Set([
   "packages/game-spec/vitest.config.ts",
   "packages/harness/vitest.config.ts",
   "packages/shell/vitest.config.ts", // not recorded in C72 — see comment above
+  "supabase/vitest.config.ts", // identical convention, newly in scope — see EXTRA_CHECKED_DIRS
 ]);
+
+// ---------------------------------------------------------------------------------------
+// Extra checked directories — single, self-contained directories with their own
+// tsconfig.json that are NOT discovered via pnpm-workspace.yaml (they have no package.json;
+// they are not pnpm workspace packages) but fit measurePackage()'s model exactly: every real
+// source file under the directory should be readable by that directory's own tsconfig.
+//
+// C79 ruling 1 (task #24): scripts/ was the actual finding — its blind spot here is exactly
+// where scripts/research/tilt-t4-gates.ts's mirrorMove type lie hid, one layer below C69/C72.
+// supabase/ is added alongside it because it is the identical shape (own tsconfig.json, in
+// the root tsc -b graph, single self-contained directory) and turned out to cost nothing:
+// auditing it found one file gap, the same benign vitest.config.ts convention already
+// allowlisted five times over for packages/* — no research/-style project-structure fix
+// was needed. This list is NOT the same mechanism as OUT_OF_SCOPE below: entries here ARE
+// checked, on every run, the same way every packages/games entry is.
+// ---------------------------------------------------------------------------------------
+const EXTRA_CHECKED_DIRS = ["scripts", "supabase"];
 
 // ---------------------------------------------------------------------------------------
 // Explicitly out of scope — printed at runtime, not just asserted in a header comment.
@@ -95,30 +132,19 @@ const ALLOWLIST = new Set([
 // C79 ruling 1: "an exemption that is printed is reviewable; one that lives in a header
 // comment is not." A prior version of this script argued scripts/ and the root Next.js app
 // out of scope in prose ("none of those are pnpm workspace packages") — that argument is
-// refuted (C79): scripts/ is real, shipped, typechecked-in-part code with its own
-// tsc -b-governed tsconfig.json, and this guard's own blind spot there is exactly where
-// scripts/research/tilt-t4-gates.ts's mirrorMove type lie was hiding. These four entries are
-// a KNOWN, OPEN gap, not a settled boundary — see docs/plans/platform-corrections.md C79
-// ruling 1 and task #24 (C79 addendum, c522bcf, sized the fix: adding research/**/*.ts to
-// scripts/tsconfig.json surfaces 5 real errors plus rootDir/project-reference work, because
-// research/ imports games/tilt/ from outside scripts' rootDir — bigger than this branch).
+// refuted for scripts/ and supabase/, both now in EXTRA_CHECKED_DIRS above. The two entries
+// remaining here are real, open gaps, not settled exemptions — see the header comment for
+// why each is a genuinely different (and differently-sized) problem than scripts/ was.
 // ---------------------------------------------------------------------------------------
 const OUT_OF_SCOPE = [
   {
-    path: "scripts/",
-    reason:
-      "real, shipped, typechecked-in-part code (own tsconfig.json, in the root tsc -b graph) — " +
-      "KNOWN GAP per C79 ruling 1, not a settled exemption; task #24 tracks extending scope here",
-  },
-  {
-    path: "supabase/",
-    reason:
-      "same shape as scripts/ — own tsconfig.json, in the root tsc -b graph, not a pnpm workspace " +
-      "package — not yet audited under C79's ruling; treated as the same open question, not a settled exemption",
-  },
-  {
     path: "app/ (tsconfig.app.json)",
-    reason: "the root Next.js app project — C79 ruling 1 names this explicitly as belonging in scope; not yet done",
+    reason:
+      "the root Next.js app project — C79 ruling 1 names this explicitly as belonging in scope. Not a " +
+      "single self-contained directory like scripts/ or supabase/: its own `include` spans app/** AND " +
+      "games/** (the latter deliberately re-covering what each game's own tsconfig already audits), so " +
+      "measurePackage()'s on-disk-vs-compiler diff needs a real (if modest) new code path — filtering " +
+      "--listFiles to the app/ subset — not a one-line addition. Sized, not built, in this branch.",
   },
   {
     path: "templates/game/, templates/game-solo/",
@@ -281,12 +307,22 @@ const { checked: packageDirs, uncheckable: uncheckablePackageDirs } = discoverPa
 console.log(`Discovered ${packageDirs.length} workspace package(s) from pnpm-workspace.yaml:`);
 for (const d of packageDirs) console.log(`  - ${d}`);
 console.log();
+console.log(
+  `Extra checked director${EXTRA_CHECKED_DIRS.length === 1 ? "y" : "ies"} (not pnpm workspace packages, checked the same way — C79 ruling 1, task #24):`
+);
+for (const d of EXTRA_CHECKED_DIRS) console.log(`  - ${d}/`);
+console.log();
 console.log(`Allowlisted (explicit, exact-path exclusions — C72 Finding 2, plus one this run's own audit added):`);
 for (const a of [...ALLOWLIST].sort()) console.log(`  - ${a}`);
 console.log();
 console.log(`Explicitly OUT OF SCOPE (C79 ruling 1 — printed here, not just argued in a header comment):`);
 for (const o of OUT_OF_SCOPE) console.log(`  - ${o.path} — ${o.reason}`);
 console.log();
+
+// EXTRA_CHECKED_DIRS join the same measurement loop as pnpm-workspace packages below —
+// measurePackage()/compilerCoveredFiles() only need a directory that owns both its source
+// files and its own tsconfig.json, which scripts/ and supabase/ do.
+const allCheckedDirs = [...packageDirs, ...EXTRA_CHECKED_DIRS];
 
 let totalUncoveredFiles = 0;
 let totalUncheckablePackages = 0;
@@ -335,7 +371,7 @@ function sleepMs(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-for (const pkgRelDir of packageDirs) {
+for (const pkgRelDir of allCheckedDirs) {
   const first = measurePackage(pkgRelDir);
 
   // A REAL tsconfig coverage gap is a property of committed configuration — it cannot
@@ -384,5 +420,8 @@ if (failed) {
   );
   process.exit(1);
 } else {
-  console.log("tsconfig coverage check passed — every workspace package's tsconfig reads every real source file it ships.");
+  console.log(
+    "tsconfig coverage check passed — every checked directory's tsconfig reads every real source file it ships " +
+      "(every workspace package, plus scripts/ and supabase/ — see EXTRA_CHECKED_DIRS above)."
+  );
 }
