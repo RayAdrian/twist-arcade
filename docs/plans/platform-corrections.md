@@ -6043,3 +6043,43 @@ through, rather than the code the fix had touched. My brief asked for a plan and
 because it also asked to be told where the brief was wrong — the same instruction that
 produced the analytics worktree-registration catch. That instruction is now the highest-yield
 line in any brief I write.
+
+---
+
+## C96 — I serialized two jobs on a 15-core machine and called it resource discipline.
+
+C94 ruled that mine-run's discharge and Bid-Tac-Toe's sweep must not run together, ranking
+them and giving the machine to mine-run. The ranking is still right; the serialization was
+not. The machine has **15 cores**. mine-run's discharge is a SINGLE thread at ~99% of ONE
+core, with load average 4.21 and roughly fourteen cores idle. There was never a conflict.
+
+The evidence I built the ruling on was real but misread. Earlier I measured mine-run's
+average utilization collapse from 100% to ~13%, and attributed it to "contention" in the
+abstract. The actual competitors were `vitest` and `tsc -b` — `vitest` in particular spawns
+workers across every available core, so it does not compete with a single-threaded job, it
+saturates the whole box. What I proved was "multi-core test runners starve a single-threaded
+job," and what I concluded was "two jobs starve each other." Those are different claims, and
+the second one cost hours of wall clock in which fourteen cores did nothing.
+
+The C62 memory drove this: load 107, forty bytes of output in hours, kill the parallelism.
+That correction is about *unbounded* parallelism — an uncapped fan-out of gate-table
+processes. I generalized it into a blanket "one job at a time," which is not what it says.
+A correction against over-parallelizing becomes a correction against parallelizing at all if
+you stop reading it at the headline.
+
+Ruling: capacity is a measurement, not a mood. Before serializing work on resource grounds,
+read the core count and read what is actually consuming the cores (`ps -r`), rather than
+reasoning from a load average and a bad memory. The concrete rule for this repo: single-
+threaded research jobs may run concurrently up to roughly the core count; the thing to keep
+scarce is *multi-core* runners (`vitest`, `tsc -b`, parallel gate tables), of which one at a
+time is genuinely right.
+
+`bid-tac-toe-budget-sweep.md` §2's P0 prerequisite is revised accordingly — the sweep is
+running now, pinned to a single sequential process, alongside mine-run's discharge.
+
+Worth noting what this near-miss shares with C95, recorded an hour earlier. There I built a
+feature, verified it with the one check it could not fail, and passed. Here I built a resource
+ruling, verified it against a measurement that did not test it, and passed. Both times the
+verification was real work that happened to be aimed slightly to the side of the claim. That
+is a more dangerous failure than not checking at all, because it produces a green result and
+therefore stops the search.
