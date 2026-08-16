@@ -11,6 +11,9 @@ importers:
       '@twist-arcade/bots':
         specifier: workspace:*
         version: link:packages/bots
+      '@twist-arcade/daily':
+        specifier: workspace:*
+        version: link:packages/daily
       '@twist-arcade/engine':
         specifier: workspace:*
         version: link:packages/engine

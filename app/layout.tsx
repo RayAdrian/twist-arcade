@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Script from "next/script";
 import { Fraunces, Instrument_Sans, Spline_Sans_Mono } from "next/font/google";
+import { getSiteUrl } from "@twist-arcade/shell";
+import { AnalyticsBootstrap } from "./AnalyticsBootstrap";
+import { getUmamiConfig } from "./analytics-config";
 import "./globals.css";
 
 // UI direction §1.1 Move 1 — the three self-hosted OFL faces, latin subset, `display: swap`.
@@ -58,7 +61,15 @@ const splineSansMono = Spline_Sans_Mono({
   display: "swap",
 });
 
+// metadataBase resolves every relative URL used elsewhere in this app's `Metadata` objects
+// (app/play/[gameId]/page.tsx's generateMetadata openGraph block, and any future canonical/
+// og:image entry) into an absolute one — without it, Next falls back to a build-time-inferred
+// localhost URL and warns on every build (C91: NEXT_PUBLIC_SITE_URL had no reader anywhere).
+// getSiteUrl() (packages/shell) reads NEXT_PUBLIC_SITE_URL directly; on the server (this file
+// never runs in the browser) its `window` fallback is inert, so this is effectively "env var,
+// else the literal http://localhost:3000" — matching .env.example's own pre-filled default.
 export const metadata: Metadata = {
+  metadataBase: new URL(getSiteUrl()),
   title: "Twist Arcade",
   description: "Classic games, one rule changed.",
 };
@@ -90,6 +101,12 @@ const THEME_BOOTSTRAP_SCRIPT = `
 `;
 
 export default function RootLayout({ children }: { children: ReactNode }) {
+  // Server-evaluated: getUmamiConfig() reads process.env directly, so an unconfigured
+  // deployment (the normal local-dev state, C91) never even STREAMS a <script> tag to the
+  // client — not "hidden via CSS/JS", genuinely absent from the rendered HTML. Verified by
+  // fetching the page both ways and inspecting the response body, not by reading this code.
+  const umami = getUmamiConfig();
+
   return (
     <html
       lang="en"
@@ -102,6 +119,21 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <Script id="theme-bootstrap" strategy="beforeInteractive">
           {THEME_BOOTSTRAP_SCRIPT}
         </Script>
+        {/* Umami Cloud (plan §12 Q1), loaded iff BOTH NEXT_PUBLIC_UMAMI_WEBSITE_ID and
+         *  NEXT_PUBLIC_UMAMI_SCRIPT_URL are set — an intentional, silent no-op otherwise
+         *  (C91). `afterInteractive` (Next's own recommended strategy for analytics/tag-
+         *  manager scripts): it loads after the page becomes interactive rather than
+         *  blocking hydration like `beforeInteractive` would, but still fires early enough
+         *  to capture the initial pageview — unlike `lazyOnload`, which defers until the
+         *  browser is idle and would lose fast-bouncing visitors, exactly the traffic a
+         *  growth metric like share rate most needs to see. Umami is cookieless by default;
+         *  nothing here adds a cookie or any cross-session identifier — see AnalyticsBootstrap
+         *  for the (also gated) wiring of the metrics.ts provider this script's global
+         *  (`window.umami`) is consumed through. */}
+        {umami && (
+          <Script id="umami-analytics" src={umami.scriptUrl} data-website-id={umami.websiteId} strategy="afterInteractive" />
+        )}
+        <AnalyticsBootstrap />
         <a
           href="#main"
           className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded focus:bg-paper focus:px-3 focus:py-2 focus:text-ink focus:outline focus:outline-2 focus:outline-focus-ring"

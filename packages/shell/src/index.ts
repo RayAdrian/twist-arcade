@@ -88,3 +88,4 @@ export { applyDailyCompletion, INITIAL_STREAK, readStreak, recordDailyCompletion
 export { vibrate, type HapticPattern } from "./haptics";
 export { dailyKey, firstsKey, gameKey, readVersioned, removeVersioned, writeVersioned, SETTINGS_KEY } from "./persistence";
 export { hasPlayedFirstGame, hasShownCallout, markCalloutShown, markFirstGamePlayed } from "./callouts";
+export { getSiteUrl } from "./site-url";

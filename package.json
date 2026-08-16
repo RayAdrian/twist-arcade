@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "@twist-arcade/bots": "workspace:*",
+    "@twist-arcade/daily": "workspace:*",
     "@twist-arcade/engine": "workspace:*",
     "@twist-arcade/fadeout": "workspace:*",
     "@twist-arcade/game-spec": "workspace:*",

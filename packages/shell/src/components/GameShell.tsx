@@ -19,6 +19,7 @@ import { useGame, type DailyOptions, type Mode } from "../useGame";
 import type { TurnPhase } from "../announcer";
 import { stubBotDriver, type BotDriver, type TierId } from "../bot-driver";
 import { composeShareArtifact, invokeShare, type ShareOutcome } from "../share-frame";
+import { getSiteUrl } from "../site-url";
 import { pickNextTwist } from "../next-twist";
 import { moveToCellId } from "../cell-id";
 import { BoardShell } from "./BoardShell";
@@ -50,7 +51,10 @@ export interface GameShellProps {
    *  `bot-driver.ts`'s `workerBotDriver` doc for the full reconciliation), so this prop is how
    *  the real driver reaches `useGame` without GameShell ever knowing a Worker exists. */
   botDriver?: BotDriver;
-  /** Canonical share path; default `/play/{gameId}`. */
+  /** Canonical share URL; default `${getSiteUrl()}/play/{gameId}` — a full, domain-qualified
+   *  URL (plan §4.4's literal share artifacts, e.g. "twistarcade.game/d/fadeout", are never a
+   *  bare path; C91 closed the gap where NEXT_PUBLIC_SITE_URL had no reader). Pass an explicit
+   *  value to override (e.g. a future daily-mode caller using a `/d/{gameId}` route). */
   shareUrl?: string;
   /** Optional per-game emoji prefix for the share text's header (e.g. a daily-package caller's
    *  GLYPH_TABLE[gameId] entry — C8: shell's frame previously had no glyph concept at all).
@@ -143,7 +147,7 @@ export function GameShell(props: GameShellProps) {
       {...(props.humanSeat !== undefined ? { humanSeat: props.humanSeat } : {})}
       {...(props.tierId !== undefined ? { tierId: props.tierId } : {})}
       {...(props.botDriver !== undefined ? { botDriver: props.botDriver } : {})}
-      shareUrl={props.shareUrl ?? `/play/${props.gameId}`}
+      shareUrl={props.shareUrl ?? `${getSiteUrl()}/play/${props.gameId}`}
       {...(props.shareGlyph !== undefined ? { shareGlyph: props.shareGlyph } : {})}
     />
   );
