@@ -66,6 +66,9 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 | mirrorfix (C81 tasks #26/#27: Nine Grids' mirrorMove null convention + harness fallback counting, and rush's draw-relief source under multi-seed) | `../claude-project-mirrorfix` | `feature/mirror-convention` | `twistarcade_mirrorfix` | 57721–57729 | not started (no DB) | ACTIVE — verified free with `lsof` AND `docker ps` |
 | depguard (C83 task #28: a guard comparing workspace imports against declared dependencies, including the templated-dynamic case) | `../claude-project-depguard` | `feature/deps-guard` | `twistarcade_depguard` | 57821–57829 | not started (no DB) | ACTIVE — verified free with `lsof` AND `docker ps` |
 
+| cell4 (C89/C90: measure the 2x2 factorial's unrun cell — DUCT selection composed with leaf evaluation and the C85 heuristic; then C76's mandatory head-to-head) | `../claude-project-cell4` | `feature/duct-leaf-eval` | `twistarcade_cell4` | 57921–57929 | not started (no DB) — search measurement only | ACTIVE — verified free with `lsof` AND `docker ps` per C62 |
+| analytics (C91: wire the Umami/SITE_URL env vars that `.env.example` advertised and no code read) | `../claude-project-analytics` | `feature/analytics-wiring` | `twistarcade_analytics` | 58021–58029 | not started (no DB) — app/shell wiring only | ACTIVE — verified free with `lsof` AND `docker ps`. REGISTERED LATE: the orchestrator delegated into this worktree without registering it first, contrary to §4, and the implementing agent flagged the omission rather than letting it pass silently. |
+
 ## Port blocks
 
 | Block | Team | Status |
@@ -115,3 +118,5 @@ exists is exactly the leak §6 exists to prevent.
 | 57621–57629 (team 28) | classic | CLAIMED 2026-08-16 — `lsof` AND `docker ps` |
 | 57721–57729 (team 29) | mirrorfix | CLAIMED 2026-08-16 — `lsof` AND `docker ps` |
 | 57821–57829 (team 30) | depguard | CLAIMED 2026-08-16 — `lsof` AND `docker ps` |
+| 57921–57929 (team 31) | cell4 | CLAIMED 2026-08-16 — `lsof` AND `docker ps` |
+| 58021–58029 (team 32) | analytics | CLAIMED 2026-08-16 — `lsof` AND `docker ps`; registered retroactively, see the team row |
