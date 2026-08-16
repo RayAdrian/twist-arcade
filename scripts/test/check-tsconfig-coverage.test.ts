@@ -145,8 +145,44 @@ describe("scripts/check-tsconfig-coverage.mjs", () => {
     const result = runScript();
     expect(result.status).toBe(0);
     expect(result.stdout).toMatch(/OUT OF SCOPE/);
-    expect(result.stdout).toMatch(/scripts\//);
+    // scripts/ closed out of OUT OF SCOPE (task #24) — the remaining, genuinely open boundary
+    // is the root Next.js app project (tsconfig.app.json); see the header comment for why it
+    // is a differently-shaped problem than scripts/ and supabase/ were.
+    expect(result.stdout).toMatch(/app\/ \(tsconfig\.app\.json\)/);
     expect(result.stdout).toMatch(/C79/);
+  }, 30_000);
+
+  it("checks scripts/ and supabase/ for real (task #24, C79 ruling 1) instead of listing them as out of scope", () => {
+    const result = runScript();
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/Extra checked director(y|ies)/);
+    expect(result.stdout).toMatch(/- scripts\//);
+    expect(result.stdout).toMatch(/- supabase\//);
+    expect(result.stdout).toMatch(/✓ scripts — tsconfig coverage matches disk/);
+    expect(result.stdout).toMatch(/✓ supabase — tsconfig coverage matches disk/);
+    // The OUT OF SCOPE block must no longer claim either directory as a known gap.
+    const outOfScopeBlock = result.stdout.slice(result.stdout.indexOf("OUT OF SCOPE"));
+    expect(outOfScopeBlock).not.toMatch(/^\s*-\s*scripts\//m);
+    expect(outOfScopeBlock).not.toMatch(/^\s*-\s*supabase\//m);
+  }, 30_000);
+
+  it("catches a planted gap in scripts/ the same way it catches one in a workspace package", () => {
+    // Proves EXTRA_CHECKED_DIRS is really wired into the measurement loop, not just printed:
+    // a real on-disk file scripts/tsconfig.json never reads must fail the run and be named.
+    // Planted under a new subdirectory — NOT a bare *.ts (scripts/tsconfig.json's own
+    // "*.ts" glob would cover that) and not under test/ or research/ (also covered) — so it
+    // is a genuine, uncovered gap rather than accidentally already in scope.
+    const plantDir = join(repoRoot, "scripts/__qa_extra_dir_probe__");
+    const plantPath = join(plantDir, "probe.ts");
+    mkdirSync(plantDir, { recursive: true });
+    writeFileSync(plantPath, "export const qaExtraDirProbe = 1;\n");
+    try {
+      const result = runScript();
+      expect(result.status).toBe(1);
+      expect(result.stdout + result.stderr).toMatch(/scripts\/__qa_extra_dir_probe__\/probe\.ts/);
+    } finally {
+      rmSync(plantDir, { recursive: true, force: true });
+    }
   }, 30_000);
 
   it("states the vitest.config.ts allowlist explicitly by exact path (C72 Finding 2) rather than staying silent about it", () => {
