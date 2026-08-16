@@ -5478,3 +5478,69 @@ Under `rolloutCapPlies: 0` with the corrected heuristic, versus C73's post-DUCT 
 (C76). A component agreeing with an oracle more often is not a system winning more games — C73→C76
 are four corrections about precisely that gap, and the only thing that closed the DUCT question was
 300–89 head-to-head, not any component metric.
+
+## C88 — C87's premise confirmed to three decimals, and candidate A refuted a second time.
+
+The re-test is in. Two results, and the first is an unusually clean confirmation.
+
+### C87 was right: the heuristic fix is inert in normal play
+
+| 10k, normal rollouts | P(chosen ∈ optimal) | mean bid | rootValue |
+|---|---|---|---|
+| **original** heuristic (n=20) | 0.350 / 0.350 | 3.050 / 2.350 | 0.1171 / 0.1219 |
+| **fixed** heuristic (n=50) | 0.380 / 0.340 | 3.080 / 2.340 | **0.1176 / 0.1227** |
+
+**Identical to three decimal places on root value**, with the small agreement differences well inside
+sampling noise at these n. C85 cut oracle disagreement from ~36% to ~14% on the *static* check and
+changed **nothing whatsoever** about how the search actually plays.
+
+That is exactly what C87 predicted from C73/V3's finding that rollouts reach real terminals at ~7.7
+plies against a 200-ply cap, so `valueOfStatus`'s "ongoing" branch never fires. **The prediction was
+made from a code reading and confirmed by measurement to three decimals.** A better evaluation
+function that is never evaluated is worth precisely zero, and now that is measured rather than argued.
+
+### Candidate A: refuted again, on entirely new grounds
+
+Enabling leaf evaluation (`rolloutCapPlies: 0`) with the corrected heuristic, at 10k:
+
+| | control (normal rollouts) | candidate A (leaf eval) |
+|---|---|---|
+| seat 0 agreement | **0.380** | **0.000** |
+| seat 1 agreement | 0.340 | **0.620** |
+| seat 0 mean bid | **3.08** (optimal is 3) | 1.06 |
+| seat 1 mean bid | 2.34 | 2.00 |
+| rootValue | 0.118 / 0.123 | **0.304 / 0.428** |
+
+**The three pre-registered predictions, scored as written:**
+
+1. *"Agreement rises materially above 0.000 at 10k"* — **SPLIT.** Seat 1 met it emphatically
+   (0.340 → 0.620, rising with budget). **Seat 0 went 0.380 → 0.000** — not merely unimproved but
+   destroyed.
+2. *"Mean chosen bid moves toward 3"* — **MISSED.** Seat 0 moved *away*, 3.08 → 1.06. The control was
+   already sitting essentially on the optimal bid.
+3. *"Root value stays near 0"* — **MISSED for both seats**, 0.118 → 0.304 and 0.123 → 0.428. Leaf
+   evaluation traded one defect for another, exactly as the prediction warned it might.
+
+**Candidate A is refuted a second time, and for a different reason than C78's.** C78 killed it because
+the heuristic pointed the wrong way; that defect is fixed, and it still loses — this time because it
+destroys one seat while helping the other, and degrades value honesty for both.
+
+### The finding nobody predicted: the defect is seat-asymmetric
+
+Leaf evaluation is *better than the control for seat 1* and *catastrophic for seat 0*. Seat 0's
+optimal set is the singleton `{3}`; seat 1's is `{2*, 3, 3*}`. A wider optimal set is easier to hit,
+but that cannot explain 0.380 → 0.000 — the control hits the singleton 38% of the time with the same
+heuristic and the same budget.
+
+**Something about leaf evaluation specifically breaks seat 0's bid selection**, and no hypothesis on
+record explains it. That is the open question, and it is more interesting than the refutation.
+
+### Ruling
+
+**Candidate A does not ship. Normal rollouts stay.** The best configuration measured for seat 0
+remains max-max with ordinary rollouts, whose mean bid (3.08) sits essentially on the proven optimum.
+
+**And C85's heuristic fix, while correct, buys nothing at the table.** It should not be sold as an
+improvement to play — it is a corrected component whose only consumer was refuted twice. Keeping it is
+right (an evaluation function that disagrees with a proof is a latent trap), but Bid-Tac-Toe's
+prospects are **not** improved by it, and #14 must not be decided as though they were.
