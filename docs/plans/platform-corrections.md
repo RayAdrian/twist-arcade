@@ -5816,3 +5816,77 @@ corrected heuristic beats the shipped search at both budgets.**
 **That is not yet a decision to ship Bid-Tac-Toe**, and the remaining work is now ordinary rather than
 mysterious: this configuration is unmerged, its gate table has never been run, and beating a flawed
 opponent is not the same as being good. But #14 no longer waits on a defect nobody understands.
+
+---
+
+## C93 — An unread env var was not dead config; it was hiding a broken feature.
+
+C91 split task #7 and found four `NEXT_PUBLIC_*` variables advertised in `.env.example`
+that no code anywhere read. The obvious reading was "dead config" — harmless clutter, delete
+the lines, move on. That reading was wrong about one of them.
+
+`NEXT_PUBLIC_SITE_URL` was unread because nothing needed an absolute origin. Nothing needed
+an absolute origin because `GameShell`'s default share URL was the bare relative path
+`/play/<gameId>`. A share artifact whose URL is a bare path is not shareable — paste it into
+a message and it resolves against the *recipient's* current origin, or nowhere at all. The
+plan's own literal share artifacts (`daily-and-share.md` §4.4) are domain-qualified. So the
+variable was not unread because it was surplus; it was unread because **the feature that
+should have consumed it was broken, and its being unread was the symptom.**
+
+This is the fourth layer of the shape C79/C83/C84 traced through the compiler manifest, the
+package manifest, and a manifest that structurally could not state the truth. Here the
+manifest was `.env.example`, and the new lesson is about the *inference*: a declaration with
+no reader can mean the declaration is surplus, or it can mean the reader is missing. Those
+have opposite fixes — delete the line, or build the thing. Deleting is the cheaper and more
+satisfying move, and it would have silently ratified a broken share feature.
+
+Ruling: when a guard or an audit finds a declared-but-unread name, the finding is
+"something is inconsistent," not "the declaration is surplus." Establish which side is wrong
+by asking what would consume it and checking whether that consumer works — before deleting.
+
+### The verification, and why the agent's report was not enough
+
+The implementing agent reported rendered-HTML evidence from a real browser, which is the
+right kind of evidence and is what I asked for. I re-ran it anyway (CLAUDE.md §8: subagent
+claims are not evidence) across three env states rather than two:
+
+| state | expectation | observed |
+|---|---|---|
+| unconfigured (ships today) | no analytics surface | 0 umami references in the server payload |
+| **half-configured** (id set, script URL missing) | no analytics surface | 0 references — partial config does not half-wire |
+| fully configured | script present with id and src | present, correct |
+
+The middle row is the one neither of us had a test for and is the realistic failure: an
+operator sets the ID from the Umami dashboard, never notices the second variable, and ships
+either a half-initialised tracker or a hard error. It behaves correctly because
+`getUmamiConfig()` is a single source of truth requiring both — but that was an untested
+property of the design until it was tested.
+
+The stronger property my re-run establishes over the agent's: when unconfigured, the string
+is absent from the **server payload**, not merely hidden on the client. It is a server-side
+gate, so an operator who never sets the vars ships no analytics surface at all rather than
+one that is present-but-inert.
+
+One methodological note against myself: my first check grepped for `data-website-id="..."`
+with literal quotes, found nothing, and I briefly read that as contradicting the agent. The
+attribute was there, escaped inside the RSC Flight payload; `afterInteractive` injects the
+tag post-hydration, so curl sees the payload and Playwright sees the DOM. The agent was
+right and my probe was wrong. Worth recording because the failure mode — a probe that can't
+see the thing it is looking for, reported as the thing being absent — is C71 exactly, and
+C71 was six corrections ago.
+
+### Process finding, against the orchestrator
+
+CLAUDE.md §4 makes the orchestrator responsible for registering every team in
+`docs/worktrees.md` **at creation**. I delegated into the analytics worktree without doing
+so. The implementing agent noticed and flagged it in its report rather than letting it pass,
+which is the only reason it did not go unrecorded.
+
+The registration has been backfilled and the team row says it was backfilled. Recording it
+that way rather than quietly writing a clean row matters: a register that gets filled in on
+completion is a log, not a register. Its entire function is to be correct *while* teams are
+running, because that is when the next team reads it to pick a port block.
+
+Ruling: register the team before the first delegation into the worktree, not before the
+merge. Both teams active at the time of writing (31 `cell4`, 32 `analytics`) are now
+registered with their port blocks verified free by `lsof` **and** `docker ps` per C62.
