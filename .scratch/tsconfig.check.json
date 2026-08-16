@@ -1,0 +1,18 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "rootDir": "."
+  },
+  "include": ["mirror-parity-refutation.ts"],
+  "references": [
+    { "path": "../packages/engine" },
+    { "path": "../packages/game-spec" },
+    { "path": "../packages/harness" },
+    { "path": "../packages/bots" },
+    { "path": "../games/tilt" },
+    { "path": "../games/fadeout" },
+    { "path": "../games/nine-grids" }
+  ]
+}

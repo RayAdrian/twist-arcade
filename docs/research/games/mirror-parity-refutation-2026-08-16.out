@@ -1,0 +1,28 @@
+Pre-implementation refutation experiment — mirror-metric amendment
+docs/plans/degeneracy-probes.md §1.1 (amended 2026-08-16); platform-corrections.md C81
+MEASUREMENT ONLY — thresholds.ts / probes-two-player.ts / gates untouched.
+
+Mirror matchup only (mirrorSeats: false) vs ruthless @ ci-effective budget, n=100 games, 2 seeds/game.
+
+game          seed                              rollouts  winRate  drawRate  parity   mirrorFallbackRate  wallClock
+tilt          mirror-parity-refutation-seed-a   3000      0.0%     0.0%      0.0%     0.0%                44.5s
+tilt          mirror-parity-refutation-seed-b   3000      0.0%     0.0%      0.0%     0.0%                46.8s
+fadeout       mirror-parity-refutation-seed-a   3000      0.0%     0.0%      0.0%     29.3%               36.3s
+fadeout       mirror-parity-refutation-seed-b   3000      0.0%     0.0%      0.0%     26.6%               40.9s
+nine-grids    mirror-parity-refutation-seed-a   1500      0.0%     0.0%      0.0%     88.7%               205.3s
+nine-grids    mirror-parity-refutation-seed-b   1500      0.0%     0.0%      0.0%     90.0%               192.1s
+
+Total wall clock: 566.0s
+
+=== Pre-registered verdict: does Tilt refute the amendment? ===
+  tilt/mirror-parity-refutation-seed-a: parity 0.0% (win 0.0%, draw 0.0%) — does not refute (<40%)
+  tilt/mirror-parity-refutation-seed-b: parity 0.0% (win 0.0%, draw 0.0%) — does not refute (<40%)
+VERDICT: NOT REFUTED — Tilt stays below 40% parity on both seeds.
+
+=== Informational: Fadeout draw share (prediction check, never gated) ===
+  fadeout/mirror-parity-refutation-seed-a: win 0.0%, draw 0.0%, parity 0.0% — mirror mostly LOSES rather than draws (relief remains correct but is cheap insurance, not mandatory)
+  fadeout/mirror-parity-refutation-seed-b: win 0.0%, draw 0.0%, parity 0.0% — mirror mostly LOSES rather than draws (relief remains correct but is cheap insurance, not mandatory)
+
+=== Informational: Nine Grids fallback rate (parity caveat) ===
+  nine-grids/mirror-parity-refutation-seed-a: parity 0.0% at mirrorFallbackRate 88.7% — this parity number is measured on a row that is overwhelmingly fallback (first-legal-vs-ruthless play), not mirroring; report with that caveat, never bare.
+  nine-grids/mirror-parity-refutation-seed-b: parity 0.0% at mirrorFallbackRate 90.0% — this parity number is measured on a row that is overwhelmingly fallback (first-legal-vs-ruthless play), not mirroring; report with that caveat, never bare.
