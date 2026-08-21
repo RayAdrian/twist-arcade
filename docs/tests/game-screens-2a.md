@@ -34,7 +34,7 @@ ScoreHUD,AriaAnnouncer}.tsx`), Crackstep's side panel (`games/crackstep/ui/SideP
 | D1 | Loading grid: staggered blink (`ta-blink`, 0–800 ms delays) | Staggered blink | **MATCH — the "scan shipped as blink" note in the brief is wrong; `ta-scan` is unused in artboard 2a** | LOD-001 |
 | D2 | Result: torn score slip (rotation, tear edge, winner-accent stamp, staggered timeline) | Material pass only; documented deferral in `ResultModal.tsx` header comment | Pinned deferral — verify the documented subset only | RES-001, RES-014 |
 | D3 | Crackstep "Moves used" block (mono 46px + italic "par 19", in side panel) | `ScoreHUD` single line above board ("moves N · par P" / "N moves") | Documented deviation — pin current copy + placement | CRK-004 |
-| D4 | "9 plies" count line under result timeline | Not built | **[CHALLENGE] undocumented gap** | RES-013 |
+| D4 | "9 plies" count line under result timeline | ~~Not built~~ **CORRECTED 2026-08-21 (stage 4): IS built** — in `games/fadeout/presentation.ts`'s `shareArtifact()`, not `ResultModal`, which is why an author reading only the shell components missed it. Renders live as "6 plies". | ~~[CHALLENGE]~~ **no deviation** | RES-013 → PASS |
 | D5 | "streak 13 days · longest 21" on result slip | `streakLine` prop exists + `streak.ts` exists; GameShell never passes it | **[CHALLENGE] undocumented gap** | RES-012 |
 | D6 | Loading/error states show the rule card **without** a "How?" button | RuleCard always renders "How?"; in loading/error `onHow={() => {}}` — a visible dead button | **[CHALLENGE]** | LOD-004, ERR-006 |
 | D7 | Active seat chip filled in **that player's** accent (plan §0: "an accent hue always means a player") | `TurnIndicator` hard-codes `bg-accent-p1` on whichever seat is active — Bot/P2's chip fills P1-blue on its turn | **[CHALLENGE]** | PLAY-005 |
@@ -553,7 +553,7 @@ owns these for every current and future game, so a defect here multiplies by the
 
 1. **Brief error:** the "loading scan → blink" deviation record is wrong (D1). Correct the
    record; do not "fix" the blink.
-2. **Undocumented deviations found:** ply-count line (D4), streak line on the result slip (D5),
+2. **Undocumented deviations found:** ~~ply-count line (D4 — withdrawn, see the ledger: it is built, in the game's own presentation layer)~~, streak line on the result slip (D5),
    dead "How?" in loading/error (D6), active-chip accent (D7), Describe-board placement (D8).
    Each has a [CHALLENGE] case; each needs a fix or a user waiver.
 3. **Reachability:** daily chrome ("daily 41" chip, "day 41" stamp, par readout) and hotseat
