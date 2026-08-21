@@ -50,6 +50,10 @@ export interface ResultModalProps {
   streakLine?: string;
   /** Default "Rematch" — solo/daily variants (S3) relabel this ("Try again", etc.). */
   primaryLabel?: string;
+  /** Design 2a's rotated "day N" stamp — rendered only when this result is a certified daily
+   *  run (the caller's own `daily.dayNumber`, e.g. GameShell's `daily` prop). Omitted entirely
+   *  (no stamp) for a casual, non-daily result. */
+  dayNumber?: number;
 }
 
 // "dismissed" (stage-6 must-fix 1: the user backed out of the native share sheet) renders
@@ -74,6 +78,7 @@ export function ResultModal({
   onOpenChange,
   streakLine,
   primaryLabel = "Rematch",
+  dayNumber,
 }: ResultModalProps) {
   const rematchRef = useRef<HTMLButtonElement>(null);
   const [shareState, setShareState] = useState<ShareState>({ kind: "idle" });
@@ -97,12 +102,21 @@ export function ResultModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-md rounded-xl border-brush border-ink bg-paper-lift p-6 shadow-print-4"
+        className="relative max-w-md rounded-xl border-brush border-ink bg-paper-lift p-6 shadow-print-4"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           rematchRef.current?.focus();
         }}
       >
+        {dayNumber !== undefined && (
+          <span
+            aria-hidden="true"
+            className="absolute -top-3 right-3 rotate-3 rounded border-ui border-ink bg-accent-p2 px-3 py-1 font-mono text-xs font-semibold uppercase tracking-wide text-paper shadow-print-2"
+          >
+            day {dayNumber}
+          </span>
+        )}
+
         {/* Material pass only (UI direction §4 is the full torn-score-slip rebuild — sheet/
          *  slip layout, stamp rotation + winner-accent color, receipt-tear mask, staggered
          *  timeline entrance — all deferred to that later item, which also needs a winner-accent

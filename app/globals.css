@@ -198,6 +198,26 @@
   animation: ta-float 4s var(--ease) infinite;
 }
 
+/* Design 2a "Loading — rule paints first" — the staggered-blink placeholder grid
+ * (GameShell.tsx's internal loading branch): each cell fades in and out on its own delay so the
+ * grid reads as "still dealing", never a single frozen frame. Declared OUTSIDE `@layer
+ * utilities` (matching `.ta-float` above) for the same content-scan-purge-immunity reason; the
+ * `prefers-reduced-motion` blanket below is what actually gates it — no `motion-safe:` prefix
+ * needed on the class itself. Purely decorative (`aria-hidden` at every call site). */
+@keyframes ta-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.ta-blink {
+  animation: ta-blink 1.6s ease-in-out infinite;
+}
+
 /* UI direction §5.3, R3 — Motion One does NOT respect `prefers-reduced-motion` on its own (its
  * `animate()` always runs); `animateSafe()` (packages/shell/src/motion.ts) is the gate for every
  * Motion One call site, but plain-CSS animations (Tailwind's `animate-pulse` skeletons, hover

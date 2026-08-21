@@ -92,6 +92,16 @@ describe("ResultModal", () => {
     expect(screen.getByText("3 games today")).toBeInTheDocument();
   });
 
+  it("renders a 'day N' stamp when dayNumber is provided (design 2a's certified-daily badge)", () => {
+    render(<ResultModal {...baseProps({ dayNumber: 41 })} />);
+    expect(screen.getByText("day 41")).toBeInTheDocument();
+  });
+
+  it("renders no day stamp at all when dayNumber is omitted (a casual, non-daily result)", () => {
+    render(<ResultModal {...baseProps()} />);
+    expect(screen.queryByText(/^day \d+$/)).toBeNull();
+  });
+
   it("shows a 'Copied' confirmation for 2s after a successful share, then reverts", async () => {
     vi.useFakeTimers();
     const onShare = vi.fn().mockResolvedValue("copied");

@@ -66,6 +66,52 @@ describe("GameShell — loading and error states", () => {
   });
 });
 
+describe("GameShell — header (design 2a: Library link, title, trailing chip)", () => {
+  it("renders a Library link and the manifest title immediately, before the async load resolves", () => {
+    const registryEntry = makeRegistryEntry();
+    render(<GameShell gameId={tttManifest.id} registryEntry={registryEntry} manifests={[tttManifest]} mode="solo-bot" />);
+    expect(screen.getByRole("link", { name: "◂ Library" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("heading", { name: tttManifest.title })).toBeInTheDocument();
+  });
+
+  it("shows the manifest's first tag as a '◌ {tag}' chip when not in daily mode", () => {
+    const registryEntry = makeRegistryEntry();
+    render(<GameShell gameId={tttManifest.id} registryEntry={registryEntry} manifests={[tttManifest]} mode="solo-bot" />);
+    expect(screen.getByText(`◌ ${tttManifest.tags[0]}`)).toBeInTheDocument();
+  });
+
+  it("shows a 'daily N' chip instead of the tag chip when a daily certificate is supplied", () => {
+    const registryEntry = makeRegistryEntry();
+    render(
+      <GameShell
+        gameId={tttManifest.id}
+        registryEntry={registryEntry}
+        manifests={[tttManifest]}
+        mode="solo-bot"
+        daily={{ day: "2026-08-21", dayNumber: 41 }}
+      />
+    );
+    expect(screen.getByText("daily 41")).toBeInTheDocument();
+    expect(screen.queryByText(`◌ ${tttManifest.tags[0]}`)).toBeNull();
+  });
+
+  it("keeps the header (Library link + title) visible on the load-error state", async () => {
+    const registryEntry = makeRegistryEntry({ failTimes: 99 });
+    render(<GameShell gameId={tttManifest.id} registryEntry={registryEntry} manifests={[tttManifest]} mode="solo-bot" />);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    expect(screen.getByRole("link", { name: "◂ Library" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("heading", { name: tttManifest.title })).toBeInTheDocument();
+  });
+
+  it("keeps the header visible once the game reaches the ready state", async () => {
+    const registryEntry = makeRegistryEntry();
+    render(<GameShell gameId={tttManifest.id} registryEntry={registryEntry} manifests={[tttManifest]} mode="solo-bot" />);
+    await waitFor(() => expect(screen.getAllByRole("gridcell").length).toBe(9));
+    expect(screen.getByRole("link", { name: "◂ Library" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("heading", { name: tttManifest.title })).toBeInTheDocument();
+  });
+});
+
 describe("GameShell — ready state, solo-bot", () => {
   it("commits a move by clicking a cell, and the bot's scripted reply lands automatically", async () => {
     const registryEntry = makeRegistryEntry();
@@ -210,6 +256,40 @@ describe("GameShell — result modal", () => {
       const cells = screen.getAllByRole("gridcell");
       expect(cells.every((c) => c.textContent === "")).toBe(true);
     });
+  });
+
+  it("wires presentation.textureLine(finalView) into ResultModal's reason line once the game ends (design 2a: 'Patience wore down O's marks')", async () => {
+    const registryEntry = makeRegistryEntry();
+    render(
+      <GameShell
+        gameId={tttManifest.id}
+        registryEntry={registryEntry}
+        manifests={[tttManifest]}
+        mode="solo-bot"
+        botDriver={scriptedBotDriver([{ cell: 3 }, { cell: 5 }])}
+      />
+    );
+    await waitFor(() => expect(screen.getAllByRole("gridcell").length).toBe(9));
+
+    async function clickCell(index: number) {
+      const cell = screen.getAllByRole("gridcell")[index]!;
+      await act(async () => {
+        cell.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+        cell.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 0, clientY: 0 }));
+      });
+    }
+
+    expect(screen.queryByText("Fixture texture line.")).toBeNull(); // not yet — game is ongoing
+
+    await clickCell(0);
+    await waitFor(() => expect(screen.getAllByRole("gridcell")[3]?.textContent).toBe("O"));
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    await clickCell(1);
+    await waitFor(() => expect(screen.getAllByRole("gridcell")[5]?.textContent).toBe("O"));
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    await clickCell(2);
+
+    await waitFor(() => expect(screen.getByText("Fixture texture line.")).toBeInTheDocument(), { timeout: 2000 });
   });
 
   it("Describe board after game end does NOT re-fire the terminal assertive announcement (I7/describeBoard regression)", async () => {

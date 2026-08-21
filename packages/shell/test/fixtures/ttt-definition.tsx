@@ -93,5 +93,10 @@ export const tttDefinition: GameDefinition<TTTState, TTTMove, TTTState> = {
       { title: "2", body: "two" },
       { title: "3", body: "three" },
     ],
+    // Fixture-only reason line, used by GameShell.test.tsx to prove GameShell actually wires
+    // `presentation.textureLine(finalView)` into ResultModal (it previously had no caller).
+    textureLine(finalView: TTTState): string {
+      return finalView.board.some((c) => c !== null) ? "Fixture texture line." : "";
+    },
   },
 };

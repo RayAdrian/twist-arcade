@@ -24,6 +24,7 @@ import { pickNextTwist } from "../next-twist";
 import { moveToCellId } from "../cell-id";
 import { BoardShell } from "./BoardShell";
 import { CalloutLayer } from "./CalloutLayer";
+import { GameHeader } from "./GameHeader";
 import { RuleCard } from "./RuleCard";
 import { HowSheet } from "./HowSheet";
 import { StatusLine } from "./StatusLine";
@@ -72,6 +73,23 @@ type LoadState =
 
 const RESULT_MODAL_DELAY_MS = 300;
 
+// Design 2a's header chip: a "daily N" badge takes priority over the tag facet whenever this
+// instance is a certified daily run (real data already threaded through as `props.daily` —
+// never a new field), falling back to the manifest's first tag (e.g. "◌ decay") otherwise.
+// Omitted entirely when neither is available. Header accent (p1/p2) is derived from `mode`,
+// not a new per-game manifest color: `solo-single` (score-chase/daily-puzzle formats, no
+// opponent) gets the p2 band Crackstep's own mockup uses; every other mode (an opponent is
+// present, human or bot) gets p1 — matching design 1b's own precedent of using these two hues
+// as decorative chrome bands (app/page.tsx's masthead/hero), not "this names a player".
+function headerChip(manifest: GameManifest, daily?: DailyOptions): string | undefined {
+  if (daily) return `daily ${daily.dayNumber}`;
+  return manifest.tags[0] ? `◌ ${manifest.tags[0]}` : undefined;
+}
+
+function headerAccent(mode: Mode): "p1" | "p2" {
+  return mode === "solo-single" ? "p2" : "p1";
+}
+
 export function GameShell(props: GameShellProps) {
   const { registryEntry } = props;
   const [loadState, setLoadState] = useState<LoadState>({ kind: "loading" });
@@ -97,23 +115,33 @@ export function GameShell(props: GameShellProps) {
     };
   }, [registryEntry, retryToken]);
 
+  const chip = headerChip(registryEntry.manifest, props.daily);
+  const accent = headerAccent(props.mode);
+
   if (loadState.kind === "error") {
     return (
-      <div className="mx-auto max-w-md p-4">
+      <div className="mx-auto max-w-md space-y-3 p-4">
+        <GameHeader title={registryEntry.manifest.title} accent={accent} {...(chip !== undefined ? { chip } : {})} />
         <RuleCard sentence={registryEntry.manifest.ruleSentence} onHow={() => {}} />
-        <div role="alert" className="mt-4 rounded border border-ink-muted p-4 text-center text-ink">
-          <p>Couldn&apos;t load this game.</p>
-          <div className="mt-3 flex justify-center gap-3">
+        {/* "Load error — never a blank board" (design 2a): a filled, stamped alert card, never
+         *  a bare inline notice — the rules stayed fine, only the load failed. */}
+        <div
+          role="alert"
+          className="rotate-[-0.4deg] rounded-xl border-brush border-ink bg-accent-p2 p-5 text-center text-paper shadow-print-3"
+        >
+          <p className="font-display text-2xl font-black">This twist didn&apos;t load.</p>
+          <p className="mt-1 font-texture text-sm opacity-90">The rules are fine — the paper jammed.</p>
+          <div className="mt-4 flex justify-center gap-3">
             <button
               type="button"
               onClick={() => setRetryToken((t) => t + 1)}
-              className="rounded border border-ink px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+              className="rounded-xl border-ui border-paper bg-marker px-4 py-2 font-mono text-sm font-semibold text-ink shadow-print-2 active:translate-x-0.5 active:translate-y-0.5 active:shadow-print-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
             >
               Retry
             </button>
             <a
               href="/"
-              className="rounded border border-ink-muted px-3 py-2 text-sm underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+              className="rounded-xl border-ui border-paper px-4 py-2 font-mono text-sm font-semibold text-paper no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
             >
               Back to library
             </a>
@@ -125,13 +153,28 @@ export function GameShell(props: GameShellProps) {
 
   if (loadState.kind === "loading") {
     return (
-      <div className="mx-auto max-w-md p-4">
+      <div className="mx-auto max-w-md space-y-3 p-4">
+        <GameHeader title={registryEntry.manifest.title} accent={accent} {...(chip !== undefined ? { chip } : {})} />
         <RuleCard sentence={registryEntry.manifest.ruleSentence} onHow={() => {}} />
+        {/* "Loading — rule paints first" (design 2a): the rule sentence above is already real
+         *  content (no skeleton needed for it); only the board area is a placeholder — a
+         *  dimmed, staggered-blink grid with a "dealing the board…" caption, rather than one
+         *  generic pulsing square. Purely decorative (`aria-hidden`) and covered by the global
+         *  `prefers-reduced-motion` blanket (app/globals.css) like every other animation. */}
         <div
           aria-hidden="true"
-          className="relative mx-auto mt-4 animate-pulse rounded bg-ink-muted/20"
+          className="mx-auto grid grid-cols-3 grid-rows-3 gap-1 rounded bg-ink p-1.5"
           style={{ width: "min(calc(100vw - 32px), 52svh)", aspectRatio: "1 / 1" }}
-        />
+        >
+          {Array.from({ length: 9 }, (_, i) => (
+            <span
+              key={i}
+              className="ta-blink block rounded-sm bg-paper-shade"
+              style={{ animationDelay: `${i * 100}ms` }}
+            />
+          ))}
+        </div>
+        <p className="text-center font-mono text-xs uppercase tracking-wide text-ink-muted">dealing the board…</p>
       </div>
     );
   }
@@ -272,6 +315,16 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
     [presentation, game.history, game.view]
   );
 
+  // Design 2a's italic reason line ("Patience wore down O's marks") — `presentation.
+  // textureLine` already existed (Fadeout's own presentation.ts implements it) but had no
+  // caller anywhere in the shell; ResultModal's own `textureLine` prop was likewise already
+  // built and tested but never fed real data. Only meaningful once the game has actually
+  // ended (`presentation.textureLine`'s own contract is a `finalView`), and only rendered when
+  // it returns non-empty — a game whose textureLine has nothing to say for this particular
+  // ending must never show an empty line.
+  const textureLine =
+    game.status.kind !== "ongoing" && presentation.textureLine ? presentation.textureLine(game.view) || undefined : undefined;
+
   async function handleShare(): Promise<ShareOutcome> {
     try {
       const text = composeShareArtifact({
@@ -342,11 +395,16 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
         ? "Bot"
         : undefined;
 
+  // Design 2a's "Crackstep · daily solo · desktop" panel: a game that supplies extraControls
+  // gets a wider shell + a responsive two-column layout (board+controls left, the game's own
+  // side panel right) at md+; every other game keeps the original single centered column at
+  // every viewport, unchanged.
+  const hasSidePanel = presentation.extraControls !== undefined;
+  const readyChip = headerChip(manifest, daily);
+
   return (
-    <div className="mx-auto max-w-md p-4">
-      <header>
-        <h1 className="text-lg font-bold text-ink">{manifest.title}</h1>
-      </header>
+    <div className={hasSidePanel ? "mx-auto max-w-3xl space-y-3 p-4" : "mx-auto max-w-md space-y-3 p-4"}>
+      <GameHeader title={manifest.title} accent={headerAccent(mode)} {...(readyChip !== undefined ? { chip: readyChip } : {})} />
 
       <RuleCard sentence={manifest.ruleSentence} onHow={() => setHowOpen(true)} />
 
@@ -355,7 +413,11 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
       <div className={dimmed ? "opacity-60" : undefined}>
         <div className="my-2">
           {mode === "solo-single" ? (
-            <ScoreHUD movesUsed={game.moveCount} {...(game.score !== undefined ? { score: game.score } : {})} />
+            <ScoreHUD
+              movesUsed={game.moveCount}
+              {...(game.score !== undefined ? { score: game.score } : {})}
+              {...(daily?.par !== undefined ? { par: daily.par } : {})}
+            />
           ) : game.botError ? (
             // Plan §5.2.4: a retryable error state, never a silent hang — the board stays
             // legally inert (it's still the bot's turn) until this recovers.
@@ -387,34 +449,38 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
           />
         )}
 
-        <BoardShell
-          rows={rows}
-          cols={cols}
-          disabled={game.legal.length === 0}
-          onCellAction={handleCellAction}
-          boardLabel={`${manifest.title} board`}
-          lockedUntil={game.lockedUntil}
-          reducedMotion={reducedMotion}
-          overlay={<CalloutLayer firstOccurrence={game.firstOccurrence} />}
-        >
-          <presentation.Board
-            view={game.view}
-            legal={game.legal}
-            onMove={(m: Json) => handleCellAction(moveToCellId(m))}
-            seat={mode === "hotseat" ? game.presentingSeat : (humanSeat ?? 0)}
-            prefs={{ reducedMotion, theme }}
-          />
-        </BoardShell>
+        <div className={hasSidePanel ? "md:grid md:grid-cols-[1fr_300px] md:items-start md:gap-6" : undefined}>
+          <BoardShell
+            rows={rows}
+            cols={cols}
+            disabled={game.legal.length === 0}
+            onCellAction={handleCellAction}
+            boardLabel={`${manifest.title} board`}
+            lockedUntil={game.lockedUntil}
+            reducedMotion={reducedMotion}
+            overlay={<CalloutLayer firstOccurrence={game.firstOccurrence} />}
+          >
+            <presentation.Board
+              view={game.view}
+              legal={game.legal}
+              onMove={(m: Json) => handleCellAction(moveToCellId(m))}
+              seat={mode === "hotseat" ? game.presentingSeat : (humanSeat ?? 0)}
+              prefs={{ reducedMotion, theme }}
+            />
+          </BoardShell>
 
-        {presentation.extraControls && (
-          <presentation.extraControls
-            view={game.view}
-            legal={game.legal}
-            onMove={(m: Json) => handleCellAction(moveToCellId(m))}
-            seat={mode === "hotseat" ? game.presentingSeat : (humanSeat ?? 0)}
-            prefs={{ reducedMotion, theme }}
-          />
-        )}
+          {presentation.extraControls && (
+            <div className="mt-4 md:mt-0">
+              <presentation.extraControls
+                view={game.view}
+                legal={game.legal}
+                onMove={(m: Json) => handleCellAction(moveToCellId(m))}
+                seat={mode === "hotseat" ? game.presentingSeat : (humanSeat ?? 0)}
+                prefs={{ reducedMotion, theme }}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="mt-2">
@@ -436,7 +502,7 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
             <button
               type="button"
               onClick={game.describeBoard}
-              className="rounded px-3 py-2 text-sm text-ink underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+              className="rounded px-3 py-2 font-mono text-xs text-ink-muted underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
             >
               Describe board
             </button>
@@ -453,6 +519,7 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
       <ResultModal
         open={resultModalOpen}
         resultText={resultText}
+        {...(textureLine !== undefined ? { textureLine } : {})}
         artifactBody={artifactBody}
         shareFallbackText={shareFallbackText || artifactBody}
         nextTwist={nextTwist}
@@ -461,6 +528,7 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
         onNextTwistClick={handleNextTwistClick}
         onShare={handleShare}
         onOpenChange={setResultModalOpen}
+        {...(daily !== undefined ? { dayNumber: daily.dayNumber } : {})}
       />
 
       {/* I7: `token={game.announcement}` — useGame hands back a FRESH object literal every time
