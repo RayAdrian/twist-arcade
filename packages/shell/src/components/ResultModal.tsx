@@ -15,7 +15,7 @@
 // "use client" — hooks (see board-context.tsx's comment).
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type { GameManifest } from "@twist-arcade/game-spec";
 import type { ShareOutcome } from "../share-frame";
 import { Dialog, DialogContent, DialogTitle } from "./ui/dialog";
@@ -47,6 +47,16 @@ export interface ResultModalProps {
   onShare(): Promise<ShareOutcome>;
   /** Escape closes to the finished board — the board stays inspectable underneath. */
   onOpenChange(open: boolean): void;
+  /** RES-002/A11Y-007 fix: where to send focus when this modal closes (Escape or an
+   *  outside/overlay click — there is no close button). This modal has NO click-based opener
+   *  at all: GameShell opens it automatically ~300ms after the game reaches a terminal status,
+   *  so there is no "invoking control" for Radix's default trigger-based focus-restore to
+   *  return to (that mechanism requires a `<DialogTrigger>`, which nothing here renders — its
+   *  `context.triggerRef` would just stay null forever). The caller passes the finished
+   *  board's own container ref instead — the sensible landmark per this component's own
+   *  "board stays inspectable underneath" contract. Omitted/null falls back to the Dialog
+   *  primitive's own default behavior. */
+  restoreFocusRef?: RefObject<HTMLElement | null>;
   streakLine?: string;
   /** Default "Rematch" — solo/daily variants (S3) relabel this ("Try again", etc.). */
   primaryLabel?: string;
@@ -89,6 +99,7 @@ export function ResultModal({
   onNextTwistClick,
   onShare,
   onOpenChange,
+  restoreFocusRef,
   streakLine,
   primaryLabel = "Rematch",
   dayNumber,
@@ -152,6 +163,19 @@ export function ResultModal({
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           rematchRef.current?.focus();
+        }}
+        onCloseAutoFocus={(e) => {
+          // Radix's own documented extension point for "restore focus somewhere specific on
+          // close" — not a hand-rolled replacement for FocusScope's trap/loop machinery, which
+          // still owns everything else about focus while the modal is open. Preventing default
+          // stops Radix's own fallback (which would try `context.triggerRef.current?.focus()`
+          // — always a no-op here, since nothing renders a `<DialogTrigger>` — and land on
+          // `document.body`, exactly the RES-002 regression) only when we actually have
+          // somewhere better to send it.
+          if (restoreFocusRef?.current) {
+            e.preventDefault();
+            restoreFocusRef.current.focus();
+          }
         }}
       >
         {dayNumber !== undefined && (

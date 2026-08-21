@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -239,5 +240,72 @@ describe("ResultModal", () => {
   it("has no axe violations when open", async () => {
     const { container } = render(<ResultModal {...baseProps({ textureLine: "texture", streakLine: "3 games today" })} />);
     expect(await axe(container)).toHaveNoViolations();
+  });
+});
+
+// RES-002 / A11Y-007 (stage-4 finding): Escape (and any other dismissal) left
+// `document.activeElement === document.body` instead of returning focus into the page.
+// ResultModal has NO click-based opener at all — GameShell opens it automatically ~300ms
+// after the game reaches a terminal status (see this file's own header comment) — so there is
+// no "invoking control" for Radix's default trigger-based restore to return to. The fix is a
+// caller-supplied `restoreFocusRef` (normally the finished board's own container), wired to
+// the Dialog primitive's own `onCloseAutoFocus` extension point — Radix's documented escape
+// hatch for "restore focus somewhere specific on close", not a hand-rolled replacement for its
+// focus trap/scope machinery.
+//
+// This harness mirrors GameShell's real wiring: a real, uncontrolled-from-the-test open/close
+// lifecycle (via useState), not a static `open` prop — Radix's FocusScope only runs its
+// unmount-focus-restoration logic when the dialog ACTUALLY closes (Presence unmounts), which
+// requires `open` to really flip to `false`, not just `onOpenChange` being called.
+function ResultModalRestoreHarness(overrides: Partial<React.ComponentProps<typeof ResultModal>> = {}) {
+  const [open, setOpen] = useState(true);
+  const boardRef = useRef<HTMLDivElement>(null);
+  return (
+    <>
+      <div ref={boardRef} tabIndex={-1} data-testid="board">
+        finished board
+      </div>
+      <ResultModal {...baseProps({ onOpenChange: setOpen, ...overrides })} open={open} restoreFocusRef={boardRef} />
+    </>
+  );
+}
+
+describe("ResultModal — focus return on dismiss (RES-002 / A11Y-007)", () => {
+  it("returns focus to restoreFocusRef's element (the board) on Escape — not document.body", async () => {
+    render(<ResultModalRestoreHarness />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Rematch" })).toHaveFocus());
+
+    await userEvent.keyboard("{Escape}");
+
+    // Disambiguates *why* focus ended up wherever it did: confirms the dialog actually closed
+    // (rather than "board never got focus because Escape didn't dismiss anything").
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Rematch" })).toBeNull());
+    expect(document.activeElement).not.toBe(document.body);
+    expect(screen.getByTestId("board")).toHaveFocus();
+  });
+
+  it("returns focus to restoreFocusRef's element (the board) on outside/overlay click — not document.body", async () => {
+    render(<ResultModalRestoreHarness />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Rematch" })).toHaveFocus());
+
+    // The scrim/overlay is the dialog-content's immediate previous sibling in the DOM (Radix's
+    // Portal renders Overlay then Content, in that order, as direct children of body — verified
+    // by inspection, not assumed) — a structural lookup, not a Tailwind-class string match,
+    // so a future restyle can't silently break this the way a className-based selector would.
+    // A real modal disables pointer events on everything BEHIND the overlay (`document.body`
+    // itself gets `pointer-events: none` while open — confirmed by inspection), so clicking the
+    // overlay itself, not `document.body`, is what a real user's scrim-tap does.
+    const dialog = screen.getByRole("dialog");
+    const overlay = dialog.previousElementSibling as HTMLElement;
+    await userEvent.click(overlay);
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Rematch" })).toBeNull());
+    expect(document.activeElement).not.toBe(document.body);
+    expect(screen.getByTestId("board")).toHaveFocus();
+  });
+
+  it("does not disturb initial focus-on-open (still lands on Rematch) now that restoreFocusRef is wired", async () => {
+    render(<ResultModalRestoreHarness />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Rematch" })).toHaveFocus());
   });
 });

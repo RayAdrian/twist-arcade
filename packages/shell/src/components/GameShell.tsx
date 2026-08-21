@@ -247,6 +247,21 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
   const { manifest, engine, presentation } = definition;
   const [howOpen, setHowOpen] = useState(false);
   const [resultModalOpen, setResultModalOpen] = useState(false);
+  // RES-002/A11Y-007 fix: ResultModal has no click-based opener (it opens automatically below,
+  // ~300ms after a terminal status) — focus on close goes to the finished board instead. See
+  // BoardShell's `containerRef` doc and ResultModal's `restoreFocusRef` doc.
+  const boardContainerRef = useRef<HTMLDivElement>(null);
+  // HOW-002/A11Y-007 fix: HowSheet has TWO simultaneously-mounted openers (RuleCard's "How?"
+  // below, and ControlsRow's "? How" further down) that both call `openHow`. Radix's own
+  // trigger-based restore can't disambiguate between them (see HowSheet's `restoreFocusRef`
+  // doc), so the actual clicked element is captured here, synchronously, at the moment either
+  // button's onClick fires — `document.activeElement` is guaranteed to be that exact button at
+  // this point for both mouse and keyboard activation.
+  const howOpenerRef = useRef<HTMLElement | null>(null);
+  function openHow() {
+    howOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setHowOpen(true);
+  }
   const [recentlyShownId, setRecentlyShownId] = useState<string | undefined>(undefined);
   // I4: best-effort text for ResultModal's share-failed fallback — set on every Share attempt
   // (success or failure) so the textarea always has SOMETHING sensible to show if the player
@@ -418,6 +433,7 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
       boardLabel={`${manifest.title} board`}
       lockedUntil={game.lockedUntil}
       reducedMotion={reducedMotion}
+      containerRef={boardContainerRef}
       overlay={<CalloutLayer firstOccurrence={game.firstOccurrence} />}
     >
       <presentation.Board
@@ -434,7 +450,7 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
     <div className={hasSidePanel ? "mx-auto max-w-3xl space-y-3 p-4" : "mx-auto max-w-md space-y-3 p-4"}>
       <GameHeader title={manifest.title} accent={headerAccent(mode)} {...(readyChip !== undefined ? { chip: readyChip } : {})} />
 
-      <RuleCard sentence={manifest.ruleSentence} onHow={() => setHowOpen(true)} />
+      <RuleCard sentence={manifest.ruleSentence} onHow={openHow} />
 
       {showBanner && <PassDeviceInterstitial nextLabel={`Player ${(game.handoff!.nextSeat ?? 0) + 1}`} variant="banner" onReady={game.confirmHandoff} />}
 
@@ -523,7 +539,7 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
           canUndo={game.canUndo}
           {...(game.canUndo ? { onUndo: game.undo } : {})}
           onRestart={game.restart}
-          onHow={() => setHowOpen(true)}
+          onHow={openHow}
           // I10, orchestrator ruling: hotseat confirms Restart whenever moveCount >= 1, NOT the
           // solo >= 3 threshold — destroying a shared two-player game with one accidental tap
           // is the STRONGER case for a guard, not the weaker one solo's higher threshold
@@ -545,7 +561,13 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
         />
       </div>
 
-      <HowSheet open={howOpen} onOpenChange={setHowOpen} sentence={manifest.ruleSentence} frames={presentation.howSheetFrames} />
+      <HowSheet
+        open={howOpen}
+        onOpenChange={setHowOpen}
+        sentence={manifest.ruleSentence}
+        frames={presentation.howSheetFrames}
+        restoreFocusRef={howOpenerRef}
+      />
 
       {showBlockingInterstitial && (
         <PassDeviceInterstitial nextLabel={`Player ${(game.handoff!.nextSeat ?? 0) + 1}`} variant="blocking" onReady={game.confirmHandoff} />
@@ -563,6 +585,7 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
         onNextTwistClick={handleNextTwistClick}
         onShare={handleShare}
         onOpenChange={setResultModalOpen}
+        restoreFocusRef={boardContainerRef}
         {...(daily !== undefined ? { dayNumber: daily.dayNumber } : {})}
       />
 
