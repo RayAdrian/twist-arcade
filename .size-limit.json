@@ -1,12 +1,12 @@
 [
   {
-    "name": "catalog route (/)",
+    "name": "catalog route (/) first load JS (manifests only, eager; each game's engine/UI is a separate chunk not measured here — see `pnpm chunk-budget`)",
     "path": ".next/static/chunks/app/page-*.js",
     "limit": "75 kB",
     "gzip": true
   },
   {
-    "name": "game route (/play/[gameId])",
+    "name": "play route (/play/[gameId]) SHARED SHELL chunk only — excludes every game's own engine/presentation code, which loads via games/registry.ts's import() into separate content-hashed async chunks this glob cannot match; per-game budget is enforced by `pnpm chunk-budget` (scripts/chunk-budget.ts, platform-corrections.md C38/C50), wired in CI right after this check",
     "path": ".next/static/chunks/app/play/*/page-*.js",
     "limit": "75 kB",
     "gzip": true
