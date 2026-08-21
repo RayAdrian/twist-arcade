@@ -66,16 +66,46 @@ export const manifest: GameManifest = {
     },
   ],
 
-  // ciGateBudget.twoPlayerCiRollouts is left UNSET (still). B3's own budget sweep
-  // (docs/research/games/bid-tac-toe-b3-report.md §1, C22/C24-safe: one fixed seed, never the
-  // swept variable in the seed) ran candidates 1,600 through 10,000 and found `solved-value-
-  // reached` failing (0% — self-play never draws) at EVERY one, with `strong-vs-random` getting
-  // WORSE as rollouts rise — a platform-level MCTS defect on simultaneous nodes (§2 of that
-  // report: packages/bots/src/mcts.ts picks the single most-visited JOINT (row,col) arm rather
-  // than aggregating per player's own marginal move), not a signal about which budget is safe.
-  // Every number in that sweep describes a badly-played game — setting this field now would be
-  // tuning a broken measurement. Revisit once the search defect is fixed (not this game's own
-  // scope to fix — packages/bots is shared platform code).
+  // ciGateBudget.twoPlayerCiRollouts is left UNSET (still) — but the reason has changed.
+  //
+  // History (pre-fix): B3's own budget sweep (docs/research/games/bid-tac-toe-b3-report.md §1,
+  // C22/C24-safe: one fixed seed, never the swept variable in the seed) ran candidates 1,600
+  // through 10,000 and found `solved-value-reached` failing (0% — self-play never draws) at
+  // EVERY one, with `strong-vs-random` getting WORSE as rollouts rise — a platform-level MCTS
+  // defect on simultaneous nodes (§2 of that report: packages/bots/src/mcts.ts picks the single
+  // most-visited JOINT (row,col) arm rather than aggregating per player's own marginal move),
+  // not a signal about which budget is safe. Every number in that sweep described a
+  // badly-played game — setting this field then would have been tuning a broken measurement.
+  // The comment said: revisit once the search defect is fixed.
+  //
+  // That trigger has fired and been answered (platform-corrections.md C94, C97, C99). The
+  // search defect was fixed — DUCT selection at simultaneous nodes + leaf evaluation
+  // (`leafEvaluation: true`, above) + the C85-corrected heuristic — and the pre-registered
+  // post-fix sweep (B3v2, design in docs/plans/bid-tac-toe-budget-sweep.md, full report
+  // docs/research/games/bid-tac-toe-b3v2-report.md) ran under the FIXED search. The answer was
+  // NEGATIVE: zero of ten candidate budgets (800 through 10,000) qualified.
+  // `solved-value-reached` (floor 90%) peaked at 36.0% at 1,600 rollouts (95% CI [30.9%,
+  // 41.1%]) — a 54-point shortfall at the best cell, with the floor outside every CI on the
+  // ladder. `strong-vs-random` passed everywhere (95.3%–100%), so this is not a broken
+  // instrument — the bots punish random play fine, they just cannot hold a proven draw against
+  // themselves.
+  //
+  // The measured shape: NOT flat across the ladder (C97 said "flat"; C99 corrected it). The
+  // rise from 800 (14.7%) to the 1,400–1,600 region (34.7% / 36.0%) is real (t = 4.36) — then
+  // the curve is statistically flat from 1,400 through 10,000 (chi-square ~= 8.7, df 6,
+  // p ~= 0.19). Rise, then plateau at roughly a third of the floor.
+  //
+  // So the field stays unset, for a different reason than before: previously it was unset
+  // because the numbers were untrustworthy (wrong search); now it is unset because, under the
+  // fixed search, no budget qualifies — and no gate table is run at an arbitrary budget (the
+  // exact error B3 refused). The evidence supports a KILL recommendation; the kill itself has
+  // NOT been executed — this game is not registered, and the ship/kill call is the user's,
+  // not this comment's.
+  //
+  // Reopening condition (bid-tac-toe-budget-sweep.md §9, unchanged): a search/evaluation change
+  // that first clears rollout-evaluation.md §3's acceptance (oracle agreement + honesty +
+  // head-to-head) may re-run THIS sweep unchanged — same seeds (`b3v2-postfix-sweep`), same
+  // ten-point ladder, same decision rule. The 90% floor does not move.
 
   // B2's exact solve (docs/research/games/bid-tac-toe-solve-report.md): STARTING_BUDGET=8 is a
   // PURE, PROVEN, EXACT draw — 369,802 bid nodes checked, zero impure (Develin-Payne holds
