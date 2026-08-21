@@ -71,6 +71,8 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 
 | gamescreens (design turn 2 / artboard 2a: play, result, how-to and loading screens in the Riso Zine system 1b established) | `../claude-project-gamescreens` | `feature/game-screens-2a` | `twistarcade_gamescreens` | 58121–58129 | not started (no DB) — presentation-layer only | CLOSED 2026-08-21 — merged and pushed (faa675d..15439d6), worktree removed, branch deleted, ports 58121–58129 released; no Supabase stack was started, so no containers or volumes to drop. |
 
+| dialogfocus (stage-4 findings RES-002 / HOW-002 / A11Y-007: Escape on ResultModal and HowSheet leaves focus on document.body instead of returning it to the opener) | `../claude-project-dialogfocus` | `fix/dialog-focus-return` | `twistarcade_dialogfocus` | 58221–58229 | not started (no DB) — presentation/a11y only | ACTIVE — verified free with `lsof` AND `docker ps` per C62. Registered BEFORE delegation (C93), and given a real worktree rather than a branch in the shared checkout — §4 requires a worktree and I had skipped that four times running. |
+
 ## Port blocks
 
 | Block | Team | Status |
@@ -123,3 +125,4 @@ exists is exactly the leak §6 exists to prevent.
 | 57921–57929 (team 31) | cell4 | RELEASED 2026-08-21 (reconciliation) — was CLAIMED 2026-08-16 — `lsof` AND `docker ps` |
 | 58021–58029 (team 32) | analytics | RELEASED 2026-08-16 — was CLAIMED 2026-08-16 — `lsof` AND `docker ps`; registered retroactively, see the team row |
 | 58121–58129 (team 33) | gamescreens | RELEASED 2026-08-21 — was CLAIMED 2026-08-21 — `lsof` AND `docker ps` |
+| 58221–58229 (team 34) | dialogfocus | CLAIMED 2026-08-21 — `lsof` AND `docker ps` |
