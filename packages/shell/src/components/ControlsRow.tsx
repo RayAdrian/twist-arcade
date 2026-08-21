@@ -69,38 +69,43 @@ export function ControlsRow({
   );
 
   return (
-    <div className="flex items-center justify-center gap-4">
-      {canUndo && (
-        <button type="button" className={buttonClass} disabled={disabled} onClick={onUndo}>
-          ↩ Undo
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-center gap-4">
+        {canUndo && (
+          <button type="button" className={buttonClass} disabled={disabled} onClick={onUndo}>
+            ↩ Undo
+          </button>
+        )}
+
+        {confirmRestart ? (
+          <AlertDialog>
+            <AlertDialogTrigger asChild disabled={disabled}>
+              {restartButton}
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogTitle>Restart?</AlertDialogTitle>
+              <AlertDialogDescription>This game will be lost.</AlertDialogDescription>
+              <div className="mt-4 flex justify-end gap-2">
+                <AlertDialogCancel className={buttonClass}>Cancel</AlertDialogCancel>
+                <AlertDialogAction className={buttonClass} onClick={onRestart}>
+                  Restart
+                </AlertDialogAction>
+              </div>
+            </AlertDialogContent>
+          </AlertDialog>
+        ) : (
+          restartButton
+        )}
+
+        <button type="button" className={buttonClass} onClick={onHow}>
+          ? How
         </button>
-      )}
+      </div>
 
-      {confirmRestart ? (
-        <AlertDialog>
-          <AlertDialogTrigger asChild disabled={disabled}>
-            {restartButton}
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogTitle>Restart?</AlertDialogTitle>
-            <AlertDialogDescription>This game will be lost.</AlertDialogDescription>
-            <div className="mt-4 flex justify-end gap-2">
-              <AlertDialogCancel className={buttonClass}>Cancel</AlertDialogCancel>
-              <AlertDialogAction className={buttonClass} onClick={onRestart}>
-                Restart
-              </AlertDialogAction>
-            </div>
-          </AlertDialogContent>
-        </AlertDialog>
-      ) : (
-        restartButton
-      )}
-
-      <button type="button" className={buttonClass} onClick={onHow}>
-        ? How
-      </button>
-
-      {extras}
+      {/* Design 2a: the game-specific extras slot (e.g. "Describe board") renders as its own
+       *  centered row below the fixed-anatomy buttons, not squeezed into the same flex row —
+       *  a purely visual grouping change, same `extras` prop/content as before. */}
+      {extras && <div className="flex justify-center">{extras}</div>}
     </div>
   );
 }

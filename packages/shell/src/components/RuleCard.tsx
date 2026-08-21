@@ -27,7 +27,7 @@ export function RuleCard({ sentence, onHow }: RuleCardProps) {
       <button
         type="button"
         onClick={onHow}
-        className="shrink-0 text-sm text-ink-muted underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+        className="shrink-0 rounded border-ui border-ink bg-marker px-2.5 py-1 font-mono text-xs font-semibold text-ink shadow-print-1 active:translate-x-0.5 active:translate-y-0.5 active:shadow-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
       >
         How?
       </button>

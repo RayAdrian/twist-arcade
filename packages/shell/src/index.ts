@@ -32,6 +32,8 @@ export { CountdownBadge } from "./components/CountdownBadge";
 export type { CountdownBadgeProps } from "./components/CountdownBadge";
 export { GameCard } from "./components/GameCard";
 export type { GameCardProps } from "./components/GameCard";
+export { GameHeader } from "./components/GameHeader";
+export type { GameHeaderProps } from "./components/GameHeader";
 export { GameShell } from "./components/GameShell";
 export type { GameShellProps } from "./components/GameShell";
 export { HowSheet } from "./components/HowSheet";

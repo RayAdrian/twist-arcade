@@ -19,6 +19,7 @@ import { crackstep, type CrackstepMove, type CrackstepState } from "./engine";
 import { manifest } from "./manifest";
 import { Board } from "./ui/Board";
 import { boardSummaryText, positionName, tilesRemaining } from "./ui/board-view";
+import { SidePanel } from "./ui/SidePanel";
 
 function movedEffect(effects: readonly Effect[]): Effect | undefined {
   return effects.find((e) => e.type === "moved");
@@ -239,6 +240,11 @@ const howSheetFrames: GamePresentation<CrackstepState, CrackstepMove, CrackstepS
 
 export const presentation: GamePresentation<CrackstepState, CrackstepMove, CrackstepState> = {
   Board,
+  // Design 2a's "Floor left" readout + material legend — GamePresentation's own sanctioned
+  // sibling-control slot (packages/game-spec/src/presentation.ts's `extraControls`), used here
+  // for the first time by Crackstep. Rendered by GameShell as a sibling immediately after
+  // BoardShell/Board, never inside the board grid.
+  extraControls: SidePanel,
 
   boardDimensions(view: CrackstepState): { rows: number; cols: number } {
     return { rows: view.height, cols: view.width };

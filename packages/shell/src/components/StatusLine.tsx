@@ -23,5 +23,5 @@ export function StatusLine({ phase, actorLabel, resultText }: StatusLineProps) {
     phase === "finished" && resultText
       ? resultText
       : shellTurnPhrase(actorLabel === undefined ? { phase } : { phase, actorLabel });
-  return <p className="text-center text-base font-medium text-ink">{text}</p>;
+  return <p className="text-center font-display text-lg font-extrabold text-ink">{text}</p>;
 }
