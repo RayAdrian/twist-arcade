@@ -6301,3 +6301,54 @@ to the bottom first — the cost of a wrong principle is unbounded, because nobo
 C98's procedural half stands and was load-bearing here: it insisted on testing merges in an
 isolated worktree rather than on main, which is exactly how this fix was validated before
 touching anything.
+
+---
+
+## C101 — The bundle budget measures a 2.5 kB shim and calls it the game chunk.
+
+Roadmap M1 exit criterion: *"game route <= 75 kB gz."* `architecture-lens.md` states the intent
+twice and precisely: *"size-limit on the play-route chunk group"* and *"one game chunk
+(<=75 kB budget)"*. The budget is meant to bound the per-game code that a player downloads
+when they open a game.
+
+`.size-limit.json` implements it as:
+
+```json
+{ "name": "game route (/play/[gameId])",
+  "path": ".next/static/chunks/app/play/*/page-*.js", "limit": "75 kB", "gzip": true }
+```
+
+That glob matches exactly one file — the route entry — and the games are not in it. The
+registry loads every game through `import("@twist-arcade/<id>")`, so the game code lands in
+separate async chunks. Measured on a real build:
+
+| artifact | gz |
+|---|---|
+| `app/play/[gameId]/page-*.js` (**what the budget measures**) | 2.5 kB |
+| `152.*.js` (crackstep) | 2.0 kB |
+| `270.*.js` (nine-grids) | 2.4 kB |
+| `131.*.js` (fadeout) | 2.2 kB |
+| `194.*.js` (shared game code) | 4.9 kB |
+
+**No breach is being hidden — every real chunk is 2–5 kB against a 75 kB limit.** That is the
+honest headline, and it is why this is a C-note rather than an incident. The defect is that
+the guard cannot fire on the thing it is documented to bound: a future game that pulls in a
+heavy dependency would blow past 75 kB inside its own async chunk while `pnpm size-limit`
+kept reporting 2.5 kB and passing. The 30x headroom is not the games being lean; it is the
+budget measuring a different artifact than the one it names.
+
+The mechanism is a category error in the config. "Chunk group" is a webpack concept that
+includes a route's async dependencies; `@size-limit/file` is a **file glob** and follows
+nothing. The config approximates the former with the latter, and the approximation drops
+exactly the part that matters.
+
+This is C64/C84/C91/C95's shape in the build layer, and it earns its own entry for one reason:
+every previous instance was found because something *failed* and the failure led back to the
+guard. This one passes, has always passed, and will keep passing. It was found only because
+a 2.5 kB result against a 75 kB budget looked too comfortable to be true. **A guard with
+implausible headroom deserves the same suspicion as one that fails.**
+
+Not yet fixed — the fix is a real config change (the async chunks are content-hashed and not
+per-game-named, so the glob needs thought, and "first load JS" and "the game's own chunk" are
+different budgets worth stating separately). Recorded here so the roadmap criterion is not
+ticked on the strength of a measurement that does not test it.
