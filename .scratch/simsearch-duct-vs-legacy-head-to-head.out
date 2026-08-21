@@ -1,0 +1,20 @@
+Discriminating experiment: DUCT vs pre-DUCT max-max, head-to-head self-play.
+docs/plans/platform-corrections.md C75; docs/plans/sim-search-remedy.md §1.
+games=200 per (game,budget,seed) cell; 2 seeds; mirrorSeats=true (default).
+Report is W/D/L — never a bare win rate (these games draw heavily).
+
+=== bid-tac-toe: DUCT (mctsPolicy) vs Legacy (mctsPolicyLegacy, pre-DUCT max-max) ===
+budgets=[10000, 1000] seeds=[duct-vs-legacy-seed0, duct-vs-legacy-seed1] games/seed=200
+
+  rollouts=10000 seed="duct-vs-legacy-bid-tac-toe-b10000-duct-vs-legacy-seed0": n=200  DUCT 49W (24.5%) / 6D (3.0%) / Legacy 145W (72.5%)  meanPlies=10.1 capHitRate=0.00%  [314.3s]
+  rollouts=10000 seed="duct-vs-legacy-bid-tac-toe-b10000-duct-vs-legacy-seed1": n=200  DUCT 40W (20.0%) / 5D (2.5%) / Legacy 155W (77.5%)  meanPlies=10.2 capHitRate=0.00%  [255.8s]
+  rollouts=10000 POOLED (2 seeds): n=400  DUCT 89W (22.3%) / 11D (2.8%) / Legacy 300W (75.0%)  meanPlies=10.1 capHitRate=0.00%
+
+  rollouts=1000 seed="duct-vs-legacy-bid-tac-toe-b1000-duct-vs-legacy-seed0": n=200  DUCT 78W (39.0%) / 2D (1.0%) / Legacy 120W (60.0%)  meanPlies=10.6 capHitRate=0.00%  [27.6s]
+  rollouts=1000 seed="duct-vs-legacy-bid-tac-toe-b1000-duct-vs-legacy-seed1": n=200  DUCT 76W (38.0%) / 3D (1.5%) / Legacy 121W (60.5%)  meanPlies=10.3 capHitRate=0.00%  [26.5s]
+  rollouts=1000 POOLED (2 seeds): n=400  DUCT 154W (38.5%) / 5D (1.3%) / Legacy 241W (60.3%)  meanPlies=10.4 capHitRate=0.00%
+
+=== duel-draft: DUCT (mctsPolicy) vs Legacy (mctsPolicyLegacy, pre-DUCT max-max) ===
+budgets=[10000, 1000] seeds=[duct-vs-legacy-seed0, duct-vs-legacy-seed1] games/seed=200
+
+  rollouts=10000 seed="duct-vs-legacy-duel-draft-b10000-duct-vs-legacy-seed0": n=200  DUCT 5W (2.5%) / 195D (97.5%) / Legacy 0W (0.0%)  meanPlies=10.1 capHitRate=0.00%  [369.8s]

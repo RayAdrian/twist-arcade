@@ -1,0 +1,22 @@
+Duel Draft D2 §7.1 — budget-monotonicity diagnostic (PRE-DUCT matched control, C66/C73)
+seed="duel-draft-d2-71-monotonicity", games=200/budget, candidates=[1000, 2000, 5000, 10000]
+Watching for the C55 signature: strong-vs-random DECLINING as budget rises.
+
+rollouts=  1000  strong-vs-random win rate = 79.5%  (SE ~2.9 pts, n=200)  drawRate=20.5%  meanPlies=5.9  capHitRate=0.00%
+rollouts=  2000  strong-vs-random win rate = 86.0%  (SE ~2.5 pts, n=200)  drawRate=14.0%  meanPlies=5.4  capHitRate=0.00%
+rollouts=  5000  strong-vs-random win rate = 86.0%  (SE ~2.5 pts, n=200)  drawRate=14.0%  meanPlies=5.4  capHitRate=0.00%
+rollouts= 10000  strong-vs-random win rate = 88.0%  (SE ~2.3 pts, n=200)  drawRate=12.0%  meanPlies=5.3  capHitRate=0.00%
+
+=== Pairwise deltas (rate[i+1] - rate[i], in points) ===
+  1000 -> 2000: +6.5 pts (combined SE ~3.8 pts) => flat/rose
+  2000 -> 5000: +0.0 pts (combined SE ~3.5 pts) => flat/rose
+  5000 -> 10000: +2.0 pts (combined SE ~3.4 pts) => flat/rose
+
+=== Paired per-index transitions (same seed/games across candidates — the correct error model) ===
+  1000 -> 2000: 151 unchanged, 31 flipped TO a strong win, 18 flipped AWAY from a strong win (net +13)
+  2000 -> 5000: 154 unchanged, 23 flipped TO a strong win, 23 flipped AWAY from a strong win (net +0)
+  5000 -> 10000: 158 unchanged, 23 flipped TO a strong win, 19 flipped AWAY from a strong win (net +4)
+
+=== VERDICT ===
+No pairwise decline exceeds its combined SE band — no C55 signature on this seed/n. Duel Draft control stays non-declining post-DUCT.
+EXIT=0

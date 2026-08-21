@@ -1,0 +1,24 @@
+Duel Draft D2 §7.1 — budget-monotonicity diagnostic (POST-DUCT re-run, C66/C73)
+seed="duel-draft-d2-71-monotonicity", games=200/budget, candidates=[1000, 2000, 5000, 10000]
+Watching for the C55 signature: strong-vs-random DECLINING as budget rises.
+
+rollouts=  1000  strong-vs-random win rate = 82.0%  (SE ~2.7 pts, n=200)  drawRate=18.0%  meanPlies=6.0  capHitRate=0.00%
+rollouts=  2000  strong-vs-random win rate = 81.5%  (SE ~2.7 pts, n=200)  drawRate=18.5%  meanPlies=6.1  capHitRate=0.00%
+rollouts=  5000  strong-vs-random win rate = 84.5%  (SE ~2.6 pts, n=200)  drawRate=15.5%  meanPlies=6.2  capHitRate=0.00%
+rollouts= 10000  strong-vs-random win rate = 77.0%  (SE ~3.0 pts, n=200)  drawRate=23.0%  meanPlies=6.7  capHitRate=0.00%
+
+=== Pairwise deltas (rate[i+1] - rate[i], in points) — CONTEXT ONLY, NOT the verdict ===
+(unpaired binomial SE — the wrong error model for this paired-seed design; see C75. The
+ VERDICT below is derived from the paired McNemar exact test further down, not from this.)
+  1000 -> 2000: -0.5 pts (combined SE ~3.9 pts) => flat/fell within SE
+  2000 -> 5000: +3.0 pts (combined SE ~3.8 pts) => flat/rose
+  5000 -> 10000: -7.5 pts (combined SE ~3.9 pts) => declined beyond naive SE band
+
+=== Paired per-index transitions (same seed/games across candidates — the correct error model) ===
+  1000 -> 2000: 155 unchanged, 22 flipped TO a strong win, 23 flipped AWAY from a strong win (net -1), McNemar exact p=1.0000
+  2000 -> 5000: 152 unchanged, 27 flipped TO a strong win, 21 flipped AWAY from a strong win (net +6), McNemar exact p=0.4709
+  5000 -> 10000: 149 unchanged, 18 flipped TO a strong win, 33 flipped AWAY from a strong win (net -15), McNemar exact p=0.0489
+
+=== VERDICT (derived from the paired McNemar exact test above, alpha=0.05) ===
+  5000 -> 10000: DECLINED, McNemar exact p=0.0489 < 0.05 (18 toward / 33 away)
+At least one pairwise decline is significant under the paired McNemar exact test — POSSIBLE C55 signature on this seed/n. Escalate per plan §1 refutation condition 3 — do not chase, report.
