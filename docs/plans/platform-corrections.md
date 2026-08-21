@@ -6246,3 +6246,58 @@ of arithmetic and it is not optional merely because the pattern looks obvious.
 The report is at `docs/research/games/bid-tac-toe-b3v2-report.md`; its §8 records the same two
 corrections against C97 from the data side. The KILL recommendation is unchanged and is the
 user's decision.
+
+---
+
+## C100 — C98 declared a one-line fix impossible and wrote a principle instead.
+
+C98 tried to merge the stranded `kill(order-vs-chaos)` record, hit a typecheck failure,
+reverted, and concluded:
+
+> **A guard added later can retroactively make old evidence unmergeable.** The kill record was
+> valid when written. Nothing about it changed. The repo grew a constraint around it, and now
+> the artifact and the guard cannot both be satisfied without work neither anticipated.
+
+Every sentence of that is false except the first clause of the second one. The fix is **one
+line** — a project reference in `scripts/tsconfig.json` admitting `games/order-vs-chaos` to the
+scripts project graph. With it, on main:
+
+```
+typecheck                                0 errors
+check:tsconfig-coverage, check:deps      pass
+vitest games/order-vs-chaos + harness    23 files, 576 tests pass
+games/registry.ts                        0 references — still unregistered, still killed
+```
+
+The evidence is now preserved on main: the kill decision, its manifest record, and the five
+research scripts establishing why order-vs-chaos died (both ladder rungs failed on window
+density, not tempo).
+
+### How the wrong conclusion got written
+
+I saw `error TS6059: not under rootDir` across several files, recognized it as a structural
+constraint rather than a typo, and stopped. I never asked the one question that resolves it:
+*what would satisfy this constraint?* The answer was already in the repository — the identical
+pattern for `games/bid-tac-toe` had been written by the B3v2 sweep agent hours earlier and left
+uncommitted in a worktree. I recovered that exact file in `8c3a933`, read the diff, wrote a
+commit message explaining what it does, and still did not connect it to the failure I had
+diagnosed as impossible two hours before.
+
+Worse than missing the fix: I generalized. A failed merge became a standing lesson about the
+cost of tightening guards, written into the permanent record where it would shape future
+decisions. A wrong fact is a bounded error. A wrong principle derived from a wrong fact
+propagates, and this one argued *against* the guard discipline that has produced most of this
+document's real findings.
+
+This is C99's failure one layer up. There I characterized a curve instead of computing a
+t-statistic; here I characterized an incompatibility instead of attempting a fix. Both times
+the real work was minutes and I substituted a confident description of why it was hard.
+
+Ruling, extending C99's: **before writing that something cannot be done, attempt it.** An error
+message that names a constraint is a specification of what would satisfy the constraint, not a
+verdict. And a general principle inferred from a single failure needs the failure investigated
+to the bottom first — the cost of a wrong principle is unbounded, because nobody re-derives it.
+
+C98's procedural half stands and was load-bearing here: it insisted on testing merges in an
+isolated worktree rather than on main, which is exactly how this fix was validated before
+touching anything.
