@@ -61,6 +61,13 @@ compute that could otherwise cost a rebuild.
 - [ ] Exact solve complete; ruleset chosen on the strength of it; balancing device decided
 - [ ] Harness runs Fadeout and reports the full metric set; thresholds committed to its manifest
 - [ ] Contract property suite green; axe clean; game route ≤75 kB gz
+      (the ≤75 kB gz bundle clause is genuinely enforced in CI: `.size-limit.json`'s "play
+      route" entry bounds only the shared route shell — its name says so after
+      `fix/size-limit-glob` — and each game's own dynamically-imported engine/presentation
+      code is bounded per-game by `pnpm chunk-budget` (`scripts/chunk-budget.ts`,
+      platform-corrections.md C38/C43/C50), both required CI steps. Box left unchecked
+      because this note covers only the bundle clause, not the contract-suite/axe clauses
+      of this line.)
 - [ ] `pnpm new-game` produces a compiling, test-passing stub in under a minute
 - [ ] Five-person hotseat playtest: at least one player makes a *twist-aware* play (deliberately waiting out a decay) within their first two games, unprompted
 
