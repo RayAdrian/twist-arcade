@@ -138,6 +138,31 @@ interface PersistedGame {
   restartCount: number;
 }
 
+// PERS-001: this is the exact shape whose absence caused the crash — a stored value like
+// `{"v":1}` used to come back from readVersioned as an unchecked `T` cast, and the very next
+// lines dereference `stored.record.seed` / `stored.record.gameId` with no guard. This validates
+// just enough to make every one of those dereferences safe: `record` exists and has the fields
+// this hook itself reads off it directly (`seed`, `gameId`, `gameVersion`, and `steps` as an
+// array, since `stored.record.steps.length` is read below too), plus `tierId`/`restartCount`.
+// It deliberately does NOT validate `steps`' internal contents (each step's move shape, engine
+// legality, etc.) — that's already the job of the try/catch around `replayTo()` a few lines
+// down, which turns any downstream engine-level replay failure into the same fresh-start
+// fallback. Duplicating that validation here would be dead weight, not defense in depth.
+function isPersistedGame(value: unknown): value is PersistedGame {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.tierId !== "string") return false;
+  if (typeof v.restartCount !== "number") return false;
+  if (typeof v.record !== "object" || v.record === null) return false;
+  const r = v.record as Record<string, unknown>;
+  return (
+    typeof r.gameId === "string" &&
+    typeof r.gameVersion === "number" &&
+    typeof r.seed === "string" &&
+    Array.isArray(r.steps)
+  );
+}
+
 function randomSeed(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 }
@@ -227,7 +252,7 @@ export function useGame<S extends WithEffects, M extends Json, V extends WithEff
 
   const [internal, setInternal] = useState<Internal<S>>(() => {
     if (persistEnabled) {
-      const stored = readVersioned<PersistedGame>(gameKey(manifest.id, persistModeKey), 1);
+      const stored = readVersioned<PersistedGame>(gameKey(manifest.id, persistModeKey), 1, isPersistedGame);
       const seedMatches = opts.seed === undefined || stored?.record.seed === opts.seed;
       if (stored && seedMatches && stored.record.gameId === manifest.id && stored.record.gameVersion === engine.meta.version) {
         try {
