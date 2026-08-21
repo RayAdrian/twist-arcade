@@ -69,6 +69,8 @@ Phase 2 (async link multiplayer). Teardown still applies to whatever was actuall
 | cell4 (C89/C90: measure the 2x2 factorial's unrun cell — DUCT selection composed with leaf evaluation and the C85 heuristic; then C76's mandatory head-to-head) | `../claude-project-cell4` | `feature/duct-leaf-eval` | `twistarcade_cell4` | 57921–57929 | not started (no DB) — search measurement only | ACTIVE — verified free with `lsof` AND `docker ps` per C62 |
 | analytics (C91: wire the Umami/SITE_URL env vars that `.env.example` advertised and no code read) | `../claude-project-analytics` | `feature/analytics-wiring` | `twistarcade_analytics` | 58021–58029 | not started (no DB) — app/shell wiring only | CLOSED 2026-08-16 — merged, worktree removed, branch deleted, ports 58021–58029 released; no Supabase stack was ever started so there were no containers or volumes to drop. REGISTERED LATE: the orchestrator delegated into this worktree without registering it first, contrary to §4, and the implementing agent flagged the omission rather than letting it pass silently. |
 
+| gamescreens (design turn 2 / artboard 2a: play, result, how-to and loading screens in the Riso Zine system 1b established) | `../claude-project-gamescreens` | `feature/game-screens-2a` | `twistarcade_gamescreens` | 58121–58129 | not started (no DB) — presentation-layer only | ACTIVE — verified free with `lsof` AND `docker ps` per C62. Registered BEFORE the first delegation, per C93. |
+
 ## Port blocks
 
 | Block | Team | Status |
@@ -120,3 +122,4 @@ exists is exactly the leak §6 exists to prevent.
 | 57821–57829 (team 30) | depguard | CLAIMED 2026-08-16 — `lsof` AND `docker ps` |
 | 57921–57929 (team 31) | cell4 | CLAIMED 2026-08-16 — `lsof` AND `docker ps` |
 | 58021–58029 (team 32) | analytics | RELEASED 2026-08-16 — was CLAIMED 2026-08-16 — `lsof` AND `docker ps`; registered retroactively, see the team row |
+| 58121–58129 (team 33) | gamescreens | CLAIMED 2026-08-21 — `lsof` AND `docker ps` |
