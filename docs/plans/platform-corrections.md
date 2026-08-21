@@ -6352,3 +6352,55 @@ Not yet fixed — the fix is a real config change (the async chunks are content-
 per-game-named, so the glob needs thought, and "first load JS" and "the game's own chunk" are
 different budgets worth stating separately). Recorded here so the roadmap criterion is not
 ticked on the strength of a measurement that does not test it.
+
+---
+
+## C102 — C101 rediscovered a two-week-old finding and declared it unfixed.
+
+C101 reported that `.size-limit.json`'s "game route" entry measures only a 2.5 kB route shell
+while the per-game chunks go unmeasured, and concluded: *"Not yet fixed — the fix is a real
+config change."*
+
+The measurement was right. The conclusion was false. `scripts/chunk-budget.ts` has existed
+since 2026-08-07, is a package script (`pnpm chunk-budget`), and is a required CI gate. Its
+step in `.github/workflows/ci.yml` carries this comment:
+
+> `C38: .size-limit.json's "game route" entry measures only the shared /play/[gameId] shell
+> chunk — the actual per-game code (loaded via games/registry.ts's dynamic ...`
+
+The repository states C101's entire finding, in the CI workflow, above the step that fixes it.
+The history is fuller still: C43 proved that guard with a planted violation the same day (a
+300 kB payload in Nine Grids — size-limit stayed green at 1.64 kB while chunk-budget caught it
+at 168.35 kB and named the offender), and C50 rewrote it to be topology-immune when a fourth
+game changed webpack's chunk splitting. It attributes chunks via `games/registry.ts`'s authored
+`import()` specifiers cross-referenced against `.next/react-loadable-manifest.json` — the
+stable approach I asked an agent to go invent.
+
+**I asserted the absence of a mechanism without searching for it.** That is C88 exactly, where
+I claimed no hypothesis on record explained a result while `rollout-evaluation.md:134` had
+predicted it precisely. C88 is fourteen corrections ago and I wrote it myself.
+
+The sharpest part: C101's closing argument was that *"a guard with implausible headroom
+deserves the same suspicion as one that fails."* I applied that suspicion to the bundle numbers
+and none of it to my own claim that nothing enforced them. One `grep -rn chunk` across
+`scripts/` or a glance at the CI file would have settled it in seconds, and I ran neither
+before writing a permanent entry — then commissioned an agent to build what already existed.
+
+What survives from C101: the *naming* was genuinely wrong. An entry called "game route
+(/play/[gameId])" that measures only the shared shell invites exactly the misreading I fell
+into. Merged fix: both `.size-limit.json` entries now name what they measure and point at
+`pnpm chunk-budget` for the per-game budget. That is the whole of C101's real content — a
+documentation defect, not a missing guard. C101's claim of an unenforced budget is **withdrawn**.
+
+Ruling, and it is now the third time this pattern has been logged (C88, C100, here): **before
+recording that a thing is missing, broken, or impossible, search for it.** The three failures
+share one shape — I inferred a state of the world from a local observation and wrote it down
+without the cheapest possible check. C100 already ruled "before writing that something cannot
+be done, attempt it." The same rule covers this: before writing that something does not exist,
+grep for it.
+
+Verification note, in the fix's favour: the agent proved the existing guard still fires by
+growing the manifest-attributed mine-run chunk with ~94 kB of high-entropy data. `chunk-budget`
+failed at 96.00 kB and named mine-run; `size-limit` stayed green throughout — a clean
+demonstration of both the guard working and the exact division of labour the renamed entries
+now document.
