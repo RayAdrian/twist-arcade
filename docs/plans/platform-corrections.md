@@ -6193,3 +6193,56 @@ those artifacts then failed `check:tsconfig-coverage` — so the *revert* looked
 main broken. It had not; the residue was mine. I verified each file was untracked and had a
 `.ts` sibling before deleting anything, rather than reaching for `git clean`. Three times this
 session a blind protective action destroyed state I had not looked at first.
+
+---
+
+## C99 — C97's headline was wrong: the curve is not flat, it rises once and then stops.
+
+C97 reported the B3v2 sweep as *"attainment is flat across a 12.5x range."* The B3v2 report
+did the arithmetic I had only eyeballed, and that claim does not survive it.
+
+**Full-ladder heterogeneity is significant**: chi-square ~= 30.6 on 9 df, p ~= 4e-4. The
+curve is not noise. The structure is entirely at the low end, and it is real:
+
+  800 (14.7%, SE 4.0) vs 1,600 (36.0%, SE 2.8): delta = 21.3pp, SE_delta = 4.9pp, **t = 4.36**
+
+I verified that arithmetic independently rather than accepting it. The rise is separable.
+What is flat is the range **1,400–10,000** (chi-square ~= 8.7, df 6, p ~= 0.19) — a 7.1x
+range, not 12.5x — and within that plateau the apparent 1,600 "peak" is separable from
+nothing (vs 10,000 t ~= 1.7; the largest contrast, vs 2,500, t ~= 2.16 unadjusted, is one of
+21 pairwise comparisons and is what a single expected false positive looks like).
+
+The honest description is **"rise, then plateau at roughly a third of the floor,"** not "flat."
+Also corrected: `strong-vs-random`'s range is 95.3%–100.0%, not the 97.7% I quoted — I had
+read the 1,000-rollout cell and reported it as the ladder minimum without checking the 800 cell.
+
+**The correction strengthens the kill case rather than weakening it**, which is exactly why it
+was worth making. "Flat everywhere" invites the reply *"then you never found the working
+region."* The measured shape forecloses that: budget buys one real step, from 15% to ~30%,
+and then 7x more budget buys nothing measurable. The ladder does not merely fail to find a
+healthy region — it locates the saturation point and shows it sitting 54 points under the floor.
+
+### Why I got it wrong
+
+I had the per-cell SDs in front of me — 8 to 15pp — and reasoned that a spread of 14.7% to
+36.0% "wobbles within its own dispersion." That is the right instinct applied to the wrong
+quantity: the SD of a single cell is not the SE of a difference between two cells, and with
+n=10 seeds the SE is smaller than the SD by sqrt(10). A 21pp gap between cells whose SEs are
+~4pp and ~2.8pp is over four sigma. I substituted an eyeball for a two-line calculation on
+the one number the whole report turns on.
+
+This is the sixth mis-aimed check in this session (after the escaped `data-website-id` grep,
+the pnpm-wrapper CPU read, the registry regex, the shared-constant plant, and the
+`min 90.0%` threshold I nearly reported as an observed value). The common thread is not
+carelessness about *whether* to verify — every one of those was a deliberate check — it is
+carelessness about whether the check is aimed at the claim. C96 named this exact failure and
+called it more dangerous than not checking, because it returns green and stops the search.
+Three corrections later I did it again on the summary line of a kill recommendation.
+
+Standing rule, since naming it clearly has not been enough: **when a number is load-bearing
+for a decision, compute the comparison, do not characterize it.** A t-statistic is two lines
+of arithmetic and it is not optional merely because the pattern looks obvious.
+
+The report is at `docs/research/games/bid-tac-toe-b3v2-report.md`; its §8 records the same two
+corrections against C97 from the data side. The KILL recommendation is unchanged and is the
+user's decision.
