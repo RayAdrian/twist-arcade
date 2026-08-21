@@ -6136,3 +6136,60 @@ a search change that first clears `rollout-evaluation.md` §3's acceptance may r
 sweep unchanged: same ladder, same seeds, same rule.
 
 The ship/kill decision is the user's. The evidence is complete and points one way.
+
+---
+
+## C98 — The register said 21 teams were running. Two were.
+
+`docs/worktrees.md` is the file the next team reads to pick a free port block. An audit
+against disk found **21 rows marked ACTIVE and 2 worktrees actually present**. Twenty teams
+had been merged and torn down by an orchestrator that never updated the row — me, repeatedly,
+across this session and before it.
+
+C93 recorded the principle after I registered one team late: *a register filled in at
+completion is a log, not a register; its entire function is to be correct WHILE teams are
+running.* I wrote that, then kept closing teams without closing their rows. The failure was
+not ignorance of the rule.
+
+The audit itself is the part worth keeping, because "mark them closed" was not safe to do on
+inspection alone. §6's teardown checklist has four items, and a missing worktree only
+evidences one of them. So each claim was checked against the world rather than the document:
+
+- **Containers/volumes:** `docker ps -a` — zero project containers anywhere. The teardowns
+  were genuine, not just directory deletions.
+- **Ports:** the single listener anywhere in the claimed 54400–58200 range was **Spotify** on
+  57621, a port team 28 had claimed. An unrelated desktop app now sits on a block the register
+  still called ours. Nothing leaked; the register was simply hoarding blocks it had no claim to.
+- **Branches:** 19 of 20 had their branch deleted too. One did not, and that one mattered.
+
+### The one that mattered
+
+`feature/order-vs-chaos` still existed, holding one unmerged commit: `kill(order-vs-chaos)` —
+the manifest record and five research scripts establishing WHY that game was killed. Worktree
+already gone, branch one `git branch -D` from taking the evidence with it.
+
+That is C67's finding pointed at a kill decision instead of a game. This project's discipline
+is that a verdict is worth exactly as much as the artifact behind it, and the artifact behind
+an already-executed kill was not on main. It is also the precedent for the kill C97 now
+recommends for Bid-Tac-Toe.
+
+I merged it to preserve it, and **the merge broke main**: the commit's `scripts/research/*`
+files import from `games/order-vs-chaos/*`, which violates `scripts/tsconfig.json`'s `rootDir`
+— a constraint added by C84/C79 *after* that commit was authored. Typecheck exit 2. Reverted
+within the minute; main had not been pushed in that state.
+
+Two things follow, and the second is the uncomfortable one:
+
+1. The branch is retained deliberately, with the reason written into its now-CLOSED row, and
+   must not be deleted until the evidence reaches main some other way.
+2. **A guard added later can retroactively make old evidence unmergeable.** The kill record was
+   valid when written. Nothing about it changed. The repo grew a constraint around it, and now
+   the artifact and the guard cannot both be satisfied without work neither anticipated. This
+   is the cost side of tightening guards, and this document has recorded a lot of tightening
+   without once recording that cost.
+
+Cleanup note against myself: the failed `tsc -b` emitted `.js`/`.d.ts` beside the sources, and
+those artifacts then failed `check:tsconfig-coverage` — so the *revert* looked like it had left
+main broken. It had not; the residue was mine. I verified each file was untracked and had a
+`.ts` sibling before deleting anything, rather than reaching for `git clean`. Three times this
+session a blind protective action destroyed state I had not looked at first.
