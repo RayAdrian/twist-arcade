@@ -1,0 +1,125 @@
+=== Bid-Tac-Toe B3v2 post-fix budget sweep ===
+docs/plans/bid-tac-toe-budget-sweep.md — PRE-REGISTERED, thresholds/ladder/seeds fixed.
+seed="b3v2-postfix-sweep" games=300 seedCount=10 (30 games/seed) ladder=[800, 1000, 1200, 1400, 1600, 2000, 2500, 3000, 5000, 10000]
+SWEEP_MANIFEST deviations from shipped manifest:
+  1. every tier: leafEvaluation=true (already true upstream, commit e4b7a0f — set here defensively)
+  2. standard tier budget: 1500 -> 300 (sweep-only; ruthless-vs-standard is n/a for this proven-draw game regardless)
+
+Seed-string check (per-seed derivation, budget must NEVER appear):
+  seed index 0 -> "b3v2-postfix-sweep:seed0" (identical across every candidate budget)
+  seed index 1 -> "b3v2-postfix-sweep:seed1" (identical across every candidate budget)
+  seed index 2 -> "b3v2-postfix-sweep:seed2" (identical across every candidate budget)
+  seed index 3 -> "b3v2-postfix-sweep:seed3" (identical across every candidate budget)
+  seed index 4 -> "b3v2-postfix-sweep:seed4" (identical across every candidate budget)
+  seed index 5 -> "b3v2-postfix-sweep:seed5" (identical across every candidate budget)
+  seed index 6 -> "b3v2-postfix-sweep:seed6" (identical across every candidate budget)
+  seed index 7 -> "b3v2-postfix-sweep:seed7" (identical across every candidate budget)
+  seed index 8 -> "b3v2-postfix-sweep:seed8" (identical across every candidate budget)
+  seed index 9 -> "b3v2-postfix-sweep:seed9" (identical across every candidate budget)
+
+Running candidates: [800, 1000, 1200, 1400, 1600, 2000, 2500, 3000, 5000, 10000]
+
+--- rollouts=800 ---
+  solved-value-reached:  unattained — self-play has never reached the proven "draw" (14.7% observed, floor 90%) — no manifest.solvedValue.attainmentBaseline declared, so there is no history to regress from; this describes search adequacy for this tree, not a regression (platform-corrections.md C57) [seeds=10, seed-to-seed SD=12.5pp, SE=4.0pp]
+  strong-vs-random:      pass — 95.3% (min 90.0%) [seeds=10, seed-to-seed SD=3.9pp, SE=1.2pp]
+  STAGE A QUALIFIES: false
+  (descriptive, never selected on:)
+  first-player-win-rate: pass — 51.3% (band [35%, 65%]) [seeds=10, seed-to-seed SD=7.7pp, SE=2.9pp] — solvedValue relief withheld: self-play reached the proven "draw" only 14.7% of the time (floor 90%, see solved-value-reached)
+  draw-rate:             pass — 14.7% (max 60.0%) [seeds=10, seed-to-seed SD=12.5pp, SE=4.0pp] — solvedValue relief withheld: self-play reached the proven draw only 14.7% of the time (floor 90%, see solved-value-reached)
+  ruthless-vs-standard:  n/a — manifest.ciGateBudget.twoPlayerCiRollouts is active for this CI-suite run — "ruthless" is measured at 800 rollouts vs "standard"'s shipped 300 — the override has changed the very quantity under comparison, so this gate cannot measure its claim at suite "ci" (C26). Nightly measures it at the real shipped budgets, where it means something.
+  mean-plies:            pass — mean 12.1 plies, 0 cap hits across all matchups [seeds=10, seed-to-seed SD=1.38 plies, SE=0.44 plies]
+
+--- rollouts=1000 ---
+  solved-value-reached:  unattained — self-play has never reached the proven "draw" (21.3% observed, floor 90%) — no manifest.solvedValue.attainmentBaseline declared, so there is no history to regress from; this describes search adequacy for this tree, not a regression (platform-corrections.md C57) [seeds=10, seed-to-seed SD=14.3pp, SE=4.5pp]
+  strong-vs-random:      pass — 97.7% (min 90.0%) [seeds=10, seed-to-seed SD=2.7pp, SE=0.9pp]
+  STAGE A QUALIFIES: false
+  (descriptive, never selected on:)
+  first-player-win-rate: pass — 54.0% (band [35%, 65%]) [seeds=10, seed-to-seed SD=14.2pp, SE=4.5pp] — solvedValue relief withheld: self-play reached the proven "draw" only 21.3% of the time (floor 90%, see solved-value-reached)
+  draw-rate:             pass — 21.3% (max 60.0%) [seeds=10, seed-to-seed SD=14.3pp, SE=4.5pp] — solvedValue relief withheld: self-play reached the proven draw only 21.3% of the time (floor 90%, see solved-value-reached)
+  ruthless-vs-standard:  n/a — manifest.ciGateBudget.twoPlayerCiRollouts is active for this CI-suite run — "ruthless" is measured at 1000 rollouts vs "standard"'s shipped 300 — the override has changed the very quantity under comparison, so this gate cannot measure its claim at suite "ci" (C26). Nightly measures it at the real shipped budgets, where it means something.
+  mean-plies:            pass — mean 12.5 plies, 0 cap hits across all matchups [seeds=10, seed-to-seed SD=1.01 plies, SE=0.32 plies]
+
+--- rollouts=1200 ---
+  solved-value-reached:  unattained — self-play has never reached the proven "draw" (23.3% observed, floor 90%) — no manifest.solvedValue.attainmentBaseline declared, so there is no history to regress from; this describes search adequacy for this tree, not a regression (platform-corrections.md C57) [seeds=10, seed-to-seed SD=11.0pp, SE=3.5pp]
+  strong-vs-random:      pass — 98.3% (min 90.0%) [seeds=10, seed-to-seed SD=2.4pp, SE=0.7pp]
+  STAGE A QUALIFIES: false
+  (descriptive, never selected on:)
+  first-player-win-rate: pass [PROVISIONAL] — 58.7% (band [35%, 65%]) [seeds=10, seed-to-seed SD=11.7pp, SE=3.7pp] — solvedValue relief withheld: self-play reached the proven "draw" only 23.3% of the time (floor 90%, see solved-value-reached)
+  draw-rate:             pass — 23.3% (max 60.0%) [seeds=10, seed-to-seed SD=11.0pp, SE=3.5pp] — solvedValue relief withheld: self-play reached the proven draw only 23.3% of the time (floor 90%, see solved-value-reached)
+  ruthless-vs-standard:  n/a — manifest.ciGateBudget.twoPlayerCiRollouts is active for this CI-suite run — "ruthless" is measured at 1200 rollouts vs "standard"'s shipped 300 — the override has changed the very quantity under comparison, so this gate cannot measure its claim at suite "ci" (C26). Nightly measures it at the real shipped budgets, where it means something.
+  mean-plies:            pass — mean 12.7 plies, 0 cap hits across all matchups [seeds=10, seed-to-seed SD=1.03 plies, SE=0.33 plies]
+
+--- rollouts=1400 ---
+  solved-value-reached:  unattained — self-play has never reached the proven "draw" (34.7% observed, floor 90%) — no manifest.solvedValue.attainmentBaseline declared, so there is no history to regress from; this describes search adequacy for this tree, not a regression (platform-corrections.md C57) [seeds=10, seed-to-seed SD=10.8pp, SE=3.4pp]
+  strong-vs-random:      pass — 98.7% (min 90.0%) [seeds=10, seed-to-seed SD=2.3pp, SE=0.7pp]
+  STAGE A QUALIFIES: false
+  (descriptive, never selected on:)
+  first-player-win-rate: pass — 50.0% (band [35%, 65%]) [seeds=10, seed-to-seed SD=13.4pp, SE=4.2pp] — solvedValue relief withheld: self-play reached the proven "draw" only 34.7% of the time (floor 90%, see solved-value-reached)
+  draw-rate:             pass — 34.7% (max 60.0%) [seeds=10, seed-to-seed SD=10.8pp, SE=3.4pp] — solvedValue relief withheld: self-play reached the proven draw only 34.7% of the time (floor 90%, see solved-value-reached)
+  ruthless-vs-standard:  n/a — manifest.ciGateBudget.twoPlayerCiRollouts is active for this CI-suite run — "ruthless" is measured at 1400 rollouts vs "standard"'s shipped 300 — the override has changed the very quantity under comparison, so this gate cannot measure its claim at suite "ci" (C26). Nightly measures it at the real shipped budgets, where it means something.
+  mean-plies:            pass — mean 13.3 plies, 0 cap hits across all matchups [seeds=10, seed-to-seed SD=0.99 plies, SE=0.31 plies]
+
+--- rollouts=1600 ---
+  solved-value-reached:  unattained — self-play has never reached the proven "draw" (36.0% observed, floor 90%) — no manifest.solvedValue.attainmentBaseline declared, so there is no history to regress from; this describes search adequacy for this tree, not a regression (platform-corrections.md C57) [seeds=10, seed-to-seed SD=8.4pp, SE=2.8pp]
+  strong-vs-random:      pass — 99.3% (min 90.0%) [seeds=10, seed-to-seed SD=1.4pp, SE=0.5pp]
+  STAGE A QUALIFIES: false
+  (descriptive, never selected on:)
+  first-player-win-rate: pass [PROVISIONAL] — 36.7% (band [35%, 65%]) [seeds=10, seed-to-seed SD=15.8pp, SE=5.0pp] — solvedValue relief withheld: self-play reached the proven "draw" only 36.0% of the time (floor 90%, see solved-value-reached)
+  draw-rate:             pass — 36.0% (max 60.0%) [seeds=10, seed-to-seed SD=8.4pp, SE=2.8pp] — solvedValue relief withheld: self-play reached the proven draw only 36.0% of the time (floor 90%, see solved-value-reached)
+  ruthless-vs-standard:  n/a — manifest.ciGateBudget.twoPlayerCiRollouts is active for this CI-suite run — "ruthless" is measured at 1600 rollouts vs "standard"'s shipped 300 — the override has changed the very quantity under comparison, so this gate cannot measure its claim at suite "ci" (C26). Nightly measures it at the real shipped budgets, where it means something.
+  mean-plies:            pass — mean 13.2 plies, 0 cap hits across all matchups [seeds=10, seed-to-seed SD=0.83 plies, SE=0.26 plies]
+
+--- rollouts=2000 ---
+  solved-value-reached:  unattained — self-play has never reached the proven "draw" (28.7% observed, floor 90%) — no manifest.solvedValue.attainmentBaseline declared, so there is no history to regress from; this describes search adequacy for this tree, not a regression (platform-corrections.md C57) [seeds=10, seed-to-seed SD=13.0pp, SE=4.1pp]
+  strong-vs-random:      pass — 99.3% (min 90.0%) [seeds=10, seed-to-seed SD=1.4pp, SE=0.5pp]
+  STAGE A QUALIFIES: false
+  (descriptive, never selected on:)
+  first-player-win-rate: fail — 18.0% (band [35%, 65%]) [seeds=10, seed-to-seed SD=14.4pp, SE=4.6pp] — solvedValue relief withheld: self-play reached the proven "draw" only 28.7% of the time (floor 90%, see solved-value-reached)
+  draw-rate:             pass — 28.7% (max 60.0%) [seeds=10, seed-to-seed SD=13.0pp, SE=4.1pp] — solvedValue relief withheld: self-play reached the proven draw only 28.7% of the time (floor 90%, see solved-value-reached)
+  ruthless-vs-standard:  n/a — manifest.ciGateBudget.twoPlayerCiRollouts is active for this CI-suite run — "ruthless" is measured at 2000 rollouts vs "standard"'s shipped 300 — the override has changed the very quantity under comparison, so this gate cannot measure its claim at suite "ci" (C26). Nightly measures it at the real shipped budgets, where it means something.
+  mean-plies:            pass — mean 12.5 plies, 0 cap hits across all matchups [seeds=10, seed-to-seed SD=1.11 plies, SE=0.35 plies]
+
+--- rollouts=2500 ---
+  solved-value-reached:  unattained — self-play has never reached the proven "draw" (24.0% observed, floor 90%) — no manifest.solvedValue.attainmentBaseline declared, so there is no history to regress from; this describes search adequacy for this tree, not a regression (platform-corrections.md C57) [seeds=10, seed-to-seed SD=15.1pp, SE=4.8pp]
+  strong-vs-random:      pass — 100.0% (min 90.0%) [seeds=10, seed-to-seed SD=0.0pp, SE=0.0pp]
+  STAGE A QUALIFIES: false
+  (descriptive, never selected on:)
+  first-player-win-rate: fail — 18.7% (band [35%, 65%]) [seeds=10, seed-to-seed SD=14.7pp, SE=4.6pp] — solvedValue relief withheld: self-play reached the proven "draw" only 24.0% of the time (floor 90%, see solved-value-reached)
+  draw-rate:             pass — 24.0% (max 60.0%) [seeds=10, seed-to-seed SD=15.1pp, SE=4.8pp] — solvedValue relief withheld: self-play reached the proven draw only 24.0% of the time (floor 90%, see solved-value-reached)
+  ruthless-vs-standard:  n/a — manifest.ciGateBudget.twoPlayerCiRollouts is active for this CI-suite run — "ruthless" is measured at 2500 rollouts vs "standard"'s shipped 300 — the override has changed the very quantity under comparison, so this gate cannot measure its claim at suite "ci" (C26). Nightly measures it at the real shipped budgets, where it means something.
+  mean-plies:            pass — mean 12.1 plies, 0 cap hits across all matchups [seeds=10, seed-to-seed SD=1.12 plies, SE=0.35 plies]
+
+--- rollouts=3000 ---
+  solved-value-reached:  unattained — self-play has never reached the proven "draw" (27.3% observed, floor 90%) — no manifest.solvedValue.attainmentBaseline declared, so there is no history to regress from; this describes search adequacy for this tree, not a regression (platform-corrections.md C57) [seeds=10, seed-to-seed SD=15.2pp, SE=4.8pp]
+  strong-vs-random:      pass — 99.3% (min 90.0%) [seeds=10, seed-to-seed SD=1.4pp, SE=0.5pp]
+  STAGE A QUALIFIES: false
+  (descriptive, never selected on:)
+  first-player-win-rate: fail — 18.7% (band [35%, 65%]) [seeds=10, seed-to-seed SD=10.8pp, SE=3.4pp] — solvedValue relief withheld: self-play reached the proven "draw" only 27.3% of the time (floor 90%, see solved-value-reached)
+  draw-rate:             pass — 27.3% (max 60.0%) [seeds=10, seed-to-seed SD=15.2pp, SE=4.8pp] — solvedValue relief withheld: self-play reached the proven draw only 27.3% of the time (floor 90%, see solved-value-reached)
+  ruthless-vs-standard:  n/a — manifest.ciGateBudget.twoPlayerCiRollouts is active for this CI-suite run — "ruthless" is measured at 3000 rollouts vs "standard"'s shipped 300 — the override has changed the very quantity under comparison, so this gate cannot measure its claim at suite "ci" (C26). Nightly measures it at the real shipped budgets, where it means something.
+  mean-plies:            pass — mean 12.2 plies, 0 cap hits across all matchups [seeds=10, seed-to-seed SD=1.39 plies, SE=0.44 plies]
+
+--- rollouts=5000 ---
+  solved-value-reached:  unattained — self-play has never reached the proven "draw" (32.0% observed, floor 90%) — no manifest.solvedValue.attainmentBaseline declared, so there is no history to regress from; this describes search adequacy for this tree, not a regression (platform-corrections.md C57) [seeds=10, seed-to-seed SD=10.3pp, SE=3.3pp]
+  strong-vs-random:      pass — 100.0% (min 90.0%) [seeds=10, seed-to-seed SD=0.0pp, SE=0.0pp]
+  STAGE A QUALIFIES: false
+  (descriptive, never selected on:)
+  first-player-win-rate: pass — 46.7% (band [35%, 65%]) [seeds=10, seed-to-seed SD=11.8pp, SE=3.7pp] — solvedValue relief withheld: self-play reached the proven "draw" only 32.0% of the time (floor 90%, see solved-value-reached)
+  draw-rate:             pass — 32.0% (max 60.0%) [seeds=10, seed-to-seed SD=10.3pp, SE=3.3pp] — solvedValue relief withheld: self-play reached the proven draw only 32.0% of the time (floor 90%, see solved-value-reached)
+  ruthless-vs-standard:  n/a — manifest.ciGateBudget.twoPlayerCiRollouts is active for this CI-suite run — "ruthless" is measured at 5000 rollouts vs "standard"'s shipped 300 — the override has changed the very quantity under comparison, so this gate cannot measure its claim at suite "ci" (C26). Nightly measures it at the real shipped budgets, where it means something.
+  mean-plies:            pass — mean 13.1 plies, 0 cap hits across all matchups [seeds=10, seed-to-seed SD=1.17 plies, SE=0.37 plies]
+
+--- rollouts=10000 ---
+  solved-value-reached:  unattained — self-play has never reached the proven "draw" (28.7% observed, floor 90%) — no manifest.solvedValue.attainmentBaseline declared, so there is no history to regress from; this describes search adequacy for this tree, not a regression (platform-corrections.md C57) [seeds=10, seed-to-seed SD=10.0pp, SE=3.2pp]
+  strong-vs-random:      pass — 100.0% (min 90.0%) [seeds=10, seed-to-seed SD=0.0pp, SE=0.0pp]
+  STAGE A QUALIFIES: false
+  (descriptive, never selected on:)
+  first-player-win-rate: pass — 54.0% (band [35%, 65%]) [seeds=10, seed-to-seed SD=13.5pp, SE=4.3pp] — solvedValue relief withheld: self-play reached the proven "draw" only 28.7% of the time (floor 90%, see solved-value-reached)
+  draw-rate:             pass — 28.7% (max 60.0%) [seeds=10, seed-to-seed SD=10.0pp, SE=3.2pp] — solvedValue relief withheld: self-play reached the proven draw only 28.7% of the time (floor 90%, see solved-value-reached)
+  ruthless-vs-standard:  n/a — manifest.ciGateBudget.twoPlayerCiRollouts is active for this CI-suite run — "ruthless" is measured at 10000 rollouts vs "standard"'s shipped 300 — the override has changed the very quantity under comparison, so this gate cannot measure its claim at suite "ci" (C26). Nightly measures it at the real shipped budgets, where it means something.
+  mean-plies:            pass — mean 13.1 plies, 0 cap hits across all matchups [seeds=10, seed-to-seed SD=0.97 plies, SE=0.31 plies]
+
+Total sweep wall-clock: 1918.1s
+
+=== STAGE A QUALIFIERS (mechanical: solved-value-reached AND strong-vs-random, both pass, no provisional) ===
+NONE — no budget qualifies in Stage A.

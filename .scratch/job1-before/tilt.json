@@ -1,0 +1,2632 @@
+{
+  "agentA": "mcts1k",
+  "agentB": "random",
+  "metrics": {
+    "games": 20,
+    "firstPlayerWinRate": 0.5,
+    "drawRate": 0,
+    "winRateBySeat": [
+      0.5,
+      0.5
+    ],
+    "meanPlies": 10.6,
+    "medianPlies": 10,
+    "p95Plies": 15,
+    "meanBranchingFactor": 6.966981132075472,
+    "capHitRate": 0
+  },
+  "outcomes": [
+    {
+      "matchSeed": "c57-byte-identity-tilt:0",
+      "seatAgent": [
+        "mcts1k",
+        "random"
+      ],
+      "winnerSeat": 0,
+      "plies": 9,
+      "capHit": false,
+      "branchingSamples": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "moves": [
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "matchSeed": "c57-byte-identity-tilt:0",
+      "seatAgent": [
+        "random",
+        "mcts1k"
+      ],
+      "winnerSeat": 1,
+      "plies": 10,
+      "capHit": false,
+      "branchingSamples": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "moves": [
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "matchSeed": "c57-byte-identity-tilt:1",
+      "seatAgent": [
+        "mcts1k",
+        "random"
+      ],
+      "winnerSeat": 0,
+      "plies": 7,
+      "capHit": false,
+      "branchingSamples": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "moves": [
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "matchSeed": "c57-byte-identity-tilt:1",
+      "seatAgent": [
+        "random",
+        "mcts1k"
+      ],
+      "winnerSeat": 1,
+      "plies": 12,
+      "capHit": false,
+      "branchingSamples": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "moves": [
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "matchSeed": "c57-byte-identity-tilt:2",
+      "seatAgent": [
+        "mcts1k",
+        "random"
+      ],
+      "winnerSeat": 0,
+      "plies": 9,
+      "capHit": false,
+      "branchingSamples": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "moves": [
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "matchSeed": "c57-byte-identity-tilt:2",
+      "seatAgent": [
+        "random",
+        "mcts1k"
+      ],
+      "winnerSeat": 1,
+      "plies": 10,
+      "capHit": false,
+      "branchingSamples": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "moves": [
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "matchSeed": "c57-byte-identity-tilt:3",
+      "seatAgent": [
+        "mcts1k",
+        "random"
+      ],
+      "winnerSeat": 0,
+      "plies": 9,
+      "capHit": false,
+      "branchingSamples": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "moves": [
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "matchSeed": "c57-byte-identity-tilt:3",
+      "seatAgent": [
+        "random",
+        "mcts1k"
+      ],
+      "winnerSeat": 1,
+      "plies": 12,
+      "capHit": false,
+      "branchingSamples": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "moves": [
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "matchSeed": "c57-byte-identity-tilt:4",
+      "seatAgent": [
+        "mcts1k",
+        "random"
+      ],
+      "winnerSeat": 0,
+      "plies": 9,
+      "capHit": false,
+      "branchingSamples": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "moves": [
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "matchSeed": "c57-byte-identity-tilt:4",
+      "seatAgent": [
+        "random",
+        "mcts1k"
+      ],
+      "winnerSeat": 1,
+      "plies": 10,
+      "capHit": false,
+      "branchingSamples": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "moves": [
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "matchSeed": "c57-byte-identity-tilt:5",
+      "seatAgent": [
+        "mcts1k",
+        "random"
+      ],
+      "winnerSeat": 0,
+      "plies": 11,
+      "capHit": false,
+      "branchingSamples": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "moves": [
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "matchSeed": "c57-byte-identity-tilt:5",
+      "seatAgent": [
+        "random",
+        "mcts1k"
+      ],
+      "winnerSeat": 1,
+      "plies": 12,
+      "capHit": false,
+      "branchingSamples": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "moves": [
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "matchSeed": "c57-byte-identity-tilt:6",
+      "seatAgent": [
+        "mcts1k",
+        "random"
+      ],
+      "winnerSeat": 0,
+      "plies": 11,
+      "capHit": false,
+      "branchingSamples": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "moves": [
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "matchSeed": "c57-byte-identity-tilt:6",
+      "seatAgent": [
+        "random",
+        "mcts1k"
+      ],
+      "winnerSeat": 1,
+      "plies": 12,
+      "capHit": false,
+      "branchingSamples": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "moves": [
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "matchSeed": "c57-byte-identity-tilt:7",
+      "seatAgent": [
+        "mcts1k",
+        "random"
+      ],
+      "winnerSeat": 0,
+      "plies": 9,
+      "capHit": false,
+      "branchingSamples": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "moves": [
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "matchSeed": "c57-byte-identity-tilt:7",
+      "seatAgent": [
+        "random",
+        "mcts1k"
+      ],
+      "winnerSeat": 1,
+      "plies": 8,
+      "capHit": false,
+      "branchingSamples": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "moves": [
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "matchSeed": "c57-byte-identity-tilt:8",
+      "seatAgent": [
+        "mcts1k",
+        "random"
+      ],
+      "winnerSeat": 0,
+      "plies": 15,
+      "capHit": false,
+      "branchingSamples": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        6,
+        6,
+        6
+      ],
+      "moves": [
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "matchSeed": "c57-byte-identity-tilt:8",
+      "seatAgent": [
+        "random",
+        "mcts1k"
+      ],
+      "winnerSeat": 1,
+      "plies": 14,
+      "capHit": false,
+      "branchingSamples": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "moves": [
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "matchSeed": "c57-byte-identity-tilt:9",
+      "seatAgent": [
+        "mcts1k",
+        "random"
+      ],
+      "winnerSeat": 0,
+      "plies": 7,
+      "capHit": false,
+      "branchingSamples": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "moves": [
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "matchSeed": "c57-byte-identity-tilt:9",
+      "seatAgent": [
+        "random",
+        "mcts1k"
+      ],
+      "winnerSeat": 1,
+      "plies": 16,
+      "capHit": false,
+      "branchingSamples": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        6,
+        6,
+        6,
+        6
+      ],
+      "moves": [
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 3
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 0
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 1
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 5
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 2
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              0,
+              {
+                "column": 4
+              }
+            ]
+          ]
+        },
+        {
+          "moves": [
+            [
+              1,
+              {
+                "column": 6
+              }
+            ]
+          ]
+        }
+      ]
+    }
+  ]
+}
