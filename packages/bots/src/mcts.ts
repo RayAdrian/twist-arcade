@@ -11,15 +11,38 @@
 //     decision stays fully deterministic given the caller's seed.
 //   - simultaneous games: the TREE branches on the JOINT move space (the cartesian product of
 //     each active player's legalMoves, expressed directly as the `ReadonlyMap<PlayerId, M>`
-//     apply() already expects) rather than a decoupled per-player statistic — "start simple",
-//     per the plan; decoupled UCT (separate UCB1 statistics kept and grown per player during
-//     SELECTION) is explicitly still deferred. What changed (platform-corrections.md C56): FINAL
-//     MOVE SELECTION at a simultaneous root no longer reads off "the single most-visited joint
-//     cell" — that picks one lucky cell out of the cartesian product, not a judgment about your
-//     own action. It now marginalizes — see `aggregateByOwnMove` below — summing visits (and
-//     value) across every joint arm that shares your own move component, and choosing from
-//     THAT. This is strictly a selection-time fix; the tree itself still grows on the joint
-//     space exactly as before.
+//     apply() already expects — this part is UNCHANGED: transitions genuinely depend on the
+//     joint outcome, so the tree still stores/returns joint children). SELECTION at a
+//     simultaneous node, however, is DECOUPLED UCT / DUCT (docs/plans/sim-search-remedy.md,
+//     C57/C58/C71): each active player independently runs UCB1 over a per-seat statistics
+//     table of THEIR OWN move component (visits, totalValue from THAT SEAT'S OWN perspective —
+//     `Node.seatMoveStats`, populated only at simultaneous nodes), and the joint move actually
+//     descended into is the composition of each seat's own pick, looked up in the existing
+//     joint-children Map. This replaces the OLD "single fixed edge owner (the requester) for
+//     the whole node" convention at simultaneous nodes (see `edgeOwnerAt`'s doc below, and
+//     platform-corrections.md C71 Part 2 for the measured defect this replaces: root value
+//     drifting toward +1 on a position an exact solver proves is a draw, because the opponent
+//     was modeled as a co-operator rather than an adversary). What changed at C56 (FINAL move
+//     selection at a simultaneous ROOT no longer reading off "the single most-visited joint
+//     cell") is now SUBSUMED, not layered on top: final selection at a simultaneous root reads
+//     the requester's own `seatMoveStats` table directly — already exactly the marginal
+//     `aggregateByOwnMove` computed, by construction, since every joint arm sharing an own-move
+//     component contributes to that move's single table entry. `aggregateByOwnMove` itself is
+//     kept (exported, still unit-tested) but is no longer called on this live path.
+//
+//     HONEST SCOPE (replacing the falsified "fine at our branching factors" claim this file
+//     carried through C55–C58): DUCT is EXACT-TARGET at a PURE-SADDLE simultaneous node —
+//     decoupled per-seat best-response dynamics have their fixed point exactly at a pure
+//     saddle point, by definition (mcts.test.ts's matrix-saddle fixture verifies this by hand
+//     at a scale a human can check without trusting a solver). At a MIXED-equilibrium node,
+//     DUCT has NO mechanism to converge to a mixed distribution — it always reports one
+//     deterministic "best" pure move per search call, and per-seat visit tables can cycle
+//     rather than settle (mcts.test.ts documents this on best-of-5 RPS without asserting
+//     equilibrium convergence, which DUCT does not promise). This claim NAMES ITS OWN CHECK
+//     (C31/C64: the doc must not outrun the code) — see docs/plans/sim-search-remedy.md §1's
+//     refutation conditions for what would make this the wrong call for a given game: check
+//     that game's own saddle census (a per-game measured fact, not a platform theorem) before
+//     assuming DUCT alone is sufficient.
 //   - hidden-info games: NOT handled here at all — see determinize() in policy.ts. This file
 //     only ever operates on a real `S` (perfect information, or a determinized sample of one).
 //
@@ -28,13 +51,21 @@
 // "edge owner" — the player who is deemed to have "chosen" the edge leading to that node.
 // For a sequential node, the edge owner of node N's CHILDREN is N's own active player (N is
 // where that player chose their move) — so children of the same parent are always compared
-// apples-to-apples during UCB selection. The root's own edge owner is the requesting
-// `player` by definition (root has no parent). For a simultaneous node, there is no single
-// natural "chooser" (multiple players commit at once); the requesting `player` is used as
-// the edge owner there too — a deliberate simplification matching the plan's explicit
-// "decoupled UCT deferred... fine at our branching factors" scoping. This generalizes both
-// sequential alternating (2P zero-sum or general-sum) and solo trees without special-casing,
-// and reduces exactly to standard single-player MCTS when there is only one seat.
+// apples-to-apples during UCB selection, and this value directly drives sequential SELECTION
+// (unchanged by DUCT — see above). The root's own edge owner is the requesting `player` by
+// definition (root has no parent) — this is ALSO unchanged by DUCT: `stats.rootValue` is still
+// `root.totalValue / root.visits`, the requester's own running average across every rollout
+// that passed through the root, regardless of node mode. For a simultaneous node there is no
+// single natural "chooser" (multiple players commit at once); the requesting `player` is
+// still used as this node-level `totalValue`'s edge owner — but, since DUCT, this quantity is
+// ONLY a reporting/backprop-bookkeeping value at simultaneous nodes, never a selection input:
+// simultaneous SELECTION reads `Node.seatMoveStats` instead (see above), a separate per-seat
+// table that DOES give each active player their own value convention. `stats.rootValue`
+// improving post-fix (platform-corrections.md C71 Part 2's own prediction) falls entirely out
+// of DUCT reallocating WHERE the tree spends its rollouts, not out of any change to how this
+// particular accumulator itself is computed. This generalizes both sequential alternating (2P
+// zero-sum or general-sum) and solo trees without special-casing, and reduces exactly to
+// standard single-player MCTS when there is only one seat.
 
 import type { GameEngine, Json, PlayerId, Status, WithEffects } from "@twist-arcade/engine";
 import { stableStringify } from "@twist-arcade/engine";
@@ -53,8 +84,36 @@ export interface MctsOptions {
   explorationC?: number;
   /** Hard ply cap on the random-rollout phase beyond the tree (never the tree itself, which
    *  stops growing once budget runs out) — mirrors the engine contract's own termination
-   *  cap. Default 200. */
+   *  cap. Default 200.
+   *
+   *  IGNORED when `leafEvaluation` is `true` (see below) — the rollout phase does not run at
+   *  all in that mode, so there is no cap to apply. Setting this to `0` (with `leafEvaluation`
+   *  left unset) is still fully supported and still deterministic: `rolloutToHorizon`'s own
+   *  `plies < maxPlies` loop guard makes a 0-ply rollout a no-op, which lands on the exact same
+   *  `valueOfStatus` "ongoing" estimate `leafEvaluation: true` computes directly — the two
+   *  spellings are mathematically equivalent by construction, not merely coincidentally equal
+   *  (platform-corrections.md C90/C92's "DUCT + leaf evaluation" cell was measured under this
+   *  exact `rolloutCapPlies: 0` spelling, before `leafEvaluation` existed as its own name). This
+   *  numeric value remains the honest way to express "cap the rollout at N plies" for any N,
+   *  including zero, in code that genuinely wants the parameter (e.g. a research sweep across
+   *  cap values) rather than the leaf-evaluation INTENT. */
   rolloutCapPlies?: number;
+  /**
+   * Skip the post-tree rollout phase entirely and score the newly-expanded leaf directly via
+   * `valueOfStatus`'s "ongoing" branch (an engine's `score()`/`heuristic()`, per its declared
+   * `horizonValue` — see search-utils.ts) instead of simulating forward with random play.
+   *
+   * This is the NAMED spelling of what was previously reachable only as the side effect of
+   * `rolloutCapPlies: 0` (platform-corrections.md C87–C90/C92: "DUCT selection + leaf
+   * evaluation"). That old spelling worked by accident of `rolloutToHorizon`'s loop guard
+   * (`plies < maxPlies`) happening to run zero iterations at exactly that value — a fact about
+   * the rollout helper's control flow, not a stated intent at the call site. `leafEvaluation`
+   * makes the branch explicit in `mctsPolicy` itself, and takes precedence over `rolloutCapPlies`
+   * when both are set (the cap is meaningless once there is no rollout to cap). Default `false`
+   * — preserves every currently shipped game's behavior unconditionally, since none of them sets
+   * this option.
+   */
+  leafEvaluation?: boolean;
 }
 
 type JointMove<M> = ReadonlyMap<PlayerId, M>;
@@ -145,6 +204,15 @@ function edgeOwnerAt<S extends WithEffects, M extends Json>(
   return active.mode === "sequential" ? active.player : rootPlayer;
 }
 
+/** DUCT (plan §1): one active seat's own-move statistic at a simultaneous node — visits and
+ *  totalValue accumulated from THAT SEAT'S OWN `valueOfStatus` perspective, summed across
+ *  every joint arm sharing this own-move component (the decoupled analog of a UCB1 child). */
+interface SeatMoveStat<M extends Json> {
+  move: M;
+  visits: number;
+  totalValue: number;
+}
+
 interface Node<S extends WithEffects, M extends Json> {
   state: S;
   status: Status;
@@ -152,6 +220,9 @@ interface Node<S extends WithEffects, M extends Json> {
   totalValue: number; // w.r.t. this node's OWN edge owner (see module doc)
   untried: JointMove<M>[];
   children: Map<string, { jointMove: JointMove<M>; child: Node<S, M> }>;
+  // DUCT: per-active-seat own-move statistics, populated and read ONLY at simultaneous nodes
+  // (module doc). Absent for sequential/solo nodes — the sequential path never touches this.
+  seatMoveStats?: Map<PlayerId, Map<string, SeatMoveStat<M>>>;
 }
 
 function makeNode<S extends WithEffects, M extends Json>(
@@ -170,9 +241,63 @@ function makeNode<S extends WithEffects, M extends Json>(
   };
 }
 
+/**
+ * DUCT selection (plan §1) at a simultaneous node whose joint move space has already been
+ * fully expanded (the caller guarantees `node.untried` is empty before calling this — every
+ * joint arm has therefore been drawn+backpropagated at least once, so every active seat's own
+ * legal move already has a `seatMoveStats` entry with `visits >= 1`; see this function's use
+ * site for why that invariant holds). Each active player independently picks the own move
+ * maximizing UCB1 over `node.seatMoveStats` (same formula, same `visits === 0` fallback shape,
+ * as the sequential branch's UCB1 — just evaluated once per active seat over that seat's own
+ * table instead of once over joint children). The joint move is their composition, looked up
+ * in the EXISTING joint-children Map — this function never creates a node and never draws from
+ * `rng`; it is a pure, deterministic function of already-recorded statistics, so it introduces
+ * no new source of randomness at all (stricter than the plan's "any new rng draw must occur
+ * only inside a simultaneous-mode branch" requirement).
+ */
+function selectDuctChild<S extends WithEffects, M extends Json>(
+  node: Node<S, M>,
+  activePlayers: readonly PlayerId[],
+  explorationC: number
+): { jointMove: JointMove<M>; child: Node<S, M> } {
+  const chosen = new Map<PlayerId, M>();
+  for (const p of activePlayers) {
+    const table = node.seatMoveStats?.get(p);
+    if (!table || table.size === 0) {
+      throw new Error(
+        "mctsPolicy: DUCT selection reached a simultaneous node with no recorded own-move " +
+          `statistics for player ${p} — unreachable once every joint arm has been expanded.`
+      );
+    }
+    let bestMove: M | undefined;
+    let bestScore = Number.NEGATIVE_INFINITY;
+    for (const stat of table.values()) {
+      const score =
+        stat.visits === 0
+          ? Number.POSITIVE_INFINITY
+          : stat.totalValue / stat.visits + explorationC * Math.sqrt(Math.log(node.visits) / stat.visits);
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = stat.move;
+      }
+    }
+    chosen.set(p, bestMove!);
+  }
+  const key = jointMoveKey(chosen);
+  const entry = node.children.get(key);
+  if (!entry) {
+    throw new Error(
+      "mctsPolicy: DUCT selection composed a joint move with no matching child — every joint " +
+        "arm should already be expanded once `untried` is empty."
+    );
+  }
+  return entry;
+}
+
 export function mctsPolicy<S extends WithEffects, M extends Json>(opts: MctsOptions = {}): Policy<S, M> {
   const explorationC = opts.explorationC ?? 1.4;
   const rolloutCapPlies = opts.rolloutCapPlies ?? 200;
+  const leafEvaluation = opts.leafEvaluation ?? false;
 
   return {
     chooseMove({ engine, state, player, rng, budget, clock }) {
@@ -187,6 +312,11 @@ export function mctsPolicy<S extends WithEffects, M extends Json>(opts: MctsOpti
         // --- SELECT + EXPAND ---
         const path: Node<S, M>[] = [root];
         const owners: PlayerId[] = [];
+        // DUCT bookkeeping: the actual joint move taken FROM path[i] TO path[i+1], recorded
+        // for every step regardless of how it was chosen (untried-draw, sequential UCB1, or
+        // DUCT selection) — the per-seat backprop pass below reads this, but only ever USES an
+        // entry for a step whose `path[i]` was itself a simultaneous node (module doc).
+        const jointMoves: JointMove<M>[] = [];
         let node = root;
         let expanded = false;
         while (!expanded) {
@@ -201,38 +331,91 @@ export function mctsPolicy<S extends WithEffects, M extends Json>(opts: MctsOpti
             node.children.set(jointMoveKey(jm), { jointMove: jm, child });
             path.push(child);
             owners.push(owner);
+            jointMoves.push(jm);
             node = child;
             expanded = true;
             break;
           }
           if (node.children.size === 0) break; // no legal moves at all (shouldn't happen if ongoing)
-          let best: { jointMove: JointMove<M>; child: Node<S, M> } | undefined;
-          let bestScore = Number.NEGATIVE_INFINITY;
-          for (const entry of node.children.values()) {
-            const score =
-              entry.child.visits === 0
-                ? Number.POSITIVE_INFINITY
-                : entry.child.totalValue / entry.child.visits +
-                  explorationC * Math.sqrt(Math.log(node.visits) / entry.child.visits);
-            if (score > bestScore) {
-              bestScore = score;
-              best = entry;
+          const active = engine.active(node.state);
+          let selected: { jointMove: JointMove<M>; child: Node<S, M> };
+          if (active.mode === "sequential") {
+            // UNCHANGED from before DUCT — byte-identical UCB1 over joint (here: singleton)
+            // children, same formula, same child-Map iteration order, same tie-break (plan §2's
+            // byte-identity requirement for every shipped sequential game).
+            let best: { jointMove: JointMove<M>; child: Node<S, M> } | undefined;
+            let bestScore = Number.NEGATIVE_INFINITY;
+            for (const entry of node.children.values()) {
+              const score =
+                entry.child.visits === 0
+                  ? Number.POSITIVE_INFINITY
+                  : entry.child.totalValue / entry.child.visits +
+                    explorationC * Math.sqrt(Math.log(node.visits) / entry.child.visits);
+              if (score > bestScore) {
+                bestScore = score;
+                best = entry;
+              }
             }
+            selected = best!;
+          } else {
+            // DUCT (plan §1) — gated strictly on simultaneous mode, per the module doc.
+            selected = selectDuctChild(node, active.players, explorationC);
           }
-          path.push(best!.child);
+          path.push(selected.child);
           owners.push(owner);
-          node = best!.child;
+          jointMoves.push(selected.jointMove);
+          node = selected.child;
         }
 
         // --- ROLLOUT (simulate randomly from the new leaf to a terminal/horizon) ---
-        const { status: leafStatus, state: leafState } = rolloutToHorizon(engine, node.state, rng, rolloutCapPlies);
+        // Branches on the NAMED option (module doc's MctsOptions.leafEvaluation), not on a zero
+        // comparison against rolloutCapPlies — see that field's own doc for why `rolloutCapPlies:
+        // 0` still reaches the identical numeric outcome via the `else` arm below rather than
+        // being special-cased here too.
+        const { status: leafStatus, state: leafState } = leafEvaluation
+          ? { status: node.status, state: node.state }
+          : rolloutToHorizon(engine, node.state, rng, rolloutCapPlies);
 
         // --- BACKPROPAGATE ---
+        // UNCHANGED: still the single fixed-edge-owner accumulation (module doc's VALUE
+        // CONVENTION) — drives sequential UCB1 selection and `stats.rootValue` reporting,
+        // for every node regardless of mode.
         for (let i = path.length - 1; i >= 0; i--) {
           const owner = i === 0 ? player : owners[i - 1]!;
           const value = valueOfStatus(engine, leafStatus, leafState, owner);
           path[i]!.visits += 1;
           path[i]!.totalValue += value;
+        }
+        // DUCT per-seat backprop (plan §1, ADDITIVE — touches only the new `seatMoveStats`
+        // field): at every SIMULTANEOUS node on the path, credit each active seat's OWN
+        // move component of the joint move actually taken from it with THAT SEAT'S OWN
+        // `valueOfStatus`. Gated on `active.mode === "simultaneous"` — sequential nodes are
+        // never touched by this loop, matching the plan's "any new rng draw/behavior only
+        // inside a simultaneous-mode branch" requirement (this loop draws no rng at all).
+        for (let i = 0; i < path.length - 1; i++) {
+          const from = path[i]!;
+          const activeAtFrom = engine.active(from.state);
+          if (activeAtFrom.mode !== "simultaneous") continue;
+          const jm = jointMoves[i]!;
+          if (!from.seatMoveStats) from.seatMoveStats = new Map();
+          for (const p of activeAtFrom.players) {
+            const ownMove = jm.get(p);
+            if (ownMove === undefined) continue; // engine contract: every active seat has a component
+            let table = from.seatMoveStats.get(p);
+            if (!table) {
+              table = new Map();
+              from.seatMoveStats.set(p, table);
+            }
+            const seatKey = stableStringify(ownMove as unknown as Json);
+            const seatValue = valueOfStatus(engine, leafStatus, leafState, p);
+            const existing = table.get(seatKey);
+            if (existing) {
+              existing.visits += 1;
+              existing.totalValue += seatValue;
+            } else {
+              table.set(seatKey, { move: ownMove, visits: 1, totalValue: seatValue });
+            }
+          }
         }
       };
 
@@ -250,41 +433,40 @@ export function mctsPolicy<S extends WithEffects, M extends Json>(opts: MctsOpti
         } while (clock.now() < deadline);
       }
 
-      // --- FINAL SELECTION (platform-corrections.md C56) ---
+      // --- FINAL SELECTION (platform-corrections.md C56, subsumed by DUCT per C57/C58) ---
       const rootActive = engine.active(state);
       let move: M;
       let rootVisits: { move: Json; visits: number }[];
 
       if (rootActive.mode === "simultaneous") {
-        // Marginalize: sum visits/value across every joint arm sharing `player`'s own move,
-        // then choose the own-move with the most AGGREGATED visits — the decoupled analog of
-        // "most robust child" (favor the action UCB spent the most cumulative attention
-        // confirming, across however the other actor(s) responded), not "the single luckiest
-        // joint cell" (the pre-fix defect: one cell out of the cartesian product, which a
-        // handful of visits can put on top by chance — see mcts.test.ts's lucky-cell-rps case
-        // and docs/plans/platform-corrections.md C56 for a real measured instance).
-        const ownEntries = Array.from(root.children.values())
-          .map((entry) => ({
-            move: entry.jointMove.get(player),
-            visits: entry.child.visits,
-            totalValue: entry.child.totalValue,
-          }))
-          .filter((e): e is { move: M; visits: number; totalValue: number } => e.move !== undefined);
-        const aggregates = aggregateByOwnMove(ownEntries);
-
-        let best: OwnMoveAggregate<M> | undefined;
-        let bestVisits = -1;
-        for (const agg of aggregates) {
-          if (agg.visits > bestVisits) {
-            bestVisits = agg.visits;
-            best = agg;
-          }
-        }
-        if (!best) {
+        // DUCT (plan §1): the requester's own `seatMoveStats` table at the root ALREADY IS the
+        // marginal — every joint arm sharing an own-move component contributes to that move's
+        // single table entry as it is visited (backprop above), so reading it directly
+        // subsumes C56's `aggregateByOwnMove`-over-`root.children` by construction, without
+        // needing to re-derive the aggregation here. Choose the own-move with the most visits
+        // — same "most robust child" reasoning C56 established (favor the action UCB spent the
+        // most cumulative attention confirming, across however the other actor(s) responded),
+        // now grounded in each seat's own value rather than the root requester's alone.
+        // `aggregateByOwnMove` itself is kept (exported, still unit-tested below) but is no
+        // longer on this live path — plan §6.3's explicit "smaller diff, flag deletion as a
+        // follow-up decision".
+        const ownTable = root.seatMoveStats?.get(player);
+        if (!ownTable || ownTable.size === 0) {
           throw new Error("mctsPolicy: no legal moves were available to search from the given state");
         }
-        move = best.move;
-        rootVisits = aggregates.map((agg) => ({ move: agg.move as unknown as Json, visits: agg.visits }));
+        let best: SeatMoveStat<M> | undefined;
+        let bestVisits = -1;
+        for (const stat of ownTable.values()) {
+          if (stat.visits > bestVisits) {
+            bestVisits = stat.visits;
+            best = stat;
+          }
+        }
+        move = best!.move;
+        rootVisits = Array.from(ownTable.values()).map((stat) => ({
+          move: stat.move as unknown as Json,
+          visits: stat.visits,
+        }));
       } else {
         // Sequential (or solo) root — UNCHANGED from before C56, deliberately not routed
         // through aggregateByOwnMove: every shipped sequential game's tiers (Fadeout, Nine

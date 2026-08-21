@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": ".",
+    "jsx": "react-jsx"
+  },
+  "include": ["*.ts", "*.mts", "ui/**/*.tsx", "solver/**/*.ts", "solver/**/*.mts", "test/**/*.ts"],
+  "references": [
+    { "path": "../../packages/engine" },
+    { "path": "../../packages/game-spec" },
+    { "path": "../../packages/bots" },
+    { "path": "../../packages/shell" }
+  ]
+}

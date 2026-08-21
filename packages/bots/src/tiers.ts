@@ -82,7 +82,13 @@ function buildPolicy<S extends WithEffects, M extends Json>(spec: PolicySpec, rn
     case "minimax":
       return minimaxPolicy<S, M>(spec.maxDepth !== undefined ? { maxDepth: spec.maxDepth } : {});
     case "mcts":
-      return mctsPolicy<S, M>(spec.explorationC !== undefined ? { explorationC: spec.explorationC } : {});
+      // C95: each optional field is spread in independently so an absent one stays absent
+      // (never coerced to an explicit `false`/default) — the same discipline every other arm
+      // in this switch already follows for its own optional fields.
+      return mctsPolicy<S, M>({
+        ...(spec.explorationC !== undefined ? { explorationC: spec.explorationC } : {}),
+        ...(spec.leafEvaluation !== undefined ? { leafEvaluation: spec.leafEvaluation } : {}),
+      });
     case "beam":
       return beamPolicy<S, M>(spec.width !== undefined ? { width: spec.width } : {});
     case "flat-mc":
