@@ -30,9 +30,38 @@ interface Versioned {
 /**
  * Reads and JSON-parses `key`, returning `undefined` (never throwing) if: the key is absent,
  * the stored value isn't valid JSON, the parsed value has no numeric `v`, the `v` doesn't
- * match `expectedVersion`, or localStorage itself is unavailable/throws (private mode).
+ * match `expectedVersion`, `isValid` rejects the parsed shape, or localStorage itself is
+ * unavailable/throws (private mode).
+ *
+ * `isValid` is REQUIRED, not optional (PERS-001 postmortem): this function is generic over `T`
+ * and cannot know `T`'s shape on its own, so before this fix the only check performed was the
+ * `{v}` envelope — every field beyond `v` was an unchecked `as T` cast. That cast was the actual
+ * defect: `{"v":1}` (well-formed JSON, right version, wrong shape — e.g. a write truncated by a
+ * killed tab, a quota failure mid-JSON.stringify, or an older/partial schema) came back as if it
+ * were a full record, and a caller that dereferenced further (`stored.record.seed`) threw. Making
+ * the type predicate mandatory closes the door on that class of bug for every current AND future
+ * caller — there is no signature under which a caller can get an unchecked cast out of this
+ * function again. (streak.ts independently arrived at the same shape — its own hand-rolled
+ * `isStreakRecord` — because it doesn't route through here; that guard is precisely what every
+ * `readVersioned` caller gets for free with this change.)
+ *
+ * On an invalid shape the bad key is REMOVED (not merely ignored), matching writeVersioned/
+ * removeVersioned's own "degrade silently" posture. Rationale: this is client-local, ephemeral
+ * resume-state with no forensic/support tooling that reads raw localStorage (grepped: nothing in
+ * this codebase inspects these keys except through this module) — nothing of value is lost by
+ * clearing it, and writeVersioned will overwrite it on the next successful write regardless.
+ * Deleting is what makes "fresh start" actually non-sticky: leaving the bad value in place would
+ * still fix TODAY's caller (it now validates), but would leave a landmine for any future caller
+ * that reads this same key with a less careful cast — exactly the bug this fix exists to retire.
+ * A `console.warn`-and-keep approach was considered and rejected: it would surface (or risk
+ * surfacing) the raw stored value in a client-visible log, and this module has no logging
+ * convention today to make that safe.
  */
-export function readVersioned<T extends Versioned>(key: string, expectedVersion: number): T | undefined {
+export function readVersioned<T extends Versioned>(
+  key: string,
+  expectedVersion: number,
+  isValid: (value: unknown) => value is T
+): T | undefined {
   let raw: string | null;
   try {
     raw = window.localStorage.getItem(key);
@@ -54,10 +83,23 @@ export function readVersioned<T extends Versioned>(key: string, expectedVersion:
     typeof (parsed as Versioned).v !== "number" ||
     (parsed as Versioned).v !== expectedVersion
   ) {
-    return undefined; // missing/mismatched version — fresh start.
+    // missing/mismatched version — fresh start. Deliberately NOT removed: an older-version
+    // record is not corrupt, it's pre-migration data a future schema bump may still want to
+    // read and transform forward. (No such migration path exists in this codebase today —
+    // grepped — so this is a forward-looking distinction, not a currently-exercised one.)
+    return undefined;
   }
 
-  return parsed as T;
+  if (!isValid(parsed)) {
+    // Right envelope (correct v), WRONG SHAPE — PERS-001. Unlike a version mismatch, this is
+    // genuine corruption (a truncated write, a killed tab mid-write, quota failure): there is
+    // no future code that legitimately wants this exact value back. Removed so the failure is
+    // NOT sticky — see this function's doc comment above for the full rationale.
+    removeVersioned(key);
+    return undefined;
+  }
+
+  return parsed;
 }
 
 /** Writes `value` (which must carry its own `v`). Silently no-ops if storage throws. */

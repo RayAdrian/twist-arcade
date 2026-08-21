@@ -693,3 +693,96 @@ describe("useGame — solo-single mode", () => {
     expect(result.current.botThinking).toBe(false);
   });
 });
+
+describe("useGame — PERS-001 (stage-4 finding): well-formed JSON, right version, wrong shape", () => {
+  // The reported crash: a stored record like `{"v":1}` — no `record` field at all — used to
+  // come back from readVersioned as an unchecked cast, and `stored.record.seed` /
+  // `stored.record.gameId` (both un-guarded by the `stored?.` above them) threw a bare
+  // TypeError straight out of the useState initializer, which crashes the whole render (a
+  // route bricked for that device — not a caught/recoverable error).
+  const persistKey = () => gameKey(tttManifest.id, "solo-bot");
+
+  it("does not throw on mount and starts a fresh game when the persisted record is `{\"v\":1}`", () => {
+    window.localStorage.setItem(persistKey(), JSON.stringify({ v: 1 }));
+
+    // No expect(() => ...).not.toThrow() wrapper needed: if construction throws, vitest fails
+    // this test with the thrown error as the failure reason (which is exactly what happened
+    // pre-fix — see the red-run evidence in the PR description). A clean pass here already
+    // proves the crash is gone; the assertions below additionally prove it's a FRESH game.
+    const { result } = renderHook(() =>
+      useGame({
+        definition: tttDefinition,
+        mode: "solo-bot",
+        seed: "fresh-seed",
+        humanSeat: 0,
+        botDriver: scriptedBotDriver([]),
+      })
+    );
+
+    expect(result.current.moveCount).toBe(0);
+    expect(result.current.view.board.every((c) => c === null)).toBe(true);
+    expect(result.current.activeSeat).toBe(0);
+  });
+
+  it("does not throw on mount when `record` is present but `steps` is missing (a truncated write)", () => {
+    window.localStorage.setItem(
+      persistKey(),
+      JSON.stringify({
+        v: 1,
+        record: { gameId: tttManifest.id, gameVersion: classicTicTacToe.meta.version, seed: "resume-seed" }, // steps missing
+        tierId: "standard",
+        restartCount: 0,
+      })
+    );
+
+    const { result } = renderHook(() =>
+      useGame({
+        definition: tttDefinition,
+        mode: "solo-bot",
+        seed: "fresh-seed-2",
+        humanSeat: 0,
+        botDriver: scriptedBotDriver([]),
+      })
+    );
+
+    expect(result.current.moveCount).toBe(0);
+    expect(result.current.view.board.every((c) => c === null)).toBe(true);
+  });
+
+  it("stickiness: a SECOND load (simulated page reload) of the same bad key also starts fresh, not just the first", () => {
+    window.localStorage.setItem(persistKey(), JSON.stringify({ v: 1 }));
+
+    const first = renderHook(() =>
+      useGame({
+        definition: tttDefinition,
+        mode: "solo-bot",
+        seed: "fresh-seed-3",
+        humanSeat: 0,
+        botDriver: scriptedBotDriver([]),
+      })
+    );
+    expect(first.result.current.moveCount).toBe(0);
+    first.unmount();
+
+    // Re-corrupt the key exactly as it was before the first mount (rather than relying on
+    // whatever the first mount's own persistence effect wrote back) — this isolates the
+    // property under test: readVersioned's own non-stickiness, independent of whether
+    // useGame's write-on-mount effect happens to have already replaced the bad value. A
+    // second consecutive corrupt read must behave IDENTICALLY to the first, not throw because
+    // some now-stale internal state assumed the key was already cleaned up.
+    window.localStorage.setItem(persistKey(), JSON.stringify({ v: 1 }));
+
+    const second = renderHook(() =>
+      useGame({
+        definition: tttDefinition,
+        mode: "solo-bot",
+        seed: "fresh-seed-4",
+        humanSeat: 0,
+        botDriver: scriptedBotDriver([]),
+      })
+    );
+
+    expect(second.result.current.moveCount).toBe(0);
+    expect(second.result.current.view.board.every((c) => c === null)).toBe(true);
+  });
+});

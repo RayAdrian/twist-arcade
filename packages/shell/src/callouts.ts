@@ -18,8 +18,23 @@ interface FirstsRecord {
   firstGamePlayed?: 1;
 }
 
+// Every field beyond `v` is optional, so a shape as bare as `{ v: 1 }` is actually a legitimate
+// FirstsRecord (no callout shown yet, first game not played yet) — but `shown`/`firstGamePlayed`
+// must be REJECTED if present with the wrong type, since markCalloutShown/markFirstGamePlayed
+// both spread the current record forward (`{ ...record, shown: { ...record.shown, ... } }`):
+// a non-object `shown` wouldn't crash (spreading a primitive is silently `{}` in JS), but it
+// would silently swallow whatever was in `shown` and, more importantly, that's exactly the kind
+// of unvalidated-cast-shaped bug PERS-001 is about — this validator closes it here too.
+function isFirstsRecord(value: unknown): value is FirstsRecord {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (v.shown !== undefined && (typeof v.shown !== "object" || v.shown === null)) return false;
+  if (v.firstGamePlayed !== undefined && v.firstGamePlayed !== 1) return false;
+  return true;
+}
+
 function readFirsts(gameId: string): FirstsRecord {
-  return readVersioned<FirstsRecord>(firstsKey(gameId), 1) ?? { v: 1 };
+  return readVersioned<FirstsRecord>(firstsKey(gameId), 1, isFirstsRecord) ?? { v: 1 };
 }
 
 export function hasShownCallout(gameId: string, flagKey: string): boolean {
