@@ -115,6 +115,29 @@ export interface GamePresentation<
    * change for them.
    */
   extraControls?: ComponentType<BoardProps<V, M>>;
+  /**
+   * OPTIONAL, additive. OPT-IN ONLY — explicit, not inferred from `extraControls` being set.
+   *
+   * Fix for a stage-6-post-merge defect: the shell used to derive its wide two-column desktop
+   * treatment (`max-w-3xl` + `md:grid md:grid-cols-[1fr_300px]`, `extraControls` rendered as a
+   * right-hand column) from `extraControls !== undefined` alone. `extraControls` is this
+   * generic sibling-control slot with THREE suppliers — Crackstep's `SidePanel` (design 2a's
+   * two-column desktop panel — the only one the design actually asked for), Mine Run's
+   * `BankBar`, and Tilt's `Telegraph` — and the latter two are documented as belonging
+   * elsewhere: BankBar "immediately after the board... ADJACENT to the button" (mine-run.md
+   * §8.1), Telegraph as a board-edge direction marker (tilt.md §6.1) that a right-hand column
+   * detaches from the edge it annotates. Inferring the layout from the slot's mere presence
+   * silently opted both of them into a treatment neither wanted.
+   *
+   * Default `undefined`/`false`: `extraControls`, if supplied, renders as a plain sibling block
+   * below `Board` in the shell's normal single `max-w-md` column (Mine Run, Tilt's actual,
+   * pre-existing layout). Set `true` only by a game whose `extraControls` component is meant to
+   * become a right-hand side panel at `md+` (Crackstep's `SidePanel`, the design 2a panel this
+   * flag exists to describe). Has no effect without `extraControls` also being set — the shell
+   * gates strictly on this flag for layout, but only ever has something to lay out in a side
+   * column if a game supplied one.
+   */
+  sidePanel?: boolean;
   announce(ev: GameEvent<V>): string;
   /**
    * ARRAY, not a single entry (platform-corrections.md, folded in while this shape is still

@@ -395,12 +395,40 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
         ? "Bot"
         : undefined;
 
-  // Design 2a's "Crackstep · daily solo · desktop" panel: a game that supplies extraControls
-  // gets a wider shell + a responsive two-column layout (board+controls left, the game's own
-  // side panel right) at md+; every other game keeps the original single centered column at
-  // every viewport, unchanged.
-  const hasSidePanel = presentation.extraControls !== undefined;
+  // Design 2a's "Crackstep · daily solo · desktop" panel: a game gets a wider shell + a
+  // responsive two-column layout (board+controls left, the game's own side panel right) at
+  // md+ ONLY when it explicitly opts in via `presentation.sidePanel` (game-spec's `sidePanel`
+  // flag) — every other game keeps the original single centered column at every viewport,
+  // unchanged. Post-merge fix: this used to be inferred from `extraControls !== undefined`
+  // alone, which silently opted Mine Run's BankBar and Tilt's Telegraph into this layout too —
+  // both supply `extraControls` for their own, unrelated reasons and neither wants a right-hand
+  // column (mine-run.md §8.1, tilt.md §6.1). Gate strictly on the explicit flag.
+  const hasSidePanel = presentation.sidePanel === true;
   const readyChip = headerChip(manifest, daily);
+
+  // Identical in both the side-panel and default branches below — hoisted once so the two
+  // layout branches differ only in how they WRAP BoardShell/extraControls, never in BoardShell's
+  // own props (avoids the two branches silently drifting apart under a future edit).
+  const boardShellElement = (
+    <BoardShell
+      rows={rows}
+      cols={cols}
+      disabled={game.legal.length === 0}
+      onCellAction={handleCellAction}
+      boardLabel={`${manifest.title} board`}
+      lockedUntil={game.lockedUntil}
+      reducedMotion={reducedMotion}
+      overlay={<CalloutLayer firstOccurrence={game.firstOccurrence} />}
+    >
+      <presentation.Board
+        view={game.view}
+        legal={game.legal}
+        onMove={(m: Json) => handleCellAction(moveToCellId(m))}
+        seat={mode === "hotseat" ? game.presentingSeat : (humanSeat ?? 0)}
+        prefs={{ reducedMotion, theme }}
+      />
+    </BoardShell>
+  );
 
   return (
     <div className={hasSidePanel ? "mx-auto max-w-3xl space-y-3 p-4" : "mx-auto max-w-md space-y-3 p-4"}>
@@ -449,28 +477,35 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
           />
         )}
 
-        <div className={hasSidePanel ? "md:grid md:grid-cols-[1fr_300px] md:items-start md:gap-6" : undefined}>
-          <BoardShell
-            rows={rows}
-            cols={cols}
-            disabled={game.legal.length === 0}
-            onCellAction={handleCellAction}
-            boardLabel={`${manifest.title} board`}
-            lockedUntil={game.lockedUntil}
-            reducedMotion={reducedMotion}
-            overlay={<CalloutLayer firstOccurrence={game.firstOccurrence} />}
-          >
-            <presentation.Board
-              view={game.view}
-              legal={game.legal}
-              onMove={(m: Json) => handleCellAction(moveToCellId(m))}
-              seat={mode === "hotseat" ? game.presentingSeat : (humanSeat ?? 0)}
-              prefs={{ reducedMotion, theme }}
-            />
-          </BoardShell>
+        {hasSidePanel ? (
+          // Opt-in two-column md+ panel (Crackstep's SidePanel only — presentation.sidePanel).
+          // The wrapper grid div, and extraControls' own `mt-4 md:mt-0` (mobile stacking gap,
+          // removed once the grid goes two-column at md+), exist ONLY on this branch, since
+          // only this branch ever lays `extraControls` out beside the board instead of below it.
+          <div className="md:grid md:grid-cols-[1fr_300px] md:items-start md:gap-6">
+            {boardShellElement}
 
-          {presentation.extraControls && (
-            <div className="mt-4 md:mt-0">
+            {presentation.extraControls && (
+              <div className="mt-4 md:mt-0">
+                <presentation.extraControls
+                  view={game.view}
+                  legal={game.legal}
+                  onMove={(m: Json) => handleCellAction(moveToCellId(m))}
+                  seat={mode === "hotseat" ? game.presentingSeat : (humanSeat ?? 0)}
+                  prefs={{ reducedMotion, theme }}
+                />
+              </div>
+            )}
+          </div>
+        ) : (
+          // Default, pre-existing layout (Mine Run's BankBar, Tilt's Telegraph, and every game
+          // without extraControls): BoardShell and extraControls (if any) are plain siblings in
+          // the single centered column, no grid wrapper and no extra spacing wrapper — exactly
+          // the pre-design-2a DOM shape these games always had.
+          <>
+            {boardShellElement}
+
+            {presentation.extraControls && (
               <presentation.extraControls
                 view={game.view}
                 legal={game.legal}
@@ -478,9 +513,9 @@ function GameShellReady({ gameId, definition, manifests, mode, daily, humanSeat,
                 seat={mode === "hotseat" ? game.presentingSeat : (humanSeat ?? 0)}
                 prefs={{ reducedMotion, theme }}
               />
-            </div>
-          )}
-        </div>
+            )}
+          </>
+        )}
       </div>
 
       <div className="mt-2">
