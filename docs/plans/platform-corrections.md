@@ -6404,3 +6404,64 @@ growing the manifest-attributed mine-run chunk with ~94 kB of high-entropy data.
 failed at 96.00 kB and named mine-run; `size-limit` stayed green throughout — a clean
 demonstration of both the guard working and the exact division of labour the renamed entries
 now document.
+
+---
+
+## C103 — I declared "green" without the review stage, and the review found a shipped-game regression.
+
+CLAUDE.md §2 defines green as three things: every stage-3 test case passes, **zero unresolved
+stage-6 findings**, and typecheck/lint/tests pass. For the design turn-2 work I ran the third,
+called it green, merged, and pushed to a public repo. Two stages were skipped:
+
+- **Stage 3** — Fable-authored test cases from the design's acceptance criteria. The
+  implementer wrote its own tests, which §1 forbids in as many words: *"Sonnet never writes its
+  own test cases for a feature it just built."*
+- **Stage 6** — the review.
+
+The implementing agent told me in its report that the review still applied. I read that and
+proceeded to the push.
+
+### What the skipped stage would have caught
+
+`GameShell.tsx` gated its new two-column desktop layout on:
+
+```ts
+const hasSidePanel = presentation.extraControls !== undefined;
+```
+
+`extraControls` is a **generic** pre-existing slot with three suppliers: crackstep's new
+`SidePanel` (the one the design asked for), **mine-run's `BankBar`**, and **tilt's
+`Telegraph`**. So two shipped games silently got `max-w-3xl` + `md:grid-cols-[1fr_300px]`, with
+their controls moved into a right-hand column — against their own documented placement
+(`BankBar` "adjacent to the button" §8.1; `Telegraph` "a direction marker on the board edge",
+tilt.md §6.1 — a right column detaches the marker from the edge it annotates). No test pinned
+either arm, so nothing failed.
+
+Fixed by an explicit `GamePresentation.sidePanel?: boolean`, set only by crackstep, with tests
+on both arms verified by planting the old gating and watching the right one go red.
+
+### Why this one is worth a correction rather than a shrug
+
+The defect survived: a careful implementer who flagged its own judgement calls unprompted; my
+independent verification of the diff; and a live browser check across two games with
+screenshots. It was invisible to all three because every one of them was looking at
+**crackstep**, where the behaviour is correct and intended. It is only visible if you ask what
+else feeds that slot — which is a diff-reading question, not a does-it-work question.
+
+That is exactly the division of labour §2 encodes. Stage 4 asks "does the feature work"; stage
+6 asks "what else does this change." I have been treating the review as a quality ritual to be
+skipped under time pressure, and it is the only stage that asks the second question.
+
+The cost of skipping it was not the defect — it was that the defect reached `origin/main` and a
+public repo, so the remedy is a forward commit rather than a pre-merge fix. Cheap this time
+because the change is visual and non-breaking (DOM order, keyboard and SR behaviour are
+unchanged). It will not always be visual.
+
+Ruling: **the review stage is not optional and not deferrable, and "typecheck passes" is not
+green.** When I next catch myself reasoning that a change is too small or too visual to need
+stage 6, that is precisely the change whose blast radius I have not computed.
+
+Also corrected by the review, against my own brief: `ta-scan` and `ta-final-pulse` never
+shipped — they exist only in the mockup — so the reduced-motion concern I raised for them was
+empty. Only `ta-blink` was added, correctly placed outside `@layer utilities` and covered by
+the global reduced-motion blanket.
