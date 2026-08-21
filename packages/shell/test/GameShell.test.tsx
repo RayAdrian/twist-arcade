@@ -800,15 +800,19 @@ describe("GameShell — extraControls (Mine Run's BankBar seam: a game-owned con
     );
   }
 
-  function withExtraControls(): GameDefinition<TTTState, TTTMove, TTTState> {
+  function withExtraControls(opts: { sidePanel?: boolean } = {}): GameDefinition<TTTState, TTTMove, TTTState> {
     return {
       ...tttDefinition,
-      presentation: { ...tttDefinition.presentation, extraControls: ExtraControls },
+      presentation: {
+        ...tttDefinition.presentation,
+        extraControls: ExtraControls,
+        ...(opts.sidePanel !== undefined ? { sidePanel: opts.sidePanel } : {}),
+      },
     };
   }
 
-  function registryEntryWithExtraControls(): RegistryEntry {
-    const definition = withExtraControls();
+  function registryEntryWithExtraControls(opts: { sidePanel?: boolean } = {}): RegistryEntry {
+    const definition = withExtraControls(opts);
     return {
       manifest: definition.manifest,
       async loadEngine() {
@@ -854,5 +858,67 @@ describe("GameShell — extraControls (Mine Run's BankBar seam: a game-owned con
     render(<GameShell gameId={tttManifest.id} registryEntry={registryEntry} manifests={[tttManifest]} mode="solo-bot" />);
     await waitFor(() => expect(screen.getAllByRole("gridcell").length).toBe(9));
     expect(screen.queryByRole("button", { name: /extra control/i })).toBeNull();
+  });
+});
+
+describe("GameShell — sidePanel is an explicit opt-in, never inferred from extraControls alone", () => {
+  // Regression coverage for the post-merge stage-6 defect: the shell used to derive its wide
+  // two-column md+ treatment (max-w-3xl shell + md:grid-cols-[1fr_300px]) from
+  // `presentation.extraControls !== undefined`. That silently opted Mine Run's BankBar and
+  // Tilt's Telegraph into a layout neither wants (mine-run.md §8.1 / tilt.md §6.1) — both supply
+  // `extraControls` for reasons unrelated to Crackstep's two-column panel. The fix is
+  // `presentation.sidePanel`, set ONLY by Crackstep. The two tests below pin both arms.
+  function ExtraControls({ view, onMove }: BoardProps<TTTState, TTTMove>) {
+    return (
+      <button type="button" onClick={() => onMove({ cell: 0 })}>
+        Extra control ({view.board.filter((c) => c !== null).length} marks)
+      </button>
+    );
+  }
+
+  function registryEntry(opts: { sidePanel?: boolean }): RegistryEntry {
+    const definition: GameDefinition<TTTState, TTTMove, TTTState> = {
+      ...tttDefinition,
+      presentation: {
+        ...tttDefinition.presentation,
+        extraControls: ExtraControls,
+        ...(opts.sidePanel !== undefined ? { sidePanel: opts.sidePanel } : {}),
+      },
+    };
+    return {
+      manifest: definition.manifest,
+      async loadEngine() {
+        return definition.engine;
+      },
+      async loadPresentation() {
+        return definition.presentation;
+      },
+    };
+  }
+
+  it("extraControls WITH presentation.sidePanel = true gets the two-column md+ grid and the wider max-w-3xl shell", async () => {
+    const { container } = render(
+      <GameShell gameId={tttManifest.id} registryEntry={registryEntry({ sidePanel: true })} manifests={[tttManifest]} mode="solo-bot" />
+    );
+    await waitFor(() => expect(screen.getAllByRole("gridcell").length).toBe(9));
+
+    expect(container.firstElementChild?.className).toContain("max-w-3xl");
+    expect(container.firstElementChild?.className).not.toContain("max-w-md");
+    expect(container.innerHTML).toContain("md:grid-cols-[1fr_300px]");
+  });
+
+  it("extraControls WITHOUT presentation.sidePanel stays in the single max-w-md column with no grid (the regression this defect was)", async () => {
+    const { container } = render(
+      <GameShell gameId={tttManifest.id} registryEntry={registryEntry({})} manifests={[tttManifest]} mode="solo-bot" />
+    );
+    await waitFor(() => expect(screen.getAllByRole("gridcell").length).toBe(9));
+
+    // The bug: this used to get max-w-3xl + md:grid-cols-[1fr_300px] purely because
+    // extraControls was set, even with no sidePanel opt-in at all.
+    expect(container.firstElementChild?.className).toContain("max-w-md");
+    expect(container.firstElementChild?.className).not.toContain("max-w-3xl");
+    expect(container.innerHTML).not.toContain("md:grid-cols-[1fr_300px]");
+    // extraControls itself must still render — only the LAYOUT is gated, not the slot.
+    expect(screen.getByRole("button", { name: /extra control/i })).toBeInTheDocument();
   });
 });

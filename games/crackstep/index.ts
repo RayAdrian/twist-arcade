@@ -245,6 +245,12 @@ export const presentation: GamePresentation<CrackstepState, CrackstepMove, Crack
   // for the first time by Crackstep. Rendered by GameShell as a sibling immediately after
   // BoardShell/Board, never inside the board grid.
   extraControls: SidePanel,
+  // Explicit opt-in (game-spec's `sidePanel`, post-merge fix) into the shell's wide two-column
+  // md+ desktop treatment — this IS the design 2a Crackstep panel the flag was added to
+  // describe. Mine Run's BankBar and Tilt's Telegraph also supply `extraControls` but must NOT
+  // get this layout (mine-run.md §8.1 / tilt.md §6.1), so it is never inferred from
+  // `extraControls` alone; only Crackstep sets it.
+  sidePanel: true,
 
   boardDimensions(view: CrackstepState): { rows: number; cols: number } {
     return { rows: view.height, cols: view.width };
