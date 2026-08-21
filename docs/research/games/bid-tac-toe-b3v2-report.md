@@ -242,3 +242,46 @@ against, recorded per the standing instruction that contradictions outrank smoot
 
 All attainment values, SDs, SEs, the qualifier count (zero), the P1/P2/P6 scorings, and the
 wall-clock figures in C97 match the raw output exactly.
+
+---
+
+## 9. The ship branch, costed (added 2026-08-21 so the decision has both halves)
+
+§7 documents the kill path in detail and never states what shipping would take. A decision
+needs both branches priced, so here is the other one.
+
+**Mechanically, shipping is nearly free.** Everything the registry needs already exists on main:
+
+| requirement | bid-tac-toe |
+|---|---|
+| `games/bid-tac-toe/package.json` (registry loads `@twist-arcade/<id>`) | present |
+| `index.ts` exporting `presentation`, `definition`, `bidTacToe`, `manifest` | present |
+| a board UI | `ui/Board.tsx` |
+| entry in `games/registry.ts` | **missing — this is the whole change** |
+
+So "ship" is roughly a five-line registry entry plus whatever UI polish the design system now
+implies (compare: crackstep ships 5 UI files, tilt 4, bid-tac-toe 1). The engine, the exact
+solve, and the manifest are all done and tested.
+
+**Substantively, it is not free, and the cost is concentrated in one place.** Shipping means
+shipping a game whose strongest bot holds the game's own proven draw about a third of the time
+at every affordable budget. Concretely:
+
+- `solved-value-reached` will FAIL in CI at whatever budget is chosen, permanently, until the
+  search improves. There is no budget that avoids this — that is what §1 measures.
+- A failing gate can only be cleared by **the user explicitly waiving it** (CLAUDE.md §2:
+  never waived by an agent). So the ship branch necessarily includes a standing waiver on a
+  gate that exists to answer "are the bots good enough to measure this game."
+- The player-facing consequence: the opponent is beatable in a game that is theoretically a
+  draw. Whether that is bad depends on intent — for a casual arcade a beatable bot is not
+  obviously a defect, and `strong-vs-random` at 95–100% says it is not a pushover either.
+  This report cannot settle that; it is a product judgement, not a measurement.
+
+**The asymmetry worth noting.** Kill is reversible on a documented path (§7's reopening
+condition: a search change re-runs this exact sweep, same seeds, same rule) and the code stays
+tracked on main and unregistered, exactly as order-vs-chaos and duel-draft do. Ship is also
+reversible, but it carries a standing gate waiver in the meantime, and waivers are the thing
+this project's whole correction history is about not accumulating quietly.
+
+Both branches are cheap to execute. The decision is about which failure mode is acceptable:
+a game that is not offered, or a gate that is permanently excused.
