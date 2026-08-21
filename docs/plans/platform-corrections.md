@@ -6083,3 +6083,56 @@ ruling, verified it against a measurement that did not test it, and passed. Both
 verification was real work that happened to be aimed slightly to the side of the claim. That
 is a more dangerous failure than not checking at all, because it produces a green result and
 therefore stops the search.
+
+---
+
+## C97 — Bid-Tac-Toe: no budget qualifies. The recommendation is KILL, and the curve is flat.
+
+The pre-registered B3v2 sweep ran the full ladder, 10 seeds x 30 games per cell, seeds
+`b3v2-postfix-sweep:seed0..9` with the budget structurally absent from the seed string
+(P3 discharged — not C92's C24 defect). Wall-clock 1918s. `solved-value-reached`, floor 90%:
+
+| rollouts | 800 | 1000 | 1200 | 1400 | 1600 | 2000 | 2500 | 3000 | 5000 | 10000 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| attainment | 14.7% | 21.3% | 23.3% | 34.7% | **36.0%** | 28.7% | 24.0% | 27.3% | 32.0% | 28.7% |
+
+**STAGE A QUALIFIERS: NONE.** Peak 36.0%, floor 90%, shortfall 54 points. Per the plan's §9,
+pre-registered before any datum existed: `twoPlayerCiRollouts` stays unset, **no gate table is
+run**, and the recommendation to the user is **KILL**. `strong-vs-random` passes everywhere
+(97.7%–100%), so this is not a broken instrument — the bots can punish a random player
+perfectly well. They simply cannot hold the drawing line in a game that is a proven exact draw.
+
+### The model was wrong, and the shape of its wrongness is the finding
+
+M1 — from C90/C92 — said the fixed search is correct at low budget and destroys its own
+correctness as budget rises. Scored honestly:
+
+- **P1 (attainment >= 60% at 1,000, and the ladder maximum): FAILED both clauses.** 21.3%, and
+  the maximum is mid-ladder at 1,600. It also failed BELOW the plan's own 40% tripwire, which
+  pre-committed to the reading: *root agreement does not predict play quality, and every
+  C90-derived expectation needs re-examination.* That is now the ruling, not an option.
+- **P2 (non-increasing above 2,000; <=20% at 5,000; <=5% at 10,000): FAILED.** 32.0% and 28.7%.
+- **P6 (sub-floor plateau, not a flatline): partially right.** It is a plateau, not a flatline —
+  but the peak is 36.0%, under the predicted 40–80% band, and sits mid-ladder, not at the low end.
+
+Across a **12.5x budget range the attainment is flat** — every cell between 14.7% and 36.0%,
+no monotone trend, wobbling within roughly its own seed-to-seed dispersion (SDs run 8–15pp).
+There is no healthy region and no collapse. Budget is simply not the variable.
+
+That is a cleaner and more damaging result than "high budget is bad." C90's agreement collapse
+(1.000 -> 0.000) and C92's win-rate climb are both real, and neither one moves full-game
+attainment at all. Two component metrics moved hard in opposite directions across the same
+range in which the system-level metric did nothing. This document has recorded the
+component-vs-system gap repeatedly; this is the sharpest instance, because here TWO components
+disagreed with each other AND both were irrelevant to the outcome.
+
+### What is NOT claimed
+
+The game is not proven unplayable, and the search is not proven irreparable. What is measured
+is narrower: **the platform's only simultaneous-move-capable search, at every budget from 800
+to 10,000, holds a proven draw about a third of the time.** Bid-Tac-Toe has never been on main;
+three games have already been killed here. The reopening condition stands as written in §9 —
+a search change that first clears `rollout-evaluation.md` §3's acceptance may re-run THIS
+sweep unchanged: same ladder, same seeds, same rule.
+
+The ship/kill decision is the user's. The evidence is complete and points one way.
