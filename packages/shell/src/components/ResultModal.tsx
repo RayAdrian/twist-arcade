@@ -60,7 +60,20 @@ export interface ResultModalProps {
 // identically to "idle" below — nothing happened, so there is nothing to confirm or apologize
 // for. It is its own ShareState member rather than reusing "idle" directly so `onShare`'s
 // return value maps 1:1 onto a state without a lossy translation step at the call site.
-type ShareState = { kind: "idle" } | { kind: "copied" } | { kind: "shared" } | { kind: "dismissed" } | { kind: "failed" };
+//
+// "pending" (TC-2A-RES-005): entered synchronously the instant Share is pressed, before
+// `onShare()` is even called — unlike every other member, it does NOT come from `onShare`'s
+// return value (`ShareOutcome` has no "pending" case; see ../share-frame.ts). Its only job is
+// to drive the button's `disabled`/`aria-busy` attributes for the awaited call's duration. The
+// actual re-entry guard is `shareBusyRef` in `handleShare` below, not this state — see there for
+// why a plain ref carries the correctness burden instead.
+type ShareState =
+  | { kind: "idle" }
+  | { kind: "pending" }
+  | { kind: "copied" }
+  | { kind: "shared" }
+  | { kind: "dismissed" }
+  | { kind: "failed" };
 
 const COPIED_CONFIRMATION_MS = 2000;
 
@@ -82,6 +95,21 @@ export function ResultModal({
 }: ResultModalProps) {
   const rematchRef = useRef<HTMLButtonElement>(null);
   const [shareState, setShareState] = useState<ShareState>({ kind: "idle" });
+  // The actual re-entry guard (TC-2A-RES-005), deliberately a ref rather than relying solely on
+  // the `disabled` attribute the "pending" state above drives. Verified by test (both the
+  // "clean" and the same-tick-race RES-005 cases, plus a mutation check done by hand while
+  // building this fix): with only `disabled` and no ref, a real DOM click on an already-disabled
+  // button is correctly blocked by the browser/jsdom itself (disabled elements don't dispatch
+  // click), so `disabled` alone already covers every click-driven re-entry in THIS component
+  // today. The ref is not there to plug a race `disabled` misses on the button — it's there so
+  // the guard holds even if `handleShare` is ever reached a second way that does not go through
+  // that specific disabled DOM node (a keyboard shortcut, a second caller, a future entry point
+  // added without also wiring the disabled check) — confirmed independently: with `disabled`
+  // itself removed but this ref left in place, `handleShare`'s own early-return still holds the
+  // line and `onShare` is still called exactly once. The ref guards the FUNCTION; `disabled`
+  // guards this one BUTTON. Keep both — belt (ref, correctness, entry-point-independent) and
+  // braces (state-driven `disabled`/`aria-busy`, the visible affordance).
+  const shareBusyRef = useRef(false);
 
   useEffect(() => {
     if (shareState.kind !== "copied") return;
@@ -95,8 +123,26 @@ export function ResultModal({
   }, [open]);
 
   async function handleShare() {
-    const outcome = await onShare();
-    setShareState({ kind: outcome });
+    if (shareBusyRef.current) return;
+    shareBusyRef.current = true;
+    setShareState({ kind: "pending" });
+    try {
+      const outcome = await onShare();
+      setShareState({ kind: outcome });
+    } catch {
+      // Defensive only: onShare's real implementations (GameShell's handleShare, which wraps
+      // composeShareArtifact/invokeShare) are documented to never throw — but a guard that can
+      // stick open on an unexpected throw is worse than no guard at all (it would leave Share
+      // permanently disabled for the rest of the session). Degrade to the same "failed" state a
+      // genuine share/clipboard failure already renders, rather than leaving `shareState` stuck
+      // at "pending" with a dead button and no way out.
+      setShareState({ kind: "failed" });
+    } finally {
+      // Runs on every exit path — success, "dismissed" (AbortError), "failed", and the catch
+      // above — so the guard can never stick. A user who backs out of the native share sheet
+      // (AbortError -> "dismissed") MUST be able to share again immediately.
+      shareBusyRef.current = false;
+    }
   }
 
   return (
@@ -156,7 +202,9 @@ export function ResultModal({
             <button
               type="button"
               onClick={handleShare}
-              className="h-12 w-full rounded-xl border-hairline border-ink-muted text-sm text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+              disabled={shareState.kind === "pending"}
+              aria-busy={shareState.kind === "pending"}
+              className="h-12 w-full rounded-xl border-hairline border-ink-muted text-sm text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:opacity-60"
             >
               ↗ Share result
             </button>
