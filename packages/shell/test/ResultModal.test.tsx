@@ -135,6 +135,100 @@ describe("ResultModal", () => {
     expect(fallback).toHaveValue(fullShareText);
   });
 
+  it("TC-2A-RES-005: does not re-invoke onShare while a share is already in flight, and disables the button for the duration", async () => {
+    const user = userEvent.setup();
+    let resolveShare!: (outcome: "copied") => void;
+    const onShare = vi.fn(
+      () =>
+        new Promise<"copied">((resolve) => {
+          resolveShare = resolve;
+        })
+    );
+    render(<ResultModal {...baseProps({ onShare })} />);
+
+    const shareButton = screen.getByRole("button", { name: /Share/ });
+    await user.click(shareButton);
+    expect(onShare).toHaveBeenCalledTimes(1);
+    expect(shareButton).toBeDisabled();
+
+    // Second tap while the first share is still in flight — must be a no-op, not a second
+    // invocation (RES-005: "one share sheet / one clipboard write. Two invocations = FAIL.").
+    await user.click(shareButton);
+    expect(onShare).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveShare("copied");
+      await Promise.resolve();
+    });
+
+    expect(shareButton).not.toBeDisabled();
+    expect(screen.getByText("Copied")).toBeInTheDocument();
+  });
+
+  it("TC-2A-RES-005 (guard is real, not decorative): two synchronous clicks still invoke onShare only once even by a dispatch path userEvent can't exercise", async () => {
+    // Deliberately `fireEvent` (raw, synchronous DOM dispatch), not `userEvent` — `userEvent`
+    // itself refuses to click an already-`disabled` element, so a `userEvent`-only test proves
+    // nothing beyond "the `disabled` attribute is present"; it can never show that `handleShare`'s
+    // own `shareBusyRef` early-return is doing real work, only that the DOM's native
+    // disabled-button semantics are. Confirmed by hand while building this fix (see
+    // ResultModal.tsx's `shareBusyRef` comment): with the `disabled` attribute removed but the
+    // ref left in place, this exact test still passes — `onShare` is still called only once — so
+    // the ref is independently load-bearing, not redundant belt-and-braces that could never
+    // actually catch anything (the failure mode this repo has shipped before per
+    // platform-corrections.md C95/C101/C103).
+    let resolveShare!: (outcome: "copied") => void;
+    const onShare = vi.fn(
+      () =>
+        new Promise<"copied">((resolve) => {
+          resolveShare = resolve;
+        })
+    );
+    render(<ResultModal {...baseProps({ onShare })} />);
+    const shareButton = screen.getByRole("button", { name: /Share/ });
+
+    fireEvent.click(shareButton);
+    fireEvent.click(shareButton);
+    expect(onShare).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveShare("copied");
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Copied")).toBeInTheDocument();
+  });
+
+  it("releases the in-flight guard after AbortError (dismissed) so the player can share again", async () => {
+    const user = userEvent.setup();
+    const onShare = vi.fn().mockResolvedValueOnce("dismissed").mockResolvedValueOnce("copied");
+    render(<ResultModal {...baseProps({ onShare })} />);
+
+    const shareButton = screen.getByRole("button", { name: /Share/ });
+
+    await user.click(shareButton);
+    await waitFor(() => expect(shareButton).not.toBeDisabled());
+    expect(onShare).toHaveBeenCalledTimes(1);
+
+    // A dismissed share sheet must never leave Share dead for the rest of the session.
+    await user.click(shareButton);
+    await waitFor(() => expect(onShare).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByText("Copied")).toBeInTheDocument());
+  });
+
+  it("releases the in-flight guard even when onShare throws, rather than leaving Share dead", async () => {
+    const user = userEvent.setup();
+    const onShare = vi.fn().mockRejectedValueOnce(new Error("boom")).mockResolvedValueOnce("copied");
+    render(<ResultModal {...baseProps({ onShare })} />);
+
+    const shareButton = screen.getByRole("button", { name: /Share/ });
+
+    await user.click(shareButton);
+    await waitFor(() => expect(shareButton).not.toBeDisabled());
+
+    await user.click(shareButton);
+    await waitFor(() => expect(onShare).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByText("Copied")).toBeInTheDocument());
+  });
+
   it("calls onOpenChange(false) on Escape", async () => {
     const onOpenChange = vi.fn();
     render(<ResultModal {...baseProps({ onOpenChange })} />);
