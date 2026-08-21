@@ -6,7 +6,7 @@
 // hook-using shell component needs this individually, not just GameShell).
 "use client";
 
-import { type ReactNode, useMemo, useRef, useState } from "react";
+import { type ReactNode, type Ref, useMemo, useRef, useState } from "react";
 import { BoardContext, type CellRegistration } from "./board-context";
 
 export interface BoardShellProps {
@@ -35,7 +35,29 @@ export interface BoardShellProps {
    *  `DEFAULT_MIN_CELL_PX` — every game before Nine Grids has cols/rows small enough that this
    *  never mattered (natural size always fit inside the viewport-constrained frame already). */
   minCellPx?: number;
+  /** RES-002/A11Y-007 fix: an external ref onto the board's own `role="grid"` container, so a
+   *  caller (GameShell) can send focus here when ResultModal closes. ResultModal has no
+   *  click-based opener at all — GameShell opens it automatically ~300ms after the game reaches
+   *  a terminal status — so there is no "invoking control" for Radix's trigger-based focus
+   *  restore to return to; the finished board is the sensible landmark instead (ResultModal's
+   *  own header comment: "Escape closes to the finished board — the board stays inspectable
+   *  underneath"). Composed with this component's own internal `setBoardEl` state setter below
+   *  (both need the same DOM node); does not replace or change `boardEl`'s existing role in
+   *  BoardContext (CalloutLayer's anchor fallback, moveCursor's focus target). */
+  containerRef?: Ref<HTMLDivElement>;
   children: ReactNode;
+}
+
+/** Sets a plain callback ref AND/OR a ref object/callback supplied by a caller, on the same
+ *  DOM node — deliberately tiny and local rather than a new dependency: this component has
+ *  exactly one caller (GameShell) that ever needs the second ref, and Radix's own
+ *  `useComposedRefs` isn't part of this package's public dependency surface. */
+function composeRefs<T>(a: (node: T | null) => void, b?: Ref<T>) {
+  return (node: T | null) => {
+    a(node);
+    if (typeof b === "function") b(node);
+    else if (b && "current" in b) (b as { current: T | null }).current = node;
+  };
 }
 
 const GAP_PX = 4; // Tailwind `gap-1` (0.25rem @ 16px root) — the grid's own className below.
@@ -51,6 +73,7 @@ export function BoardShell({
   reducedMotion = false,
   overlay,
   minCellPx = DEFAULT_MIN_CELL_PX,
+  containerRef,
   children,
 }: BoardShellProps) {
   const [cursor, setCursor] = useState({ row: 0, col: 0 });
@@ -178,11 +201,16 @@ export function BoardShell({
         style={{ width: FRAME_SIZE, height: FRAME_SIZE, overflow: "auto", overscrollBehavior: "contain" }}
       >
         <div
-          ref={setBoardEl}
+          ref={composeRefs(setBoardEl, containerRef)}
           role="grid"
           aria-label={boardLabel}
           aria-rowcount={rows}
           aria-colcount={cols}
+          // RES-002/A11Y-007: -1, not 0 — this must stay OUT of the normal Tab order (each
+          // Cell's own roving tabindex already governs keyboard entry into the grid); it's only
+          // ever reached programmatically, via `containerRef.current?.focus()` when ResultModal
+          // closes with no click-based opener to return focus to.
+          tabIndex={-1}
           onKeyDown={onKeyDown}
           style={{
             width: `max(100%, ${naturalWidthPx}px)`,

@@ -8,6 +8,7 @@
 // comment has the full story).
 "use client";
 
+import type { RefObject } from "react";
 import type { Frame } from "@twist-arcade/game-spec";
 import { Dialog, DialogContent, DialogTitle } from "./ui/dialog";
 
@@ -16,13 +17,25 @@ export interface HowSheetProps {
   onOpenChange(open: boolean): void;
   sentence: string;
   frames: [Frame, Frame, Frame];
+  /** HOW-002/A11Y-007 fix: where to send focus when the sheet closes (Escape or a scrim/
+   *  overlay tap — there is no close button). This sheet has TWO independent, simultaneously-
+   *  mounted openers in the real app (RuleCard's "How?" and ControlsRow's "? How", both wired
+   *  to the same `onOpenChange(true)` by GameShell) — Radix's own trigger-based focus-restore
+   *  can't disambiguate between them even if both were wired as `<DialogTrigger>`: Dialog's
+   *  context has exactly one mutable `triggerRef`, set once by whichever trigger's ref commits
+   *  last, so it would restore to the SAME button every time regardless of which one the user
+   *  actually clicked. The caller instead captures the real invoking element itself
+   *  (`document.activeElement` at click time — correct for both mouse and keyboard activation)
+   *  and hands it back here. Omitted/null falls back to the Dialog primitive's own default
+   *  behavior. */
+  restoreFocusRef?: RefObject<HTMLElement | null>;
 }
 
 function isEmptyFrame(frame: Frame): boolean {
   return frame.title.trim().length === 0 && frame.body.trim().length === 0;
 }
 
-export function HowSheet({ open, onOpenChange, sentence, frames }: HowSheetProps) {
+export function HowSheet({ open, onOpenChange, sentence, frames, restoreFocusRef }: HowSheetProps) {
   // "frame-asset missing" (plan §4.3): a blank frame degrades out of the strip entirely
   // rather than rendering an empty-looking card — the sentence alone is never blocked.
   const visibleFrames = frames.filter((f) => !isEmptyFrame(f));
@@ -38,6 +51,16 @@ export function HowSheet({ open, onOpenChange, sentence, frames }: HowSheetProps
       <DialogContent
         className="bottom-0 left-1/2 top-auto max-h-[85dvh] max-h-[85svh] w-full max-w-lg -translate-x-1/2 translate-y-0 rounded-b-none rounded-t-lg border-brush border-ink bg-paper-lift shadow-print-4"
         aria-describedby={undefined}
+        onCloseAutoFocus={(e) => {
+          // Radix's own documented extension point for "restore focus somewhere specific on
+          // close" — see this file's `restoreFocusRef` doc for why a plain `<DialogTrigger>`
+          // can't do this job for a two-opener dialog. Only override when the caller actually
+          // captured an opener; otherwise let Radix's own default apply.
+          if (restoreFocusRef?.current) {
+            e.preventDefault();
+            restoreFocusRef.current.focus();
+          }
+        }}
       >
         <span aria-hidden="true" className="mx-auto block h-1 w-12 rounded-full bg-ink-muted" />
         <DialogTitle className="mt-2 inline-block rounded border-hairline border-ink bg-accent-p2 px-2.5 py-1 font-mono text-xs font-semibold uppercase tracking-wide text-paper">
