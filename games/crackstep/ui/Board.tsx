@@ -24,6 +24,7 @@ import type { BoardProps } from "@twist-arcade/game-spec";
 import { Cell, moveToCellId } from "@twist-arcade/shell";
 import type { CrackstepMove, CrackstepState } from "../engine";
 import { buildCellPresentations, type CellPresentation } from "./board-view";
+import { MATERIAL_COLORS } from "./materials";
 
 const KEYFRAMES = `
 @keyframes crackstep-crumble-drop {
@@ -49,13 +50,6 @@ function injectKeyframesOnce(): void {
 
 // Grayscale-verified 4-band palette (mid-warm / light / dark / darkest) — deliberately NOT the
 // sole carrier of material identity; texture (below) carries that on its own (§13 #1).
-const COLORS = {
-  crumbling: "#b98a52",
-  stone: "#cfcabe",
-  crumbled: "#4a4238",
-  hole: "#171310",
-};
-
 interface TileFaceProps {
   presentation: CellPresentation;
   justCrumbled: boolean;
@@ -67,7 +61,7 @@ function TileFace({ presentation, justCrumbled, ghost, reducedMotion }: TileFace
   const { state, tile } = presentation;
 
   if (state === "hole") {
-    return <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: COLORS.hole }} />;
+    return <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: MATERIAL_COLORS.hole }} />;
   }
 
   if (state === "crumbled") {
@@ -77,7 +71,7 @@ function TileFace({ presentation, justCrumbled, ghost, reducedMotion }: TileFace
         style={{
           position: "absolute",
           inset: 0,
-          background: COLORS.crumbled,
+          background: MATERIAL_COLORS.crumbled,
           // Rubble: irregular scattered dots — distinct PATTERN from stone's 4 symmetric
           // corner rivets, and from the hole's flat fill (survives grayscale on texture alone).
           backgroundImage:
@@ -117,7 +111,7 @@ function TileFace({ presentation, justCrumbled, ghost, reducedMotion }: TileFace
       style={{
         position: "absolute",
         inset: 0,
-        background: isStone ? COLORS.stone : COLORS.crumbling,
+        background: isStone ? MATERIAL_COLORS.stone : MATERIAL_COLORS.crumbling,
         clipPath: isStone ? "polygon(8% 0,92% 0,100% 8%,100% 92%,92% 100%,8% 100%,0 92%,0 8%)" : undefined,
         backgroundImage: isStone
           ? // Stone: chamfered slab + 4 corner "rivets" — reads as a different MATERIAL, never
@@ -201,7 +195,7 @@ export function Board({ view, legal, prefs }: BoardProps<CrackstepState, Crackst
           // they never need tap-target/focus/keyboard-nav machinery — a flat, non-interactive
           // pit, exactly per plan §7.1 ("never was floor").
           return (
-            <div key={c.cell} aria-hidden="true" style={{ position: "relative", aspectRatio: "1 / 1", background: COLORS.hole }} />
+            <div key={c.cell} aria-hidden="true" style={{ position: "relative", aspectRatio: "1 / 1", background: MATERIAL_COLORS.hole }} />
           );
         }
         const move: CrackstepMove = c.cell;

@@ -14,12 +14,16 @@
 import type { BoardProps } from "@twist-arcade/game-spec";
 import type { CrackstepMove, CrackstepState, TileKind } from "../engine";
 import { tilesRemaining } from "./board-view";
+import { MATERIAL_COLORS } from "./materials";
 
+// Swatches read from MATERIAL_COLORS (the same constant Board.tsx's TileFace renders from)
+// rather than a second, independent copy of these four hex values — see materials.ts's own
+// header comment, and test/materials-consistency.test.tsx for the regression guard.
 const LEGEND: { key: TileKind | "rubble"; swatch: string; label: string; fate: string }[] = [
-  { key: "crumble", swatch: "#b98a52", label: "wood", fate: "crumbles when you leave" },
-  { key: "stone", swatch: "#cfcabe", label: "stone", fate: "holds forever" },
-  { key: "rubble", swatch: "#4a4238", label: "rubble", fate: "gone for good" },
-  { key: "hole", swatch: "#171310", label: "hole", fate: "never was floor" },
+  { key: "crumble", swatch: MATERIAL_COLORS.crumbling, label: "wood", fate: "crumbles when you leave" },
+  { key: "stone", swatch: MATERIAL_COLORS.stone, label: "stone", fate: "holds forever" },
+  { key: "rubble", swatch: MATERIAL_COLORS.crumbled, label: "rubble", fate: "gone for good" },
+  { key: "hole", swatch: MATERIAL_COLORS.hole, label: "hole", fate: "never was floor" },
 ];
 
 export function SidePanel({ view }: BoardProps<CrackstepState, CrackstepMove>) {
