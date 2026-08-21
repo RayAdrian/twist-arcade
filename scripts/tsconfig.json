@@ -11,6 +11,7 @@
     { "path": "../packages/harness" },
     { "path": "../packages/bots" },
     { "path": "../games/bid-tac-toe" },
+    { "path": "../games/order-vs-chaos" },
     { "path": "../games/crackstep" },
     { "path": "../games/tilt" }
   ]
